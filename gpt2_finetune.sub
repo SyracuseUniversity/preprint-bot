@@ -1,0 +1,16 @@
+Universe = vanilla
+Executable = conda_wrapper.sh
+Arguments =
+
+Output = output/gpt2_finetune.out
+Error  = output/gpt2_finetune.err
+Log    = output/gpt2_finetune.log
+
+RequestCpus = 4
+RequestMemory = 64000
+RequestDisk = 10GB
+
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+
+Queue
