@@ -1,0 +1,16 @@
+[
+  {
+    "title": "VerifyBench: Benchmarking Reference-based Reward Systems for Large\n  Language Models",
+    "summary": "Large reasoning models such as OpenAI o1 and DeepSeek-R1 have achieved\nremarkable performance in the domain of reasoning. A key component of their\ntraining is the incorporation of verifiable rewards within reinforcement\nlearning (RL). However, existing reward benchmarks do not evaluate\nreference-based reward systems, leaving researchers with limited understanding\nof the accuracy of verifiers used in RL. In this paper, we introduce two\nbenchmarks, VerifyBench and VerifyBench-Hard, designed to assess the\nperformance of reference-based reward systems. These benchmarks are constructed\nthrough meticulous data collection and curation, followed by careful human\nannotation to ensure high quality. Current models still show considerable room\nfor improvement on both VerifyBench and VerifyBench-Hard, especially\nsmaller-scale models. Furthermore, we conduct a thorough and comprehensive\nanalysis of evaluation results, offering insights for understanding and\ndeveloping reference-based reward systems. Our proposed benchmarks serve as\neffective tools for guiding the development of verifier accuracy and the\nreasoning capabilities of models trained via RL in reasoning tasks.",
+    "url": "http://arxiv.org/abs/2505.15801v1",
+    "published": "2025-05-21T17:54:43Z",
+    "score": 1.0
+  },
+  {
+    "title": "VerifyBench: Benchmarking Reference-based Reward Systems for Large\n  Language Models",
+    "summary": "Large reasoning models such as OpenAI o1 and DeepSeek-R1 have achieved\nremarkable performance in the domain of reasoning. A key component of their\ntraining is the incorporation of verifiable rewards within reinforcement\nlearning (RL). However, existing reward benchmarks do not evaluate\nreference-based reward systems, leaving researchers with limited understanding\nof the accuracy of verifiers used in RL. In this paper, we introduce two\nbenchmarks, VerifyBench and VerifyBench-Hard, designed to assess the\nperformance of reference-based reward systems. These benchmarks are constructed\nthrough meticulous data collection and curation, followed by careful human\nannotation to ensure high quality. Current models still show considerable room\nfor improvement on both VerifyBench and VerifyBench-Hard, especially\nsmaller-scale models. Furthermore, we conduct a thorough and comprehensive\nanalysis of evaluation results, offering insights for understanding and\ndeveloping reference-based reward systems. Our proposed benchmarks serve as\neffective tools for guiding the development of verifier accuracy and the\nreasoning capabilities of models trained via RL in reasoning tasks.",
+    "url": "http://arxiv.org/abs/2505.15801v1",
+    "published": "2025-05-21T17:54:43Z",
+    "score": 1.0
+  }
+]
