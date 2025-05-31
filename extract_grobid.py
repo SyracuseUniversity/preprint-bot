@@ -113,8 +113,3 @@ if __name__ == "__main__":
         for ref in result['references']:
             fixed_author_line = ", ".join(ref['authors']).replace(", -", "-")
             f.write(f"- {ref['title']}\n  by {fixed_author_line}\n")
-
-
-        f.write("\nTokenized Sections:\n")
-        for sec in tokenized['sections']:
-            f.write(f"\n- {sec['header']}:\n{' '.join(sec['tokens'])}\n")
