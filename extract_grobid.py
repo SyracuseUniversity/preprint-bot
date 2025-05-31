@@ -1,28 +1,44 @@
 import requests
+from urllib.parse import urlparse
 from lxml import etree
+import spacy
+
+nlp = spacy.load("en_core_web_sm")  # spaCy tokenizer
 
 GROBID_URL = "http://localhost:8070/api/processFulltextDocument"
 NS = {'tei': 'http://www.tei-c.org/ns/1.0'}
 
+# tokenize text using spaCy
+def spacy_tokenize(text):
+    doc = nlp(text)
+    return [token.text for token in doc]
 
-def extract_grobid_sections(pdf_path):
-    with open(pdf_path, 'rb') as pdf_file:
-        response = requests.post(GROBID_URL, files={'input': pdf_file})
+# extract PDF bytes from arXiv link
+def get_arxiv_pdf_bytes(arxiv_url):
+    parsed = urlparse(arxiv_url)
+    if "arxiv.org" not in parsed.netloc:
+        raise ValueError("Not a valid arXiv link")
+    
+    arxiv_id = parsed.path.strip("/").split("/")[-1]
+    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
 
-    # checks if the GROBID server responded successfully 
+    print(f"Fetching {pdf_url}")
+    response = requests.get(pdf_url)
+    if response.status_code != 200:
+        raise Exception(f"Failed to download PDF: {response.status_code}")
+    return response.content, arxiv_id
+
+# send to GROBID and extract sections
+def extract_grobid_sections_from_bytes(pdf_bytes):
+    response = requests.post(GROBID_URL, files={'input': ('paper.pdf', pdf_bytes)})
     if response.status_code != 200:
         raise Exception(f"GROBID error: {response.status_code}")
-
+    
     xml = etree.fromstring(response.content)
 
-    # Title
     title = xml.findtext('.//tei:titleStmt/tei:title', namespaces=NS) or "N/A"
-
-
-    # Abstract
     abstract_node = xml.find('.//tei:profileDesc/tei:abstract', namespaces=NS)
     abstract = " ".join(p.text for p in abstract_node.findall('.//tei:p', namespaces=NS)) if abstract_node is not None else "N/A"
-
 
     # Authors
     authors = []
@@ -31,11 +47,9 @@ def extract_grobid_sections(pdf_path):
         if name is not None:
             full_name = " ".join(filter(None, [
                 name.findtext('tei:forename', namespaces=NS),
-                name.findtext('tei:surname', namespaces=NS)
-            ]))
+                name.findtext('tei:surname', namespaces=NS)]))
             full_name = full_name.replace(", -", "-")
             authors.append(full_name)
-
 
     # Affiliations
     affiliations = []
@@ -48,29 +62,28 @@ def extract_grobid_sections(pdf_path):
 
     # Section headers and paragraphs
     sections = []
-    
     for div in xml.findall('.//tei:text//tei:body//tei:div', namespaces=NS):
+        
         header = div.findtext('tei:head', namespaces=NS) or "[no section title]"
         paragraphs = " ".join(p.text.strip() for p in div.findall('tei:p', namespaces=NS) if p.text)
         sections.append({'header': header, 'text': paragraphs})
-
 
     # References
     references = []
     for bibl in xml.findall('.//tei:listBibl//tei:biblStruct', namespaces=NS):
         ref_title = bibl.findtext('.//tei:title', namespaces=NS)
-        
-        # Get reference title and list of authors (full names) from each bibliographic entry
         ref_authors = []
+        
         for pers in bibl.findall('.//tei:author', namespaces=NS):
             pers_name = pers.find('tei:persName', namespaces=NS)
+            
             if pers_name is not None:
                 forename = pers_name.findtext('tei:forename', namespaces=NS) or ''
                 surname = pers_name.findtext('tei:surname', namespaces=NS) or ''
                 full_name = " ".join(filter(None, [forename.strip(), surname.strip()]))
+                
                 if full_name:
                     ref_authors.append(full_name)
-
         references.append({
             'title': ref_title or "N/A",
             'authors': ref_authors if ref_authors else []
@@ -87,14 +100,23 @@ def extract_grobid_sections(pdf_path):
     }
 
 
-
 if __name__ == "__main__":
-    # pdf file with path
-    pdf_file = "testGrobid.pdf"
-    result = extract_grobid_sections(pdf_file)
+    arxiv_url = "https://arxiv.org/abs/2304.12345"
+    pdf_bytes, arxiv_id = get_arxiv_pdf_bytes(arxiv_url)
+    result = extract_grobid_sections_from_bytes(pdf_bytes)
+    
+    # tokenize main fields with spaCy
+    tokenized = {
+        'title': spacy_tokenize(result['title']),
+        'abstract': spacy_tokenize(result['abstract']),
+        'sections': [{
+                'header': sec['header'],
+                'tokens': spacy_tokenize(sec['text'])
+            } for sec in result['sections']]
+    }
 
-    # Write results to file
-    with open("output.txt", "w", encoding="utf-8") as f:
+    # write everything to output file
+    with open(f"{arxiv_id}_output.txt", "w", encoding="utf-8") as f:
         f.write(f"Title: {result['title']}\n")
         f.write(f"Abstract: {result['abstract']}\n\n")
         f.write(f"Authors: {', '.join(result['authors'])}\n")
@@ -104,10 +126,19 @@ if __name__ == "__main__":
         f.write("Sections:\n")
         for sec in result['sections']:
             f.write(f"\n- {sec['header']}:\n{sec['text']}\n")
-            # f.write(f"\n- {sec['header']}\n{sec['text'][:1000]}:\n") to cap each section at 1000 characters
 
         f.write("\nReferences:\n")
         for ref in result['references']:
-            # fixes hyphen issue
             fixed_author_line = ", ".join(ref['authors']).replace(", -", "-")
             f.write(f"- {ref['title']}\n  by {fixed_author_line}\n")
+
+        # tokenized output
+        f.write("\nTokenized Title:\n")
+        f.write(" ".join(tokenized['title']) + "\n")
+
+        f.write("\nTokenized Abstract:\n")
+        f.write(" ".join(tokenized['abstract']) + "\n")
+
+        f.write("\nTokenized Sections:\n")
+        for sec in tokenized['sections']:
+            f.write(f"\n- {sec['header']}:\n{' '.join(sec['tokens'])}\n")
