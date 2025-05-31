@@ -1,17 +1,9 @@
 import requests
 from urllib.parse import urlparse
 from lxml import etree
-import spacy
-
-nlp = spacy.load("en_core_web_sm")  # spaCy tokenizer
 
 GROBID_URL = "http://localhost:8070/api/processFulltextDocument"
 NS = {'tei': 'http://www.tei-c.org/ns/1.0'}
-
-# tokenize text using spaCy
-def spacy_tokenize(text):
-    doc = nlp(text)
-    return [token.text for token in doc]
 
 # extract PDF bytes from arXiv link
 def get_arxiv_pdf_bytes(arxiv_url):
@@ -104,16 +96,6 @@ if __name__ == "__main__":
     arxiv_url = "https://arxiv.org/abs/2304.12345"
     pdf_bytes, arxiv_id = get_arxiv_pdf_bytes(arxiv_url)
     result = extract_grobid_sections_from_bytes(pdf_bytes)
-    
-    # tokenize main fields with spaCy
-    tokenized = {
-        'title': spacy_tokenize(result['title']),
-        'abstract': spacy_tokenize(result['abstract']),
-        'sections': [{
-                'header': sec['header'],
-                'tokens': spacy_tokenize(sec['text'])
-            } for sec in result['sections']]
-    }
 
     # write everything to output file
     with open(f"{arxiv_id}_output.txt", "w", encoding="utf-8") as f:
@@ -132,12 +114,6 @@ if __name__ == "__main__":
             fixed_author_line = ", ".join(ref['authors']).replace(", -", "-")
             f.write(f"- {ref['title']}\n  by {fixed_author_line}\n")
 
-        # tokenized output
-        f.write("\nTokenized Title:\n")
-        f.write(" ".join(tokenized['title']) + "\n")
-
-        f.write("\nTokenized Abstract:\n")
-        f.write(" ".join(tokenized['abstract']) + "\n")
 
         f.write("\nTokenized Sections:\n")
         for sec in tokenized['sections']:
