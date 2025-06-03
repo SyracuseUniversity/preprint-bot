@@ -172,3 +172,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Folders
+main\arxiv_pipeline_data
+\similarity pipeline
+arxiv_pipeline_data
