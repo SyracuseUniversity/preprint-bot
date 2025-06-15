@@ -57,18 +57,18 @@ ARXIV_PROCESSED = "main/arxiv_pipeline_data/processed_arxiv"
 
 def main(threshold_label="medium", model_name=DEFAULT_MODEL_NAME):
     print("\nFetching arXiv papers...")
-    # all_papers = fetch_arxiv_papers()
-    all_papers = "main/arxiv_pipeline_data/arxiv_cs_papers.json"
+    all_papers = fetch_arxiv_papers()
+    # all_papers = "main/arxiv_pipeline_data/arxiv_pdfs.json"
 
-    # Uncomment if PDFs are not already downloaded
+    # # Uncomment if PDFs are not already downloaded
     # print("\nDownloading PDFs...")
     # download_arxiv_pdfs(all_papers, ARXIV_PDF_FOLDER)
 
-    print("\nParsing user papers with GROBID...")
-    process_folder(USER_PDF_FOLDER, USER_PROCESSED)
+    # print("\nParsing user papers with GROBID...")
+    # process_folder(USER_PDF_FOLDER, USER_PROCESSED)
 
-    print("\nParsing arXiv papers with GROBID...")
-    process_folder(ARXIV_PDF_FOLDER, ARXIV_PROCESSED)
+    # print("\nParsing arXiv papers with GROBID...")
+    # process_folder(ARXIV_PDF_FOLDER, ARXIV_PROCESSED)
 
     print("\nEmbedding user abstracts...")
     user_abs_texts, user_abs_embs, model, user_files = embed_abstracts(USER_PROCESSED, model_name)
