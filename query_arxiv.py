@@ -1,16 +1,15 @@
 import os
 import time
-import json
 import requests
 import feedparser
 from urllib.parse import urlparse
-from extract_link_nd import extract_grobid_sections_from_bytes, spacy_tokenize
+from extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
 
 SAVE_DIR = "parsed_arxiv_outputs"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-ARXIV_CATEGORY = "cs.CL"
-MAX_RESULTS = 5  # Limit to 5 papers for testing
+# ARXIV_CATEGORY = "cs.CL"
+MAX_RESULTS = 999  # Limit papers for testing
 
 def get_recent_arxiv_entries(category="cs.CL", max_results=5):
     url = f"http://export.arxiv.org/api/query?search_query=cat:{category}&start=0&max_results={max_results}&sortBy=submittedDate&sortOrder=descending"
@@ -21,9 +20,11 @@ def get_arxiv_pdf_bytes(arxiv_url):
     parsed = urlparse(arxiv_url)
     arxiv_id = parsed.path.strip("/").split("/")[-1]
     pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+    
     response = requests.get(pdf_url)
     if response.status_code != 200:
         raise Exception(f"Failed to download PDF: {response.status_code}")
+    
     return response.content, arxiv_id
 
 def write_output(arxiv_id, result, tokenized):
@@ -54,8 +55,8 @@ def write_output(arxiv_id, result, tokenized):
         for sec in tokenized['sections']:
             f.write(f"\n- {sec['header']}:\n{' '.join(sec['tokens'])}\n")
 
-def main():
-    entries = get_recent_arxiv_entries(ARXIV_CATEGORY, MAX_RESULTS)
+def main(category):
+    entries = get_recent_arxiv_entries(category, MAX_RESULTS)
     print(f"Fetched {len(entries)} entries from arXiv.")
 
     for entry in entries:
@@ -78,10 +79,16 @@ def main():
 
             write_output(arxiv_id, result, tokenized)
             print(f"Finished: {arxiv_id}")
-            time.sleep(2)  # Avoid arxiv request limits
+            time.sleep(30)  # Avoid arxiv request limits
 
         except Exception as e:
             print(f"Error with {entry.id}: {e}")
 
+import argparse
+
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Parse recent arXiv papers by category")
+    parser.add_argument("category", help="arXiv subject category (e.g., cs.CL, stat.ML, math.PR)")
+    args = parser.parse_args()
+
+    main(args.category)
