@@ -1,0 +1,5 @@
+transformers>=4.40.0
+torch
+nltk
+lxml
+requests
