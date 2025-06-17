@@ -1,0 +1,93 @@
+import os
+import time
+import requests
+import feedparser
+import argparse
+from urllib.parse import urlparse
+from extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
+
+SAVE_DIR = "parsed_arxiv_outputs"
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+
+# KEYWORDS = ["squarefree", "pattern avoidance", "overlap-free"]
+MAX_RESULTS = 5  # Limit to 5 papers for testing
+
+def get_recent_arxiv_entries_by_keywords(keywords, max_results=5):
+    query = "+OR+".join([f'all:"{kw}"' for kw in keywords])
+    url = f"http://export.arxiv.org/api/query?search_query={query}&start=0&max_results={max_results}&sortBy=submittedDate&sortOrder=descending"
+    feed = feedparser.parse(requests.get(url).text)
+    return feed.entries
+
+def get_arxiv_pdf_bytes(arxiv_url):
+    parsed = urlparse(arxiv_url)
+    arxiv_id = parsed.path.strip("/").split("/")[-1]
+    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+    response = requests.get(pdf_url)
+    if response.status_code != 200:
+        raise Exception(f"Failed to download PDF: {response.status_code}")
+    return response.content, arxiv_id
+
+def write_output(arxiv_id, result, tokenized):
+    output_path = os.path.join(SAVE_DIR, f"{arxiv_id}_output.txt")
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(f"Title: {result['title']}\n")
+        f.write(f"Abstract: {result['abstract']}\n\n")
+        f.write(f"Authors: {', '.join(result['authors'])}\n")
+        f.write(f"Affiliations: {', '.join(result['affiliations'])}\n")
+        f.write(f"Publication Date: {result['pub_date']}\n\n")
+
+        f.write("Sections:\n")
+        for sec in result['sections']:
+            f.write(f"\n- {sec['header']}:\n{sec['text']}\n")
+
+        f.write("\nReferences:\n")
+        for ref in result['references']:
+            fixed_author_line = ", ".join(ref['authors']).replace(", -", "-")
+            f.write(f"- {ref['title']}\n  by {fixed_author_line}\n")
+
+        f.write("\nTokenized Title:\n")
+        f.write(" ".join(tokenized['title']) + "\n")
+
+        f.write("\nTokenized Abstract:\n")
+        f.write(" ".join(tokenized['abstract']) + "\n")
+
+        f.write("\nTokenized Sections:\n")
+        for sec in tokenized['sections']:
+            f.write(f"\n- {sec['header']}:\n{' '.join(sec['tokens'])}\n")
+
+def main(keywords):
+    entries = get_recent_arxiv_entries_by_keywords(keywords, MAX_RESULTS)
+    print(f"Fetched {len(entries)} entries from arXiv.")
+
+    for entry in entries:
+        try:
+            arxiv_id = entry.id.split('/')[-1]
+            print(f"\nProcessing {arxiv_id}")
+            pdf_bytes, _ = get_arxiv_pdf_bytes(entry.id)
+            result = extract_grobid_sections_from_bytes(pdf_bytes)
+
+            tokenized = {
+                'title': spacy_tokenize(result['title']),
+                'abstract': spacy_tokenize(result['abstract']),
+                'sections': [
+                    {
+                        'header': sec['header'],
+                        'tokens': spacy_tokenize(sec['text'])
+                    } for sec in result['sections']
+                ]
+            }
+
+            write_output(arxiv_id, result, tokenized)
+            print(f"Finished: {arxiv_id}")
+            time.sleep(2)  # Avoid arXiv request limits
+
+        except Exception as e:
+            print(f"Error with {entry.id}: {e}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Fetch and process arXiv papers matching keywords.")
+    parser.add_argument("keywords", nargs="+", help="Keywords to search for (e.g. 'squarefree' 'pattern avoidance')")
+    args = parser.parse_args()
+
+    main(args.keywords)
