@@ -2,6 +2,7 @@ import os
 import time
 import requests
 import feedparser
+import argparse
 from urllib.parse import urlparse
 from extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
 
@@ -83,8 +84,6 @@ def main(category):
 
         except Exception as e:
             print(f"Error with {entry.id}: {e}")
-
-import argparse
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Parse recent arXiv papers by category")
