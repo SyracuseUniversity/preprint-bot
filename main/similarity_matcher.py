@@ -13,19 +13,34 @@ def hybrid_similarity_pipeline(
     threshold = SIMILARITY_THRESHOLDS.get(threshold_label, 0.7)
     final_matches = []
 
-    for arxiv_idx, paper in enumerate(all_cs_papers):
-        arxiv_file_key = paper["arxiv_url"].split("/")[-1] + "_output.txt"
+    for paper in all_cs_papers:
+        # ✅ Keep versioned arXiv ID in file name
+        arxiv_id_with_version = paper["arxiv_url"].split("/")[-1]
+        arxiv_file_key = f"{arxiv_id_with_version}_output.txt"
         arxiv_chunks = arxiv_sections_dict.get(arxiv_file_key)
-        if arxiv_chunks is None:
+
+        if arxiv_chunks is None or len(arxiv_chunks) == 0:
             continue
+
+        # Normalize Arxiv chunks
+        arxiv_chunks = np.array(arxiv_chunks).astype("float32")
+        faiss.normalize_L2(arxiv_chunks)
+
+        # Build FAISS index
+        dim = arxiv_chunks.shape[1]
+        index = faiss.IndexFlatIP(dim)
+        index.add(arxiv_chunks)
 
         for user_file in user_files:
             user_chunks = user_sections_dict.get(user_file)
-            if user_chunks is None:
+            if user_chunks is None or len(user_chunks) == 0:
                 continue
 
-            sim_matrix = np.dot(user_chunks, arxiv_chunks.T)
-            best_score = np.max(sim_matrix)
+            user_chunks = np.array(user_chunks).astype("float32")
+            faiss.normalize_L2(user_chunks)
+
+            scores, _ = index.search(user_chunks, k=1)
+            best_score = np.max(scores)
 
             if best_score >= threshold:
                 final_matches.append({
@@ -38,7 +53,7 @@ def hybrid_similarity_pipeline(
 
     final_matches = sorted(final_matches, key=lambda x: x["score"], reverse=True)
 
-    with open(os.path.join(DATA_DIR, "ranked_matches.json"), "w") as f:
+    with open(os.path.join(DATA_DIR, "ranked_matches.json"), "w", encoding="utf-8") as f:
         json.dump(final_matches, f, indent=2)
 
     return final_matches

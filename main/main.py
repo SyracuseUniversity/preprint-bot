@@ -48,19 +48,23 @@ from embed_papers import embed_abstracts, embed_sections
 from process_user_pdfs import process_user_papers
 from similarity_matcher import hybrid_similarity_pipeline
 from config import *
+import json
 
-USER_PDF_FOLDER = "main/my_papers"
-ARXIV_PDF_FOLDER = "main/arxiv_pipeline_data/arxiv_pdfs"
-USER_PROCESSED = "main/arxiv_pipeline_data/processed_users"
-ARXIV_PROCESSED = "main/arxiv_pipeline_data/processed_arxiv"
+USER_PDF_FOLDER = "my_papers"
+ARXIV_PDF_FOLDER = "arxiv_pipeline_data/arxiv_pdfs"
+USER_PROCESSED = "arxiv_pipeline_data/processed_users"
+ARXIV_PROCESSED = "arxiv_pipeline_data/processed_arxiv"
 
 
 def main(threshold_label="medium", model_name=DEFAULT_MODEL_NAME):
     print("\nFetching arXiv papers...")
-    all_papers = fetch_arxiv_papers()
-    # all_papers = "main/arxiv_pipeline_data/arxiv_pdfs.json"
+    # all_papers = fetch_arxiv_papers()
 
-    # # Uncomment if PDFs are not already downloaded
+    with open("arxiv_pipeline_data/arxiv_cs_papers.json", "r", encoding="utf-8") as f:
+        all_papers = json.load(f)
+    print(f"Found {len(all_papers)} arXiv papers.")
+
+    # Uncomment if PDFs are not already downloaded
     # print("\nDownloading PDFs...")
     # download_arxiv_pdfs(all_papers, ARXIV_PDF_FOLDER)
 
