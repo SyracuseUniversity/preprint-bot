@@ -1,24 +1,56 @@
+"""
+Module to extract structured metadata and section content from arXiv PDFs using GROBID.
+
+This script:
+- Sends PDFs to a local GROBID service (`processFulltextDocument`) for full-text extraction.
+- Parses the resulting TEI-XML to extract title, abstract, authors, affiliations, publication date, and body sections.
+- Supports batch processing of PDFs in a folder.
+- Saves results in readable plain-text format with `_output.txt` suffix.
+
+Dependencies:
+- GROBID running locally (default URL: http://localhost:8070)
+- lxml for XML parsing
+"""
+
 import os
 import requests
 from lxml import etree
 from pathlib import Path
 
+# GROBID endpoint for full-text extraction
 GROBID_URL = "http://localhost:8070/api/processFulltextDocument"
+
+# XML namespace used in GROBID TEI output
 NS = {'tei': 'http://www.tei-c.org/ns/1.0'}
 
 def extract_grobid_sections(pdf_path):
+    """
+    Sends a PDF to GROBID and extracts structured metadata and sections.
+
+    Args:
+        pdf_path (str): Path to the PDF file.
+
+    Returns:
+        dict: Extracted content with keys: title, abstract, authors, affiliations, pub_date, sections.
+    
+    Raises:
+        Exception: If GROBID returns a non-200 status or fails to parse response.
+    """
     with open(pdf_path, 'rb') as pdf_file:
         response = requests.post(GROBID_URL, files={'input': pdf_file})
 
     if response.status_code != 200:
         raise Exception(f"GROBID error: {response.status_code} for {pdf_path}")
 
+    # Parse the returned TEI XML
     xml = etree.fromstring(response.content)
 
+    # Extract metadata fields
     title = xml.findtext('.//tei:titleStmt/tei:title', namespaces=NS) or "N/A"
     abstract_node = xml.find('.//tei:profileDesc/tei:abstract', namespaces=NS)
     abstract = " ".join(p.text for p in abstract_node.findall('.//tei:p', namespaces=NS)) if abstract_node is not None else "N/A"
 
+    # Extract authors' full names
     authors = []
     for pers in xml.findall('.//tei:sourceDesc//tei:analytic//tei:author', namespaces=NS):
         name = pers.find('.//tei:persName', namespaces=NS)
@@ -29,10 +61,13 @@ def extract_grobid_sections(pdf_path):
             ]))
             authors.append(full_name)
 
+    # Extract institution affiliations
     affiliations = [aff.text for aff in xml.findall('.//tei:affiliation/tei:orgName[@type="institution"]', namespaces=NS) if aff.text]
 
+    # Extract publication date
     pub_date = xml.findtext('.//tei:publicationStmt/tei:date', namespaces=NS) or "N/A"
 
+    # Extract section headers and paragraph content
     sections = []
     for div in xml.findall('.//tei:text//tei:body//tei:div', namespaces=NS):
         header = div.findtext('tei:head', namespaces=NS) or "[no section title]"
@@ -49,6 +84,13 @@ def extract_grobid_sections(pdf_path):
     }
 
 def process_folder(input_folder, output_folder):
+    """
+    Processes all PDFs in the input folder, extracts structured data via GROBID, and saves results.
+
+    Args:
+        input_folder (str): Path to the folder containing PDFs.
+        output_folder (str): Destination folder for saving the extracted `.txt` outputs.
+    """
     input_path = Path(input_folder)
     output_path = Path(output_folder)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -69,4 +111,4 @@ def process_folder(input_folder, output_folder):
                     f.write(f"\n- {sec['header']}:\n{sec['text']}\n")
             print(f"✅ Saved: {output_file}")
         except Exception as e:
-            print(f"Failed to process {pdf_file.name}: {e}")
+            print(f"❌ Failed to process {pdf_file.name}: {e}")

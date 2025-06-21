@@ -1,19 +1,38 @@
+"""
+Module to define global constants and create necessary directories
+for the arXiv preprint recommendation pipeline.
+
+This configuration includes:
+- Supported arXiv categories
+- Similarity thresholds for filtering relevant papers
+- Default embedding model
+- Directory setup for storing data outputs
+"""
+
 import os
 
+# List of arXiv subject categories to query. Add more categories this as needed.
 ARXIV_CATEGORIES = [
-    # Astrophysics
+    # Astrophysics category from arXiv
     "astro-ph", 
 ]
 
-
+# Predefined similarity thresholds for filtering paper recommendations
+# These represent cosine similarity scores between embedding vectors
 SIMILARITY_THRESHOLDS = {
-    "low": 0.5,
-    "medium": 0.7,
-    "high": 0.85
+    "low": 0.5,     # Broad match
+    "medium": 0.7,  # Balanced relevance
+    "high": 0.85    # Very high relevance
 }
 
-MAX_RESULTS = 50
+# Maximum number of results to retrieve per query from arXiv
+MAX_RESULTS = 400
+
+# Default SentenceTransformer model used for embedding abstracts and sections
 DEFAULT_MODEL_NAME = "all-MiniLM-L6-v2"
+
+# Root directory for saving intermediate and final outputs from the pipeline
 DATA_DIR = "arxiv_pipeline_data"
 
+# Create the data directory if it doesn't exist
 os.makedirs(DATA_DIR, exist_ok=True)
