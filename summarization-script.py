@@ -1,40 +1,56 @@
+import os
 import re
-from nltk.tokenize import word_tokenize, sent_tokenize
-from nltk.corpus import stopwords
+from pathlib import Path
+from nltk.tokenize import sent_tokenize
 from nltk import download
 from transformers import pipeline
- 
-# Import your GROBID extraction functions
-from extract_grobid import get_arxiv_pdf_bytes, extract_grobid_sections_from_bytes
- 
+
 # Fallback for NLTK punkt_tab bug on Python 3.13
 try:
-    from nltk.tokenize import sent_tokenize, word_tokenize
+    from nltk.tokenize import sent_tokenize
     sent_tokenize("This is a test. This is only a test.")
-    word_tokenize("This is a test.")
 except Exception:
     def sent_tokenize(text):
         return text.split('. ')
-    def word_tokenize(text):
-        return text.split()
- 
+
 # Download necessary NLTK data
 download('punkt')
-download('stopwords')
- 
+
 def clean_text(text):
-    text = re.sub(r'-\n', '', text)
-    text = re.sub(r'\n+', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
-    text = re.sub(r'\[\d+\]', '', text)
-    text = re.sub(r'\([A-Za-z, ]+\d{4}\)', '', text)
+    """
+    Cleans the input text by removing unnecessary characters, line breaks, and references.
+
+    Args:
+        text (str): The input text to clean.
+
+    Returns:
+        str: The cleaned text.
+    """
+    text = re.sub(r'-\n', '', text)  # Remove hyphenated line breaks
+    text = re.sub(r'\n+', ' ', text)  # Replace multiple line breaks with a single space
+    text = re.sub(r'\s+', ' ', text)  # Replace multiple spaces with a single space
+    text = re.sub(r'\[\d+\]', '', text)  # Remove references like [1], [2]
+    text = re.sub(r'\([A-Za-z, ]+\d{4}\)', '', text)  # Remove in-text citations like (Author, 2023)
     return text.strip()
- 
-def extract_sections_from_txt(txt, section_names=None):
+
+def extract_sections_from_txt(txt, exclude_sections=None):
+    """
+    Extracts sections from the input text, excluding specified sections.
+
+    Args:
+        txt (str): The input text containing sections.
+        exclude_sections (list): List of section names to exclude (e.g., acknowledgements, references).
+
+    Returns:
+        list: A list of cleaned text for all included sections.
+    """
+    if exclude_sections is None:
+        exclude_sections = ['acknowledgement', 'acknowledgements', 'reference', 'references']
     sections = []
     current_header = None
     current_text = []
     in_sections = False
+
     for line in txt.splitlines():
         line = line.strip()
         if line == "Sections:":
@@ -44,23 +60,30 @@ def extract_sections_from_txt(txt, section_names=None):
             continue
         if line.startswith('- ') and ':' in line:
             if current_header and current_text:
-                sections.append({'header': current_header, 'text': ' '.join(current_text)})
+                if not any(excl in current_header for excl in exclude_sections):
+                    sections.append({'header': current_header, 'text': ' '.join(current_text)})
             current_header = line[2:line.index(':')].strip().lower()
             current_text = [line[line.index(':')+1:].strip()]
         elif current_header:
             current_text.append(line)
     if current_header and current_text:
-        sections.append({'header': current_header, 'text': ' '.join(current_text)})
-    selected = []
-    if section_names:
-        for section in sections:
-            if any(name in section['header'] for name in section_names):
-                selected.append(clean_text(section['text']))
-    else:
-        selected = [clean_text(section['text']) for section in sections]
-    return selected
- 
+        if not any(excl in current_header for excl in exclude_sections):
+            sections.append({'header': current_header, 'text': ' '.join(current_text)})
+
+    # Clean text and return all included sections
+    return [clean_text(section['text']) for section in sections]
+
 def chunk_text(text, max_tokens=900):
+    """
+    Splits the input text into smaller chunks of up to `max_tokens` words.
+
+    Args:
+        text (str): The input text to chunk.
+        max_tokens (int): Maximum number of tokens per chunk.
+
+    Returns:
+        list: A list of text chunks.
+    """
     sentences = sent_tokenize(text)
     chunks = []
     current = ''
@@ -73,33 +96,91 @@ def chunk_text(text, max_tokens=900):
     if current:
         chunks.append(current.strip())
     return chunks
- 
+
 def summarize_with_transformer(text, model_name="facebook/bart-large-cnn", max_chunk_length=900):
-    summarizer = pipeline("summarization", model=model_name, tokenizer=model_name, use_fast=False)
-    chunks = chunk_text(text, max_tokens=max_chunk_length)
-    summaries = [summarizer(chunk, max_length=180, min_length=60, do_sample=False)[0]['summary_text'] for chunk in chunks]
-    if len(summaries) > 1:
-        combined = ' '.join(summaries)
-        final_summary = summarizer(combined, max_length=180, min_length=60, do_sample=False)[0]['summary_text']
-        return final_summary
-    return summaries[0]
- 
+    """
+    Summarizes the input text using a transformer-based summarization model.
+
+    Args:
+        text (str): The input text to summarize.
+        model_name (str): The name of the transformer model to use.
+        max_chunk_length (int): Maximum number of tokens per chunk.
+
+    Returns:
+        str: The summarized text.
+    """
+    try:
+        summarizer = pipeline("summarization", model=model_name, tokenizer=model_name, use_fast=False)
+        chunks = chunk_text(text, max_tokens=max_chunk_length)
+        summaries = []
+        for chunk in chunks:
+            result = summarizer(chunk, max_length=180, min_length=60, do_sample=False)
+            summaries.append(result[0]['summary_text'])
+        if len(summaries) > 1:
+            combined = ' '.join(summaries)
+            final_summary = summarizer(combined, max_length=180, min_length=60, do_sample=False)[0]['summary_text']
+            return final_summary
+        return summaries[0]
+    except Exception as e:
+        print(f"Error during summarization: {e}")
+        return "Error: Summarization failed."
+
 def hierarchical_summarization(sections, model_name="facebook/bart-large-cnn"):
-    section_summaries = []
-    for sec in sections:
-        if len(sec.split()) > 50:
-            section_summaries.append(summarize_with_transformer(sec, model_name=model_name))
-    combined = ' '.join(section_summaries)
-    final_summary = summarize_with_transformer(combined, model_name=model_name)
-    return final_summary
- 
+    """
+    Performs hierarchical summarization by summarizing each section and then combining the results.
+
+    Args:
+        sections (list): List of text sections to summarize.
+        model_name (str): The name of the transformer model to use.
+
+    Returns:
+        str: The final summarized text.
+    """
+    try:
+        section_summaries = []
+        for sec in sections:
+            if len(sec.split()) > 25:  # Only summarize sections with more than 25 words
+                section_summaries.append(summarize_with_transformer(sec, model_name=model_name))
+        combined = ' '.join(section_summaries)
+        final_summary = summarize_with_transformer(combined, model_name=model_name)
+        return final_summary
+    except Exception as e:
+        print(f"Error during hierarchical summarization: {e}")
+        return "Error: Hierarchical summarization failed."
+
+def process_folder(input_folder, output_folder, model_name="facebook/bart-large-cnn"):
+    """
+    Processes all text files in the input folder, summarizes their content, and saves the summaries.
+
+    Args:
+        input_folder (str): Path to the folder containing input text files.
+        output_folder (str): Path to the folder where summaries will be saved.
+        model_name (str): The name of the transformer model to use.
+    """
+    input_path = Path(input_folder)
+    output_path = Path(output_folder)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    for input_file in input_path.glob("*.txt"):
+        try:
+            print(f"Processing file: {input_file.name}")
+            with open(input_file, "r", encoding="utf-8") as f:
+                txt = f.read()
+
+            # Extract sections and summarize
+            selected_sections = extract_sections_from_txt(txt)
+            summary = hierarchical_summarization(selected_sections, model_name=model_name)
+
+            # Save summary to output folder
+            output_file = output_path / f"{input_file.stem}_summary.txt"
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(summary)
+            print(f"Summary saved to: {output_file}")
+        except Exception as e:
+            print(f"Failed to process {input_file.name}: {e}")
+
 if __name__ == "__main__":
-    arxiv_id = "2304.12345"  # Change as needed
-    with open(f"{arxiv_id}_output.txt", "r", encoding="utf-8") as f:
-        txt = f.read()
-    section_names = ['abstract', 'introduction', 'method', 'result', 'discussion', 'conclusion', 'summary']
-    selected_sections = extract_sections_from_txt(txt, section_names=section_names)
-    summary = hierarchical_summarization(selected_sections, model_name="facebook/bart-large-cnn")
-    with open(f"{arxiv_id}_summary.txt", "w", encoding="utf-8") as f:
-        f.write(summary)
- 
+    input_folder = "/Users/siddhishitole/Documents/preprint-bot/output_pdf"  # Replace with the path to your input folder
+    output_folder = "/Users/siddhishitole/Documents/preprint-bot/summaries"  # Replace with the path to your output folder
+
+    process_folder(input_folder, output_folder)
