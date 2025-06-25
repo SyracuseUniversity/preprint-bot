@@ -2,7 +2,7 @@ import os
 import time
 import requests
 import feedparser
-import argparse
+import json
 from urllib.parse import urlparse
 from extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
 
@@ -56,6 +56,22 @@ def write_output(arxiv_id, result, tokenized):
         for sec in tokenized['sections']:
             f.write(f"\n- {sec['header']}:\n{' '.join(sec['tokens'])}\n")
 
+def write_jsonl(arxiv_id, result, tokenized):
+    json_path = os.path.join(SAVE_DIR, f"{arxiv_id}_output.jsonl")
+    record = {
+        "arxiv_id": arxiv_id,
+        "title": result["title"],
+        "abstract": result["abstract"],
+        "authors": result["authors"],
+        "affiliations": result["affiliations"],
+        "pub_date": result["pub_date"],
+        "sections": result["sections"],
+        "references": result["references"],
+        "tokens": tokenized
+    }
+    with open(json_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
 def main(category):
     entries = get_recent_arxiv_entries(category, MAX_RESULTS)
     print(f"Fetched {len(entries)} entries from arXiv.")
@@ -79,11 +95,14 @@ def main(category):
             }
 
             write_output(arxiv_id, result, tokenized)
+            write_jsonl(arxiv_id, result, tokenized)
             print(f"Finished: {arxiv_id}")
             time.sleep(30)  # Avoid arxiv request limits
 
         except Exception as e:
             print(f"Error with {entry.id}: {e}")
+
+import argparse
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Parse recent arXiv papers by category")
