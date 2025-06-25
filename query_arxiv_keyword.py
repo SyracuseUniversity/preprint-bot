@@ -44,11 +44,6 @@ def write_output(arxiv_id, result, tokenized):
         for sec in result['sections']:
             f.write(f"\n- {sec['header']}:\n{sec['text']}\n")
 
-        f.write("\nReferences:\n")
-        for ref in result['references']:
-            fixed_author_line = ", ".join(ref['authors']).replace(", -", "-")
-            f.write(f"- {ref['title']}\n  by {fixed_author_line}\n")
-
         f.write("\nTokenized Title:\n")
         f.write(" ".join(tokenized['title']) + "\n")
 
@@ -69,7 +64,6 @@ def write_jsonl(arxiv_id, result, tokenized):
         "affiliations": result["affiliations"],
         "pub_date": result["pub_date"],
         "sections": result["sections"],
-        "references": result["references"],
         "tokens": tokenized
     }
     with open(json_path, "w", encoding="utf-8") as f:
