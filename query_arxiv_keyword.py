@@ -3,12 +3,15 @@ import time
 import requests
 import feedparser
 import argparse
+import json
 from urllib.parse import urlparse
 from extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
 
 SAVE_DIR = "parsed_arxiv_outputs"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
+# usage ex:
+# python fetch_arxiv_by_keywords.py "squarefree" "pattern avoidance"
 
 # KEYWORDS = ["squarefree", "pattern avoidance", "overlap-free"]
 MAX_RESULTS = 5  # Limit to 5 papers for testing
@@ -56,6 +59,22 @@ def write_output(arxiv_id, result, tokenized):
         for sec in tokenized['sections']:
             f.write(f"\n- {sec['header']}:\n{' '.join(sec['tokens'])}\n")
 
+def write_jsonl(arxiv_id, result, tokenized):
+    json_path = os.path.join(SAVE_DIR, f"{arxiv_id}_output.jsonl")
+    record = {
+        "arxiv_id": arxiv_id,
+        "title": result["title"],
+        "abstract": result["abstract"],
+        "authors": result["authors"],
+        "affiliations": result["affiliations"],
+        "pub_date": result["pub_date"],
+        "sections": result["sections"],
+        "references": result["references"],
+        "tokens": tokenized
+    }
+    with open(json_path, "w", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
 def main(keywords):
     entries = get_recent_arxiv_entries_by_keywords(keywords, MAX_RESULTS)
     print(f"Fetched {len(entries)} entries from arXiv.")
@@ -79,6 +98,7 @@ def main(keywords):
             }
 
             write_output(arxiv_id, result, tokenized)
+            write_jsonl(arxiv_id, result, tokenized)
             print(f"Finished: {arxiv_id}")
             time.sleep(2)  # Avoid arXiv request limits
 
