@@ -57,16 +57,16 @@ def main(threshold_label="medium", model_name=DEFAULT_MODEL_NAME):
     # Uncomment the following lines if PDFs are not yet downloaded or parsed
 
     # # Download arXiv PDFs and save to disk
-    print("\nDownloading PDFs...")
-    download_arxiv_pdfs(all_papers, ARXIV_PDF_FOLDER)
+    # print("\nDownloading PDFs...")
+    # download_arxiv_pdfs(all_papers, ARXIV_PDF_FOLDER)
 
-    # # Parse user-uploaded PDFs using GROBID and store structured outputs
-    print("\nParsing user papers with GROBID...")
-    process_folder(USER_PDF_FOLDER, USER_PROCESSED)
+    # # # Parse user-uploaded PDFs using GROBID and store structured outputs
+    # print("\nParsing user papers with GROBID...")
+    # process_folder(USER_PDF_FOLDER, USER_PROCESSED)
 
-    # # Parse arXiv PDFs using GROBID and store structured outputs
-    print("\nParsing arXiv papers with GROBID...")
-    process_folder(ARXIV_PDF_FOLDER, ARXIV_PROCESSED)
+    # # # Parse arXiv PDFs using GROBID and store structured outputs
+    # print("\nParsing arXiv papers with GROBID...")
+    # process_folder(ARXIV_PDF_FOLDER, ARXIV_PROCESSED)
 
     # Step 1: Embed abstracts from user papers
     print("\nEmbedding user abstracts...")
