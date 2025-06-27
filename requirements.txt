@@ -1,0 +1,5 @@
+transformers: 4.52.4
+torch: 2.7.1
+nltk: 3.9.1
+lxml: 5.4.0
+requests: 2.32.4
