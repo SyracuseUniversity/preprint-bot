@@ -14,6 +14,7 @@ except Exception:
     def sent_tokenize(text):
         return text.split('. ')
 
+# Download necessary NLTK data
 download('punkt')
 
 def clean_text(text):
@@ -54,12 +55,22 @@ def extract_sections_from_txt(txt, exclude_sections=None):
 
     for line in txt.splitlines():
         line = line.strip()
-        if line == "Sections:":          in_sections = True          continue
-        if not in_sections:          continue
-        if line.startswith('- ') and ':' in line:          if current_header and current_text:          if not any(excl in current_header for excl in exclude_sections):          sections.append({'header': current_header, 'text': ' '.join(current_text)})          current_header = line[2:line.index(':')].strip().lower()          current_text = [line[line.index(':')+1:].strip()]
-        elif current_header:          current_text.append(line)
+        if line == "Sections:":
+            in_sections = True
+            continue
+        if not in_sections:
+            continue
+        if line.startswith('- ') and ':' in line:
+            if current_header and current_text:
+                if not any(excl in current_header for excl in exclude_sections):
+                    sections.append({'header': current_header, 'text': ' '.join(current_text)})
+            current_header = line[2:line.index(':')].strip().lower()
+            current_text = [line[line.index(':')+1:].strip()]
+        elif current_header:
+            current_text.append(line)
     if current_header and current_text:
-        if not any(excl in current_header for excl in exclude_sections):          sections.append({'header': current_header, 'text': ' '.join(current_text)})
+        if not any(excl in current_header for excl in exclude_sections):
+            sections.append({'header': current_header, 'text': ' '.join(current_text)})
 
     # Clean text and return all included sections
     return [{'header': section['header'], 'text': clean_text(section['text'])} for section in sections]
@@ -79,8 +90,11 @@ def chunk_text(text, max_tokens=900):
     chunks = []
     current = ''
     for sent in sentences:
-        if len(current.split()) + len(sent.split()) < max_tokens:          current += ' ' + sent
-        else:          chunks.append(current.strip())          current = sent
+        if len(current.split()) + len(sent.split()) < max_tokens:
+            current += ' ' + sent
+        else:
+            chunks.append(current.strip())
+            current = sent
     if current:
         chunks.append(current.strip())
     return chunks
@@ -102,8 +116,13 @@ def summarize_with_transformer(text, model_name="facebook/bart-large-cnn", max_c
         summarizer = pipeline("summarization", model=model_name, tokenizer=model_name, use_fast=False)
         chunks = chunk_text(text, max_tokens=max_chunk_length)
         summaries = []
-        for chunk in chunks:          result = summarizer(chunk, max_length=max_length, min_length=60, do_sample=False)          summaries.append(result[0]['summary_text'])
-        if len(summaries) > 1:          combined = ' '.join(summaries)          final_summary = summarizer(combined, max_length=max_length, min_length=60, do_sample=False)[0]['summary_text']          return final_summary
+        for chunk in chunks:
+            result = summarizer(chunk, max_length=max_length, min_length=60, do_sample=False)
+            summaries.append(result[0]['summary_text'])
+        if len(summaries) > 1:
+            combined = ' '.join(summaries)
+            final_summary = summarizer(combined, max_length=max_length, min_length=60, do_sample=False)[0]['summary_text']
+            return final_summary
         return summaries[0]
     except Exception as e:
         print(f"Error during summarization: {e}")
@@ -134,12 +153,16 @@ def summarize_sections_single_paragraph(sections, model_name="facebook/bart-larg
     section_texts = {label: "" for _, label in section_keywords}
     for sec in sections:
         header = sec['header'].lower()
-        for key, label in section_keywords:          if key in header and not section_texts[label]:          section_texts[label] = sec['text']
+        for key, label in section_keywords:
+            if key in header and not section_texts[label]:
+                section_texts[label] = sec['text']
     # Summarize each section individually
     section_summaries = []
     for _, label in section_keywords:
         text = section_texts[label]
-        if text and len(text.split()) > 25:          summary = summarize_with_transformer(text, model_name=model_name, max_length=max_length)          section_summaries.append(summary)
+        if text and len(text.split()) > 25:
+            summary = summarize_with_transformer(text, model_name=model_name, max_length=max_length)
+            section_summaries.append(summary)
     # Concatenate all section summaries into a single paragraph
     return ' '.join(section_summaries)
 
@@ -158,8 +181,18 @@ def process_folder(input_folder, output_folder, model_name="facebook/bart-large-
     output_path.mkdir(parents=True, exist_ok=True)
 
     for input_file in input_path.glob("*.txt"):
-        try:          print(f"Processing file: {input_file.name}")          with open(input_file, "r", encoding="utf-8") as f:          txt = f.read()          sections = extract_sections_from_txt(txt)          summary = summarize_sections_single_paragraph(sections, model_name=model_name, max_length=max_length)          output_file = output_path / f"{input_file.stem}_summary.txt"          with open(output_file, "w", encoding="utf-8") as f:          f.write(summary)          print(f"Summary saved to: {output_file}")
-        except Exception as e:          print(f"Failed to process {input_file.name}: {e}")
+        try:
+            print(f"Processing file: {input_file.name}")
+            with open(input_file, "r", encoding="utf-8") as f:
+                txt = f.read()
+            sections = extract_sections_from_txt(txt)
+            summary = summarize_sections_single_paragraph(sections, model_name=model_name, max_length=max_length)
+            output_file = output_path / f"{input_file.stem}_summary.txt"
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(summary)
+            print(f"Summary saved to: {output_file}")
+        except Exception as e:
+            print(f"Failed to process {input_file.name}: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Summarize text files in a folder.")
