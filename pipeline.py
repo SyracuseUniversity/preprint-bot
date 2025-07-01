@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 End‑to‑End arXiv Preprint Recommender
 ====================================
