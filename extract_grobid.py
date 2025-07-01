@@ -5,6 +5,26 @@ from lxml import etree
 GROBID_URL = "http://localhost:8070/api/processFulltextDocument"
 NS = {'tei': 'http://www.tei-c.org/ns/1.0'}
 
+try:
+    import spacy
+    _NLP = spacy.load("en_core_web_sm", disable=["ner", "parser"])
+except Exception:          # spaCy not installed or model missing
+    _NLP = None
+
+def spacy_tokenize(text: str):
+    """
+    Split *text* into a list of sentences.
+    Falls back to a simple regex if spaCy or its model isn't available.
+    """
+    if _NLP is not None:
+        doc = _NLP(text)
+        return [sent.text.strip() for sent in doc.sents if sent.text and not sent.is_space]
+
+    # Fallback: naive rule-based split
+    import re
+    return [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+
+
 # extract PDF bytes from arXiv link
 def get_arxiv_pdf_bytes(arxiv_url):
     parsed = urlparse(arxiv_url)

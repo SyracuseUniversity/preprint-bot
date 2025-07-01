@@ -172,3 +172,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+arxiv_pipeline_data/
+my_papers/
+parsed_arxiv_outputs/
