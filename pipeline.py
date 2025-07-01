@@ -103,14 +103,14 @@ def fetch_and_parse_arxiv(category: str, max_results: int = 20 , *, skip_downloa
     if not skip_download:
         download_arxiv_pdfs(papers, output_folder=ARXIV_PDF_FOLDER, delay_seconds=2)
     else:
-        print("⏩  Skipping PDF download (assumed complete).")
+        print("Skipping PDF download (assumed complete).")
 
     # 2) Parse PDFs through GROBID -------------------------------------------
     if not skip_parse:
         print("\n▶ Parsing arXiv PDFs with GROBID…")
         grobid_process_folder(ARXIV_PDF_FOLDER, ARXIV_PROCESSED)
     else:
-        print("⏩  Skipping GROBID parsing (assumed complete).")
+        print("Skipping GROBID parsing (assumed complete).")
 
     return papers
 
@@ -118,7 +118,7 @@ def fetch_and_parse_arxiv(category: str, max_results: int = 20 , *, skip_downloa
 def summarise_arxiv(skip_summarize: bool = False):
     """Generate transformer summaries for every *_output.txt in ARXIV_PROCESSED."""
     if skip_summarize:
-        print("⏩  Skipping summarisation step.")
+        print(" Skipping summarisation step.")
         return
 
     print("\n▶ Generating transformer summaries (this can be slow)…")
@@ -168,10 +168,10 @@ def main():
 
     # Step 0 ‑ ensure user PDFs are parsed -----------------------------------
     if not os.listdir(USER_PROCESSED):
-        print("\n▶ Parsing user PDFs with GROBID…")
+        print("\nParsing user PDFs with GROBID…")
         grobid_process_folder(USER_PDF_FOLDER, USER_PROCESSED)
     else:
-        print("⏩  User PDFs already parsed → skipping.")
+        print(" User PDFs already parsed → skipping.")
 
     # Step 1/2/3 ‑ fetch, download, parse ------------------------------------
     papers_meta = fetch_and_parse_arxiv(
@@ -200,7 +200,7 @@ def main():
 
     # Step 7 ‑ collate & print results ---------------------------------------
     if not matches:
-        print("\n😔  No matches above threshold.  Try lowering --threshold?\n")
+        print("\nNo matches above threshold.  Try lowering --threshold?\n")
         sys.exit(0)
 
     print(f"\n★ Found {len(matches)} relevant papers:\n")
