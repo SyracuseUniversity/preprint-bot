@@ -1,45 +1,38 @@
 """
-End‑to‑End arXiv Preprint Recommender
-====================================
-This single script stitches together all the separate building‑blocks you already
-wrote (fetching, PDF download, GROBID parsing, summarisation, embedding and
-similarity matching) into one coherent command‑line pipeline.
+End-to-End arXiv Preprint Recommender
+
+This single script stitches together all the separate building blocks you already wrote—fetching, PDF download, GROBID parsing, summarisation, embedding and similarity matching—into one coherent command-line pipeline.
 
 Main stages
------------
-1. **Fetch** the most recent pre‑prints for a chosen arXiv category (via the helper
-   in `query_arxiv.py`).
-2. **Download** their PDFs and store them on disk (re‑uses `download_arxiv_pdfs.py`).
-3. **Parse** every PDF through GROBID and save a plain‑text `_output.txt` for each
-   (`grobid_parser.py`).
-4. **Summarise** each parsed paper with a transformer model (functions from
-   `summarization_script.py`).
-5. **Embed** abstracts *and* section chunks for both the user’s uploaded papers and
-   the fresh arXiv papers (`embed_papers.py`).
-6. **Match** user vs arXiv papers with a hybrid FAISS search and rank them
-   (`similarity_matcher.py`).
-7. **Report** the recommendations ‑ title, link, transformer summary (or abstract
-   fallback) and similarity score.
+
+Fetch the most recent pre-prints for a chosen arXiv category (via the helper in query_arxiv.py).
+
+Download their PDFs and store them on disk (re-uses download_arxiv_pdfs.py).
+
+Parse every PDF through GROBID and save a plain-text _output.txt for each (grobid_parser.py).
+
+Summarise each parsed paper with a transformer model (functions from summarization_script.py).
+
+Embed abstracts and section chunks for both the user’s uploaded papers and the fresh arXiv papers (embed_papers.py).
+
+Match user vs arXiv papers with a hybrid FAISS search and rank them (similarity_matcher.py).
+
+Report the recommendations – title, link, transformer summary (or abstract fallback) and similarity score.
 
 Usage
------
-```bash
-python end_to_end_pipeline.py --category cs.CL --threshold medium \
-                              --model all-MiniLM-L6-v2
-```
-Arguments
-~~~~~~~~~
-* `--category`      Which arXiv subject class to pull (default `cs.CL`).
-* `--threshold`     One of `low | medium | high` – see `config.py`.
-* `--model`         Any Sentence‑Transformer model name.
-* `--skip_*` flags  Useful for iterative runs; you can skip the slow bits once
-  they’ve completed (download/parse/summarise/embed).
+python end_to_end_pipeline.py --category cs.CL --threshold medium --model all-MiniLM-L6-v2
+
+SKipping expensive steps:
+Add the below in your command line to skip downloading, parsing, summarising or embedding steps:
+--skip_download	- Skips downloading arXiv PDFs
+--skip_parse - Skips parsing PDFs through GROBID
+--skip_summarize - Skips summarizing parsed texts
+--skip_embed - Skips generating embeddings for all papers
 
 Prerequisites
--------------
-* **GROBID** running locally on `http://localhost:8070`.
-* `transformers`, `sentence-transformers`, `faiss`, `nltk`, etc. installed.
-* Rename `summarization-script.py` → `summarization_script.py` (Python module‑safe).
+• GROBID running locally on http://localhost:8070
+• transformers, sentence-transformers, faiss, nltk, etc. installed
+• Rename summarization-script.py to summarization_script.py so it can be imported as a Python module
 """
 
 from __future__ import annotations
@@ -53,7 +46,7 @@ from pathlib import Path
 
 import feedparser  # only needed for very quick metadata conversion
 
-# --- Local project imports ----------------------------------------------------
+#Local project imports 
 from config import DATA_DIR, DEFAULT_MODEL_NAME
 from download_arxiv_pdfs import download_arxiv_pdfs
 from embed_papers import embed_abstracts, embed_sections
@@ -66,12 +59,10 @@ from similarity_matcher import hybrid_similarity_pipeline
 try:
     import summarization_script as summariser
 except ModuleNotFoundError as e:
-    print("❌  Could not import `summarization_script`.   Rename summarization-script.py → summarization_script.py")
+    print("Could not import `summarization_script`")
     raise e
 
-# ----------------------------------------------------------------------------##
 # Folder layout (overrides welcome via environment variables)                   #
-# ----------------------------------------------------------------------------##
 USER_PDF_FOLDER      = os.getenv("USER_PDF_FOLDER", "my_papers")
 ARXIV_PDF_FOLDER     = os.path.join(DATA_DIR, "arxiv_pdfs")
 USER_PROCESSED       = os.path.join(DATA_DIR, "processed_users")
@@ -81,9 +72,7 @@ ARXIV_SUMMARY_FOLDER = os.path.join(DATA_DIR, "summaries_arxiv")
 for p in [ARXIV_PDF_FOLDER, USER_PROCESSED, ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDER]:
     os.makedirs(p, exist_ok=True)
 
-# ----------------------------------------------------------------------------##
 # Helpers                                                                       #
-# ----------------------------------------------------------------------------##
 
 def fetch_and_parse_arxiv(category: str, max_results: int = 20 , *, skip_download: bool = False, skip_parse: bool = False):
     """Return a list of metadata dicts for freshly‑fetched arXiv papers.
@@ -110,7 +99,7 @@ def fetch_and_parse_arxiv(category: str, max_results: int = 20 , *, skip_downloa
     if skip_download and skip_parse:
         return papers
 
-    # 1) Download PDFs --------------------------------------------------------
+    # 1) Download PDFs ----
     if not skip_download:
         download_arxiv_pdfs(papers, output_folder=ARXIV_PDF_FOLDER, delay_seconds=2)
     else:
@@ -126,9 +115,9 @@ def fetch_and_parse_arxiv(category: str, max_results: int = 20 , *, skip_downloa
     return papers
 
 
-def summarise_arxiv(skip_summarise: bool = False):
+def summarise_arxiv(skip_summarize: bool = False):
     """Generate transformer summaries for every *_output.txt in ARXIV_PROCESSED."""
-    if skip_summarise:
+    if skip_summarize:
         print("⏩  Skipping summarisation step.")
         return
 
@@ -161,9 +150,7 @@ def embed_corpora(model_name: str, *, skip_embed: bool = False):
     return (user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files)
 
 
-# ----------------------------------------------------------------------------##
 # Main driver                                                                   #
-# ----------------------------------------------------------------------------##
 
 def main():
     parser = argparse.ArgumentParser(description="Run the full arXiv→recommendation pipeline.")
@@ -174,7 +161,7 @@ def main():
     # Convenience flags to skip expensive work on dev re‑runs
     parser.add_argument("--skip-download",   action="store_true")
     parser.add_argument("--skip-parse",      action="store_true")
-    parser.add_argument("--skip-summarise",  action="store_true")
+    parser.add_argument("--skip-summarize",  action="store_true")
     parser.add_argument("--skip-embed",      action="store_true")  # mostly not used; embed step is fast
 
     args = parser.parse_args()
@@ -193,11 +180,11 @@ def main():
         skip_parse=args.skip_parse,
     )
 
-    # Step 4 ‑ summarise ------------------------------------------------------
-    summarise_arxiv(skip_summarise=args.skip_summarise)
+    # Step 4 ‑ summarise --
+    summarise_arxiv(skip_summarize=args.skip_summarize)
     summary_map = load_summary_map()
 
-    # Step 5 ‑ embed ----------------------------------------------------------
+    # Step 5 ‑ embed ------
     user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files = embed_corpora(
         model_name=args.model,
     )

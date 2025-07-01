@@ -56,7 +56,7 @@ def embed_abstracts(processed_folder, model_name):
 
         # Skip files that don't contain at least title and abstract
         if len(lines) < 2:
-            print(f"⚠️ Skipping malformed file: {file}")
+            print(f"Skipping malformed file: {file}")
             continue
 
         title = lines[0].replace("Title: ", "").strip()

@@ -109,6 +109,6 @@ def process_folder(input_folder, output_folder):
                 f.write("Sections:\n")
                 for sec in result['sections']:
                     f.write(f"\n- {sec['header']}:\n{sec['text']}\n")
-            print(f"✅ Saved: {output_file}")
+            print(f"Saved: {output_file}")
         except Exception as e:
-            print(f"❌ Failed to process {pdf_file.name}: {e}")
+            print(f"Failed to process {pdf_file.name}: {e}")
