@@ -20,7 +20,7 @@ Match user vs arXiv papers with a hybrid FAISS search and rank them (similarity_
 Report the recommendations – title, link, transformer summary (or abstract fallback) and similarity score.
 
 Usage
-python end_to_end_pipeline.py --category cs.CL --threshold medium --model all-MiniLM-L6-v2
+python pipeline.py --category cs.CL --threshold medium --model all-MiniLM-L6-v2
 
 SKipping expensive steps:
 Add the below in your command line to skip downloading, parsing, summarising or embedding steps:
@@ -50,7 +50,7 @@ import feedparser  # only needed for very quick metadata conversion
 from config import DATA_DIR, DEFAULT_MODEL_NAME
 from download_arxiv_pdfs import download_arxiv_pdfs
 from embed_papers import embed_abstracts, embed_sections
-from grobid_parser import extract_grobid_sections, process_folder as grobid_process_folder
+from extract_grobid import process_folder as grobid_process_folder
 from query_arxiv import get_recent_arxiv_entries
 from similarity_matcher import hybrid_similarity_pipeline
 

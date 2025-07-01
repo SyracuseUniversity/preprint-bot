@@ -1,135 +1,121 @@
+import os
+import re
 import requests
-from urllib.parse import urlparse
 from lxml import etree
+from pathlib import Path
+from urllib.parse import urlparse
 
+# Optional spaCy tokenizer
+try:
+    import spacy
+    NLP = spacy.load("en_core_web_sm")
+except ImportError:
+    NLP = None
+
+# Constants
 GROBID_URL = "http://localhost:8070/api/processFulltextDocument"
 NS = {'tei': 'http://www.tei-c.org/ns/1.0'}
 
-try:
-    import spacy
-    _NLP = spacy.load("en_core_web_sm", disable=["ner", "parser"])
-except Exception:          # spaCy not installed or model missing
-    _NLP = None
-
-def spacy_tokenize(text: str):
+def spacy_tokenize(text):
     """
-    Split *text* into a list of sentences.
-    Falls back to a simple regex if spaCy or its model isn't available.
+    Tokenizes input text into sentences using spaCy if available,
+    otherwise falls back to splitting on double newlines.
     """
-    if _NLP is not None:
-        doc = _NLP(text)
-        return [sent.text.strip() for sent in doc.sents if sent.text and not sent.is_space]
+    if NLP:
+        return [sent.text.strip() for sent in NLP(text).sents]
+    else:
+        return [s.strip() for s in text.split("\n\n") if s.strip()]
 
-    # Fallback: naive rule-based split
-    import re
-    return [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
-
-
-# extract PDF bytes from arXiv link
-def get_arxiv_pdf_bytes(arxiv_url):
-    parsed = urlparse(arxiv_url)
-    if "arxiv.org" not in parsed.netloc:
-        raise ValueError("Not a valid arXiv link")
-    
-    arxiv_id = parsed.path.strip("/").split("/")[-1]
-    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
-
-    print(f"Fetching {pdf_url}")
-    response = requests.get(pdf_url)
-    if response.status_code != 200:
-        raise Exception(f"Failed to download PDF: {response.status_code}")
-    return response.content, arxiv_id
-
-# send to GROBID and extract sections
 def extract_grobid_sections_from_bytes(pdf_bytes):
-    response = requests.post(GROBID_URL, files={'input': ('paper.pdf', pdf_bytes)})
-    if response.status_code != 200:
-        raise Exception(f"GROBID error: {response.status_code}")
-    
-    xml = etree.fromstring(response.content)
+    """
+    Send PDF bytes to GROBID and extract metadata, abstract, sections, and references.
 
-    title = xml.findtext('.//tei:titleStmt/tei:title', namespaces=NS) or "N/A"
-    abstract_node = xml.find('.//tei:profileDesc/tei:abstract', namespaces=NS)
-    abstract = " ".join(p.text for p in abstract_node.findall('.//tei:p', namespaces=NS)) if abstract_node is not None else "N/A"
+    Returns:
+        dict with: title, abstract, authors, affiliations, publication_date, sections, references
+    """
+    response = requests.post(
+        GROBID_URL,
+        files={'input': ('file.pdf', pdf_bytes)},
+        data={'consolidateHeader': '1'},
+        timeout=30
+    )
+    response.raise_for_status()
+    root = etree.fromstring(response.content)
 
-    # Authors
-    authors = []
-    for pers in xml.findall('.//tei:sourceDesc//tei:analytic//tei:author', namespaces=NS):
-        name = pers.find('.//tei:persName', namespaces=NS)
-        if name is not None:
-            full_name = " ".join(filter(None, [
-                name.findtext('tei:forename', namespaces=NS),
-                name.findtext('tei:surname', namespaces=NS)]))
-            full_name = full_name.replace(", -", "-")
-            authors.append(full_name)
+    def xpath_text(el, path):
+        found = el.find(path, NS)
+        return found.text.strip() if found is not None and found.text else ""
 
-    # Affiliations
-    affiliations = []
-    for aff in xml.findall('.//tei:affiliation/tei:orgName[@type="institution"]', namespaces=NS):
-        if aff.text:
-            affiliations.append(aff.text)
+    title = xpath_text(root, ".//tei:titleStmt/tei:title")
+    abstract = xpath_text(root, ".//tei:profileDesc/tei:abstract")
+    authors = [
+        " ".join(filter(None, [
+            author.findtext("tei:forename", namespaces=NS),
+            author.findtext("tei:surname", namespaces=NS)
+        ])).strip()
+        for author in root.findall(".//tei:sourceDesc//tei:author", NS)
+    ]
+    affiliations = [
+        aff.text.strip() for aff in root.findall(".//tei:sourceDesc//tei:affiliation", NS)
+        if aff is not None and aff.text
+    ]
+    publication_date = xpath_text(root, ".//tei:sourceDesc//tei:date")
 
-    # Publication Date
-    pub_date = xml.findtext('.//tei:publicationStmt/tei:date', namespaces=NS) or "N/A"
-
-    # Section headers and paragraphs
     sections = []
-    for div in xml.findall('.//tei:text//tei:body//tei:div', namespaces=NS):
-        
-        header = div.findtext('tei:head', namespaces=NS) or "[no section title]"
-        paragraphs = " ".join(p.text.strip() for p in div.findall('tei:p', namespaces=NS) if p.text)
-        sections.append({'header': header, 'text': paragraphs})
+    for div in root.findall(".//tei:body//tei:div", NS):
+        head = xpath_text(div, "tei:head")
+        paragraphs = [p.text.strip() for p in div.findall("tei:p", NS) if p.text]
+        full_text = "\n".join(paragraphs)
+        if full_text:
+            sections.append((head or "Untitled Section", full_text))
 
-    # References
     references = []
-    for bibl in xml.findall('.//tei:listBibl//tei:biblStruct', namespaces=NS):
-        ref_title = bibl.findtext('.//tei:title', namespaces=NS)
-        ref_authors = []
-        
-        for pers in bibl.findall('.//tei:author', namespaces=NS):
-            pers_name = pers.find('tei:persName', namespaces=NS)
-            
-            if pers_name is not None:
-                forename = pers_name.findtext('tei:forename', namespaces=NS) or ''
-                surname = pers_name.findtext('tei:surname', namespaces=NS) or ''
-                full_name = " ".join(filter(None, [forename.strip(), surname.strip()]))
-                
-                if full_name:
-                    ref_authors.append(full_name)
-        references.append({
-            'title': ref_title or "N/A",
-            'authors': ref_authors if ref_authors else []
-        })
+    for ref in root.findall(".//tei:listBibl//tei:biblStruct", NS):
+        title = xpath_text(ref, ".//tei:title")
+        authors = [p.text for p in ref.findall(".//tei:author//tei:surname", NS) if p.text]
+        if title or authors:
+            references.append({
+                "title": title,
+                "authors": authors
+            })
 
     return {
-        'title': title.strip(),
-        'abstract': abstract.strip(),
-        'authors': authors,
-        'affiliations': affiliations,
-        'pub_date': pub_date.strip(),
-        'sections': sections,
-        'references': references
+        "title": title,
+        "abstract": abstract,
+        "authors": authors,
+        "affiliations": affiliations,
+        "publication_date": publication_date,
+        "sections": sections,
+        "references": references
     }
 
 
-if __name__ == "__main__":
-    arxiv_url = "https://arxiv.org/abs/2304.12345"
-    pdf_bytes, arxiv_id = get_arxiv_pdf_bytes(arxiv_url)
-    result = extract_grobid_sections_from_bytes(pdf_bytes)
+def process_folder(folder_path, output_folder):
+    """
+    Batch process all PDFs in a folder via GROBID and save output text files.
 
-    # write everything to output file
-    with open(f"{arxiv_id}_output.txt", "w", encoding="utf-8") as f:
-        f.write(f"Title: {result['title']}\n")
-        f.write(f"Abstract: {result['abstract']}\n\n")
-        f.write(f"Authors: {', '.join(result['authors'])}\n")
-        f.write(f"Affiliations: {', '.join(result['affiliations'])}\n")
-        f.write(f"Publication Date: {result['pub_date']}\n\n")
+    Args:
+        folder_path (str): Path to input PDFs
+        output_folder (str): Folder to store _output.txt files
+    """
+    os.makedirs(output_folder, exist_ok=True)
+    pdf_paths = list(Path(folder_path).rglob("*.pdf"))
+    print(f"Found {len(pdf_paths)} PDFs in {folder_path}")
 
-        f.write("Sections:\n")
-        for sec in result['sections']:
-            f.write(f"\n- {sec['header']}:\n{sec['text']}\n")
-
-        f.write("\nReferences:\n")
-        for ref in result['references']:
-            fixed_author_line = ", ".join(ref['authors']).replace(", -", "-")
-            f.write(f"- {ref['title']}\n  by {fixed_author_line}\n")
+    for pdf in pdf_paths:
+        try:
+            info = extract_grobid_sections(pdf)
+            out_file = Path(output_folder) / f"{pdf.stem}_output.txt"
+            with open(out_file, "w", encoding="utf-8") as f:
+                f.write(f"# {info['title']}\n\n")
+                f.write(f"## Abstract\n{info['abstract']}\n\n")
+                f.write(f"## Authors\n{', '.join(info['authors'])}\n\n")
+                f.write(f"## Affiliations\n{', '.join(info['affiliations'])}\n\n")
+                for section_title, section_text in info["sections"]:
+                    f.write(f"### {section_title}\n{section_text}\n\n")
+                if info.get("references"):
+                    f.write("## References\n")
+                    for ref in info["references"]:
+                        f.write(f"- {ref['title']} ({', '.join(ref['authors'])})\n")
+        except Exception as e:
+            print(f"Failed to process {pdf.name}: {e}")
