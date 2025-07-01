@@ -5,6 +5,7 @@ from nltk.tokenize import sent_tokenize
 from nltk import download
 from transformers import pipeline
 import argparse
+from transformers import AutoTokenizer
 
 # Fallback for NLTK punkt_tab bug on Python 3.13
 try:
@@ -74,58 +75,61 @@ def extract_sections_from_txt(txt, exclude_sections=None):
     # Clean text and return all included sections
     return [clean_text(section['text']) for section in sections]
 
-def chunk_text(text, max_tokens=900):
+def chunk_text(text, tokenizer, max_tokens=900):
     """
-    Splits the input text into smaller chunks of up to `max_tokens` words.
-
-    Args:
-        text (str): The input text to chunk.
-        max_tokens (int): Maximum number of tokens per chunk.
-
-    Returns:
-        list: A list of text chunks.
+    Splits *text* so that each chunk is ≤ *max_tokens* **token** IDs
+    (not words).  Works for any HF tokenizer.
     """
-    sentences = sent_tokenize(text)
+    token_ids = tokenizer.encode(
+        text,
+        add_special_tokens=False,
+        return_tensors=None,
+    )
     chunks = []
-    current = ''
-    for sent in sentences:
-        if len(current.split()) + len(sent.split()) < max_tokens:
-            current += ' ' + sent
-        else:
-            chunks.append(current.strip())
-            current = sent
-    if current:
-        chunks.append(current.strip())
+    for i in range(0, len(token_ids), max_tokens):
+        ids = token_ids[i : i + max_tokens]
+        chunks.append(tokenizer.decode(ids, skip_special_tokens=True))
     return chunks
 
-def summarize_with_transformer(text, model_name="facebook/bart-large-cnn", max_chunk_length=900, max_length=180):
-    """
-    Summarizes the input text using a transformer-based summarization model.
+def summarize_with_transformer(text, model_name="facebook/bart-large-cnn",
+                               max_chunk_length=900, max_length=180):
 
-    Args:
-        text (str): The input text to summarize.
-        model_name (str): The name of the transformer model to use.
-        max_chunk_length (int): Maximum number of tokens per chunk.
-        max_length (int): Maximum length of the summary.
+    tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    summarizer = pipeline("summarization",
+                          model=model_name,
+                          tokenizer=tokenizer,
+                          device=-1,       # keep CPU (-1) or change to 0 for CUDA
+                          truncation=True) # <- always truncate safely
 
-    Returns:
-        str: The summarized text.
-    """
-    try:
-        summarizer = pipeline("summarization", model=model_name, tokenizer=model_name, use_fast=False)
-        chunks = chunk_text(text, max_tokens=max_chunk_length)
-        summaries = []
-        for chunk in chunks:
-            result = summarizer(chunk, max_length=max_length, min_length=60, do_sample=False)
-            summaries.append(result[0]['summary_text'])
-        if len(summaries) > 1:
-            combined = ' '.join(summaries)
-            final_summary = summarizer(combined, max_length=max_length, min_length=60, do_sample=False)[0]['summary_text']
-            return final_summary
-        return summaries[0]
-    except Exception as e:
-        print(f"Error during summarization: {e}")
+    chunks = chunk_text(text, tokenizer, max_tokens=max_chunk_length)
+    if not chunks:          # nothing to summarise
+        return ""
+
+    summaries = []
+    for chunk in chunks:
+        try:
+            result = summarizer(chunk,
+                                max_length=max_length,
+                                min_length=60,
+                                do_sample=False,
+                                truncation=True)
+            summaries.append(result[0]["summary_text"])
+        except Exception as e:
+            print(f"⚠️  Skipping tiny chunk: {e}")
+
+    if not summaries:
         return "Error: Summarization failed."
+
+    if len(summaries) == 1:
+        return summaries[0]
+
+    combined = " ".join(summaries)
+    return summarizer(combined,
+                      max_length=max_length,
+                      min_length=60,
+                      do_sample=False,
+                      truncation=True)[0]["summary_text"]
+
 
 def hierarchical_summarization(sections, model_name="facebook/bart-large-cnn", max_length=180):
     """
@@ -153,13 +157,13 @@ def hierarchical_summarization(sections, model_name="facebook/bart-large-cnn", m
 
 def process_folder(input_folder, output_folder, model_name="facebook/bart-large-cnn", max_length=180):
     """
-    Processes all text files in the input folder, summarizes their content, and saves the summaries.
+    Summarizes the entire cleaned content of each input file directly, without section parsing.
 
     Args:
-        input_folder (str): Path to the folder containing input text files.
-        output_folder (str): Path to the folder where summaries will be saved.
-        model_name (str): The name of the transformer model to use.
-        max_length (int): Maximum length of the summary.
+        input_folder (str): Path to folder containing GROBID-parsed `.txt` files.
+        output_folder (str): Where to write *_summary.txt files.
+        model_name (str): HuggingFace summarization model to use.
+        max_length (int): Max summary length.
     """
     input_path = Path(input_folder)
     output_path = Path(output_folder)
@@ -169,19 +173,19 @@ def process_folder(input_folder, output_folder, model_name="facebook/bart-large-
         try:
             print(f"Processing file: {input_file.name}")
             with open(input_file, "r", encoding="utf-8") as f:
-                txt = f.read()
+                raw_text = f.read()
 
-            # Extract sections and summarize
-            selected_sections = extract_sections_from_txt(txt)
-            summary = hierarchical_summarization(selected_sections, model_name=model_name, max_length=max_length)
+            cleaned = clean_text(raw_text)
+            summary = summarize_with_transformer(cleaned, model_name=model_name, max_length=max_length)
 
-            # Save summary to output folder
             output_file = output_path / f"{input_file.stem}_summary.txt"
             with open(output_file, "w", encoding="utf-8") as f:
                 f.write(summary)
+
             print(f"Summary saved to: {output_file}")
         except Exception as e:
             print(f"Failed to process {input_file.name}: {e}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Summarize text files in a folder.")
