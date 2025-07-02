@@ -1,7 +1,0 @@
-torch>=2.2.0
-sentence-transformers>=2.7.0
-faiss-cpu>=1.7.4
-numpy>=1.24.0
-requests>=2.32.0
-feedparser>=6.0.10
-lxml>=5.2.1
