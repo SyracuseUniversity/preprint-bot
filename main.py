@@ -15,7 +15,7 @@ python main.py [similarity_threshold] [model_name] (default: medium, all-MiniLM-
 
 from fetch_arxiv import fetch_arxiv_papers
 from download_arxiv_pdfs import download_arxiv_pdfs
-from grobid_parser import process_folder
+from extract_grobid import process_folder 
 from embed_papers import embed_abstracts, embed_sections
 from similarity_matcher import hybrid_similarity_pipeline
 from config import *
@@ -56,17 +56,17 @@ def main(threshold_label="medium", model_name=DEFAULT_MODEL_NAME):
 
     # Uncomment the following lines if PDFs are not yet downloaded or parsed
 
-    # # Download arXiv PDFs and save to disk
-    # print("\nDownloading PDFs...")
-    # download_arxiv_pdfs(all_papers, ARXIV_PDF_FOLDER)
+    # Download arXiv PDFs and save to disk
+    print("\nDownloading PDFs...")
+    download_arxiv_pdfs(all_papers, ARXIV_PDF_FOLDER)
 
-    # # # Parse user-uploaded PDFs using GROBID and store structured outputs
-    # print("\nParsing user papers with GROBID...")
-    # process_folder(USER_PDF_FOLDER, USER_PROCESSED)
+    # # Parse user-uploaded PDFs using GROBID and store structured outputs
+    print("\nParsing user papers with GROBID...")
+    process_folder(USER_PDF_FOLDER, USER_PROCESSED)
 
-    # # # Parse arXiv PDFs using GROBID and store structured outputs
-    # print("\nParsing arXiv papers with GROBID...")
-    # process_folder(ARXIV_PDF_FOLDER, ARXIV_PROCESSED)
+    # # Parse arXiv PDFs using GROBID and store structured outputs
+    print("\nParsing arXiv papers with GROBID...")
+    process_folder(ARXIV_PDF_FOLDER, ARXIV_PROCESSED)
 
     # Step 1: Embed abstracts from user papers
     print("\nEmbedding user abstracts...")
