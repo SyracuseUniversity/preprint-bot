@@ -1,22 +1,7 @@
-# Core dependencies
-numpy
-requests
-feedparser
-lxml
-uuid
-tqdm
-
-# PDF parsing
-PyMuPDF  # for fitz
-
-# NLP Embeddings
-sentence-transformers
-
-# Similarity Search
-faiss-cpu  # for FAISS; use faiss-gpu if you're on GPU and installed it properly
-
-# Optional: If you're using torch for SentenceTransformer
-torch
-
-# Optional but recommended
-pandas
+torch>=2.2.0
+sentence-transformers>=2.7.0
+faiss-cpu>=1.7.4
+numpy>=1.24.0
+requests>=2.32.0
+feedparser>=6.0.10
+lxml>=5.2.1
