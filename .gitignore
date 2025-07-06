@@ -172,3 +172,13 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Folders
+arxiv_pipeline_data
+arxiv_pipeline_data/arxiv_cs_papers.json
+arxiv_pipeline_data/ranked_matches.json
+my_papers
+arxiv_pipeline_data/arxiv_cs_papers.json
+arxiv_pipeline_data/ranked_matches.json
+main/arxiv_pipeline_data/arxiv_cs_papers.json
+main/
