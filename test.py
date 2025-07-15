@@ -6,6 +6,7 @@ from summarization_script import (
     extract_sections_from_txt,
     summarize_with_transformer,
     summarize_sections_single_paragraph,
+    process_folder,
 )
 
 
@@ -147,3 +148,54 @@ def test_summarize_sections_single_paragraph(mock_pipeline):
     expected_summary = ("This is a summary. " * 3).strip()
     summary = summarize_sections_single_paragraph(sections)
     assert summary == expected_summary, "The single-paragraph summary is incorrect."
+
+
+# --- process_folder tests with tmp_path and capsys ---
+
+def test_process_folder_creates_summaries(tmp_path, mock_pipeline, capsys):
+    """
+    Test that process_folder reads input files, summarizes, and writes output files.
+
+    Uses tmp_path for temporary input/output directories and capsys to capture print output.
+    """
+    # Setup input and output directories
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "summaries"
+    input_dir.mkdir()
+    output_dir.mkdir()
+
+    # Sample input files
+    sample_text_1 = """
+    Sections:
+    - Introduction: This is the introduction section.
+    - Methods: Methodology details.
+    - Results: Results here.
+    - Conclusion: Conclusion text.
+    """
+    sample_text_2 = """
+    Sections:
+    - Introduction: Another intro.
+    - Results: Some results.
+    - Discussion: Discussion text.
+    - Conclusion: Final conclusion.
+    """
+
+    (input_dir / "paper1.txt").write_text(sample_text_1)
+    (input_dir / "paper2.txt").write_text(sample_text_2)
+
+    # Run the summarization process
+    process_folder(str(input_dir), str(output_dir), max_length=100)
+
+    # Capture printed output
+    captured = capsys.readouterr()
+    assert "Processing file: paper1.txt" in captured.out
+    assert "Summary saved to:" in captured.out
+
+    # Verify summary files are created
+    summary_files = list(output_dir.glob("*_summary.txt"))
+    assert len(summary_files) == 2, "Should create summary files for each input file"
+
+    # Verify content of each summary file contains some text (not empty)
+    for summary_file in summary_files:
+        content = summary_file.read_text()
+        assert len(content) > 0, f"Summary file {summary_file.name} is empty"
