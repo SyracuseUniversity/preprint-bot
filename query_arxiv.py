@@ -96,6 +96,52 @@ def main(category):
         except Exception as e:
             print(f"Error with {entry.id}: {e}")
 
+def fetch_and_parse(category: str):
+    """
+    Fetches and processes recent arXiv entries using GROBID.
+
+    Returns a list of metadata dicts: {title, summary, arxiv_url, published}
+    """
+    entries = get_recent_arxiv_entries(category, MAX_RESULTS)
+    print(f"Fetched {len(entries)} entries from arXiv.")
+
+    for entry in entries:
+        try:
+            arxiv_id = entry.id.split('/')[-1]
+            print(f"\nProcessing {arxiv_id}")
+            pdf_bytes, _ = get_arxiv_pdf_bytes(entry.id)
+            result = extract_grobid_sections_from_bytes(pdf_bytes)
+
+            tokenized = {
+                'title': spacy_tokenize(result['title']),
+                'abstract': spacy_tokenize(result['abstract']),
+                'sections': [
+                    {
+                        'header': sec['header'],
+                        'tokens': spacy_tokenize(sec['text'])
+                    } for sec in result['sections']
+                ]
+            }
+
+            write_output(arxiv_id, result, tokenized)
+            write_jsonl(arxiv_id, result, tokenized)
+
+            time.sleep(30)  # Rate limiting
+
+        except Exception as e:
+            print(f"Error with {entry.id}: {e}")
+
+    return [
+        {
+            "title": e.title,
+            "summary": e.summary,
+            "arxiv_url": e.id,
+            "published": e.published
+        }
+        for e in entries
+    ]
+
+
 import argparse
 
 if __name__ == "__main__":
