@@ -1,4 +1,4 @@
-Sure! Here's your test code with added function descriptions explaining why each test exists and how it works:
+
 
 import pytest
 from unittest.mock import MagicMock, patch
@@ -240,6 +240,3 @@ def test_summarize_with_transformer_loads_model():
     print(f"Real summarization output: {summary}")
     assert isinstance(summary, str)
     assert len(summary) > 0
-
-
-Let me know if you want me to help with anything else!
