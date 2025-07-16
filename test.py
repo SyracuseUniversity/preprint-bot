@@ -1,3 +1,5 @@
+Sure! Here's your test code with added function descriptions explaining why each test exists and how it works:
+
 import pytest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
@@ -15,6 +17,10 @@ from summarization_script import (
 
 @pytest.fixture
 def mock_summarizer():
+    """
+    Provides a mock summarization pipeline that always returns a fixed summary.
+    Used to isolate tests from the actual transformer model for speed and consistency.
+    """
     mock = MagicMock()
     mock.return_value = [{"summary_text": "This is a summary."}]
     return mock
@@ -22,6 +28,10 @@ def mock_summarizer():
 
 @pytest.fixture
 def sample_text():
+    """
+    Sample multi-section text used to test section extraction and summarization.
+    Contains typical document sections like Introduction, Methods, Results, etc.
+    """
     return """
     Sections:
     - Introduction: This is the introduction section. It provides an overview of the document.
@@ -36,9 +46,12 @@ def sample_text():
 # --- chunk_text tests ---
 
 def test_chunk_text():
+    """
+    Tests that chunk_text splits input text into chunks correctly based on max tokens.
+    Verifies that all sentences are present in the combined chunks.
+    """
     text = "This is sentence one. This is sentence two. This is sentence three."
     chunks = chunk_text(text, max_tokens=5)
-    # We expect chunks to cover all sentences in some grouping
     combined = " ".join(chunks)
     assert "sentence one" in combined
     assert "sentence two" in combined
@@ -47,14 +60,21 @@ def test_chunk_text():
 
 
 def test_chunk_text_empty():
+    """
+    Tests chunk_text behavior on empty input.
+    Expected to return a list with an empty string.
+    """
     chunks = chunk_text("", max_tokens=5)
-    # Your original code returns [''], so test accordingly
     assert chunks == [""]
 
 
 # --- clean_text tests ---
 
 def test_clean_text():
+    """
+    Tests that clean_text removes unwanted characters like line breaks and reference markers.
+    Ensures output text is cleaned as expected.
+    """
     raw_text = "This is a test text-\nwith line breaks and [1] references."
     expected_output = "This is a test textwith line breaks and  references."
     assert clean_text(raw_text) == expected_output
@@ -63,6 +83,10 @@ def test_clean_text():
 # --- extract_sections_from_txt tests ---
 
 def test_extract_sections_from_txt(sample_text):
+    """
+    Tests that extract_sections_from_txt correctly extracts all sections from sample text.
+    Checks that the number of sections and first section header are as expected.
+    """
     sections = extract_sections_from_txt(sample_text, exclude_sections=[])
     assert len(sections) == 6
     assert sections[0]["header"] == "introduction"
@@ -70,6 +94,10 @@ def test_extract_sections_from_txt(sample_text):
 
 
 def test_extract_sections_with_exclusion(sample_text):
+    """
+    Tests that extract_sections_from_txt excludes specified sections properly.
+    Verifies that excluded headers like 'references' and 'acknowledgements' are omitted.
+    """
     sections = extract_sections_from_txt(
         sample_text,
         exclude_sections=["acknowledgement", "acknowledgements", "reference", "references"]
@@ -83,6 +111,10 @@ def test_extract_sections_with_exclusion(sample_text):
 # --- summarize_with_transformer tests ---
 
 def test_summarize_with_transformer(mock_summarizer):
+    """
+    Tests summarize_with_transformer using a mocked summarizer.
+    Ensures that the function returns the expected fixed summary for non-empty input.
+    """
     with patch("summarization_script.pipeline", return_value=mock_summarizer):
         text = "This is a long text that needs summarization."
         summary = summarize_with_transformer(text)
@@ -90,6 +122,10 @@ def test_summarize_with_transformer(mock_summarizer):
 
 
 def test_summarize_with_transformer_empty(mock_summarizer):
+    """
+    Tests summarize_with_transformer with empty input text.
+    Verifies that the mocked summarizer still returns the fixed summary.
+    """
     with patch("summarization_script.pipeline", return_value=mock_summarizer):
         text = ""
         summary = summarize_with_transformer(text)
@@ -99,6 +135,10 @@ def test_summarize_with_transformer_empty(mock_summarizer):
 # --- summarize_sections_single_paragraph tests ---
 
 def test_summarize_sections_single_paragraph(mock_summarizer):
+    """
+    Tests summarizing multiple sections combined into a single paragraph.
+    Uses mocked summarizer and verifies concatenated summary output.
+    """
     with patch("summarization_script.pipeline", return_value=mock_summarizer):
         sections = [
             {"header": "introduction", "text": "This is the introduction. " * 30},
@@ -113,6 +153,12 @@ def test_summarize_sections_single_paragraph(mock_summarizer):
 # --- process_folder test with tmp_path ---
 
 def test_process_folder_with_tmp_path(tmp_path, mock_summarizer):
+    """
+    Integration test for process_folder function.
+    Creates temporary input/output directories with sample files,
+    patches the summarization pipeline with a mock,
+    runs processing, and verifies summary files are created and non-empty.
+    """
     input_dir = tmp_path / "input"
     output_dir = tmp_path / "output"
     input_dir.mkdir()
@@ -132,7 +178,6 @@ Sections:
 
 """
 
- 
     (input_dir / "file1.txt").write_text(sample_text)
     (input_dir / "file2.txt").write_text(sample_text)
 
@@ -148,6 +193,10 @@ Sections:
 
 
 def test_process_folder_handles_corrupted_file(tmp_path):
+    """
+    Tests process_folder's behavior when encountering a corrupted file.
+    Writes invalid bytes to a file and verifies that an error message is printed.
+    """
     bad_file = tmp_path / "badfile.txt"
     bad_file.write_bytes(b"\xff\xfe\xfd")
 
@@ -163,6 +212,10 @@ def test_process_folder_handles_corrupted_file(tmp_path):
 # --- test loading transformer pipeline from transformers package ---
 
 def test_load_transformer_pipeline():
+    """
+    Tests that the Hugging Face transformers pipeline for summarization can be loaded.
+    Verifies that the returned object is callable.
+    """
     from transformers import pipeline
 
     summarizer = pipeline(
@@ -177,8 +230,16 @@ def test_load_transformer_pipeline():
 # --- run slow real model test (no skip) ---
 
 def test_summarize_with_transformer_loads_model():
+    """
+    Runs the real summarization model on a sample text.
+    Prints the output and asserts the summary is a non-empty string.
+    This test is slow but ensures end-to-end functionality with the actual model.
+    """
     text = "This is a test text to summarize."
     summary = summarize_with_transformer(text, max_chunk_length=50, max_length=50)
     print(f"Real summarization output: {summary}")
     assert isinstance(summary, str)
     assert len(summary) > 0
+
+
+Let me know if you want me to help with anything else!
