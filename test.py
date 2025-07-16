@@ -174,13 +174,11 @@ def test_load_transformer_pipeline():
     assert callable(summarizer)
 
 
-# --- skip slow real model test unless explicitly enabled ---
+# --- run slow real model test (no skip) ---
 
-@pytest.mark.skip(reason="skip slow huggingface model test")
 def test_summarize_with_transformer_loads_model():
     text = "This is a test text to summarize."
     summary = summarize_with_transformer(text, max_chunk_length=50, max_length=50)
     print(f"Real summarization output: {summary}")
     assert isinstance(summary, str)
     assert len(summary) > 0
- 
