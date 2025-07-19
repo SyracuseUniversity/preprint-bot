@@ -60,7 +60,7 @@ def build_email_html(papers):
 def send_email(sender_email, sender_password):
     # Load recommended papers JSON
     if not os.path.exists(JSON_PATH):
-        print(f"❌ JSON file not found at {JSON_PATH}")
+        print(f"JSON file not found at {JSON_PATH}")
         return
 
     with open(JSON_PATH, "r", encoding="utf-8") as f:
@@ -84,9 +84,9 @@ def send_email(sender_email, sender_password):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, RECIPIENT_EMAIL, msg.as_string())
-        print(f"✅ Email sent successfully to {RECIPIENT_EMAIL}")
+        print(f"Email sent successfully to {RECIPIENT_EMAIL}")
     except Exception as e:
-        print(f"❌ Failed to send email: {e}")
+        print(f"Failed to send email: {e}")
 
 if __name__ == "__main__":
     import getpass
