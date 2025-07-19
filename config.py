@@ -14,19 +14,19 @@ import os
 # List of arXiv subject categories to query. Add more categories this as needed.
 ARXIV_CATEGORIES = [
     # Astrophysics category from arXiv
-    "cs.AI", 
+    "cs.LG", 
 ]
 
 # Predefined similarity thresholds for filtering paper recommendations
 # These represent cosine similarity scores between embedding vectors
 SIMILARITY_THRESHOLDS = {
-    "low": 0.6,     # Broad match
-    "medium": 0.7,  # Balanced relevance
-    "high": 0.8    # Very high relevance
+    "low": 0.5,     # Broad match
+    "medium": 0.6,  # Balanced relevance
+    "high": 0.75   # Very high relevance
 }
 
 # Maximum number of results to retrieve per query from arXiv
-MAX_RESULTS = 400
+MAX_RESULTS = 10
 
 # Default SentenceTransformer model used for embedding abstracts and sections
 DEFAULT_MODEL_NAME = "all-MiniLM-L6-v2"

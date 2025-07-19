@@ -20,7 +20,7 @@ Match user vs arXiv papers with a hybrid FAISS search and rank them (similarity_
 Report the recommendations – title, link, transformer summary (or abstract fallback) and similarity score.
 
 Usage
-python pipeline.py --category cs.CL --threshold medium --model all-MiniLM-L6-v2
+python pipeline.py --category cs.LG --threshold medium --model all-MiniLM-L6-v2
 
 SKipping expensive steps:
 Add the below in your command line to skip downloading, parsing, summarising or embedding steps:
@@ -74,7 +74,7 @@ for p in [ARXIV_PDF_FOLDER, USER_PROCESSED, ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDE
 
 # Helpers                                                                       #
 
-def fetch_and_parse_arxiv(category: str, max_results: int = 20 , *, skip_download: bool = False, skip_parse: bool = False):
+def fetch_and_parse_arxiv(category: str, max_results:  int = 20 , *, skip_download: bool = False, skip_parse: bool = False):
     """Return a list of metadata dicts for freshly‑fetched arXiv papers.
 
     Each dict has keys: id (e.g. 2406.12345v1), title, summary (abstract),
@@ -99,13 +99,13 @@ def fetch_and_parse_arxiv(category: str, max_results: int = 20 , *, skip_downloa
     if skip_download and skip_parse:
         return papers
 
-    # 1) Download PDFs ----
+    # 1) Download PDFs 
     if not skip_download:
         download_arxiv_pdfs(papers, output_folder=ARXIV_PDF_FOLDER, delay_seconds=2)
     else:
         print("Skipping PDF download (assumed complete).")
 
-    # 2) Parse PDFs through GROBID -------------------------------------------
+    # 2) Parse PDFs through GROBID 
     if not skip_parse:
         print("\n▶ Parsing arXiv PDFs with GROBID…")
         grobid_process_folder(ARXIV_PDF_FOLDER, ARXIV_PROCESSED)
@@ -126,15 +126,17 @@ def summarise_arxiv(skip_summarize: bool = False):
 
 
 def load_summary_map() -> dict[str, str]:
-    """Return {arxiv_id: summary_text}.  Falls back to empty dict if none."""
+    """Return {arxiv_id: summary_text}. Falls back to empty dict if none."""
     mapping = {}
     for fp in Path(ARXIV_SUMMARY_FOLDER).glob("*_summary.txt"):
-        arxiv_id = fp.stem.replace("_summary", "")  # strip suffix
+        raw_id = fp.stem.replace("_summary", "")
+        arxiv_id = raw_id.split("v")[0]  # normalize ID by removing version
         try:
             mapping[arxiv_id] = fp.read_text(encoding="utf-8").strip()
         except Exception as e:
-            print(f"⚠️  Could not read summary {fp}: {e}")
+            print(f"Could not read summary {fp}: {e}")
     return mapping
+
 
 
 def embed_corpora(model_name: str, *, skip_embed: bool = False):
@@ -149,8 +151,13 @@ def embed_corpora(model_name: str, *, skip_embed: bool = False):
 
     return (user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files)
 
+def normalize_arxiv_id(arxiv_id_with_version: str) -> str:
+    """Strip version suffix from arXiv ID, e.g. '2507.13255v1' → '2507.13255'"""
+    return arxiv_id_with_version.split("v")[0]
+
 
 # Main driver                                                                   #
+
 
 def main():
     parser = argparse.ArgumentParser(description="Run the full arXiv→recommendation pipeline.")
@@ -166,30 +173,30 @@ def main():
 
     args = parser.parse_args()
 
-    # Step 0 ‑ ensure user PDFs are parsed -----------------------------------
+    # Step 0 ‑ ensure user PDFs are parsed 
     if not os.listdir(USER_PROCESSED):
         print("\nParsing user PDFs with GROBID…")
         grobid_process_folder(USER_PDF_FOLDER, USER_PROCESSED)
     else:
         print(" User PDFs already parsed → skipping.")
 
-    # Step 1/2/3 ‑ fetch, download, parse ------------------------------------
+    # Step 1/2/3 ‑ fetch, download, parse 
     papers_meta = fetch_and_parse_arxiv(
         category=args.category,
         skip_download=args.skip_download,
         skip_parse=args.skip_parse,
     )
 
-    # Step 4 ‑ summarise --
+    # Step 4 ‑ summarise 
     summarise_arxiv(skip_summarize=args.skip_summarize)
     summary_map = load_summary_map()
 
-    # Step 5 ‑ embed ------
+    # Step 5 ‑ embed 
     user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files = embed_corpora(
         model_name=args.model,
     )
 
-    # Step 6 ‑ similarity search ---------------------------------------------
+    # Step 6 ‑ similarity search 
     print("\n▶ Performing hybrid similarity search…")
     matches = hybrid_similarity_pipeline(
         user_abs_embs, arxiv_abs_embs,
@@ -197,16 +204,16 @@ def main():
         papers_meta, user_files,
         threshold_label=args.threshold,
     )
-
-    # Step 7 ‑ collate & print results ---------------------------------------
+    # Step 7 ‑ collate & print results
     if not matches:
         print("\nNo matches above threshold.  Try lowering --threshold?\n")
         sys.exit(0)
 
     print(f"\n★ Found {len(matches)} relevant papers:\n")
     for rank, m in enumerate(matches, 1):
-        arxiv_id = m["url"].split("/")[-1]
-        summary   = summary_map.get(arxiv_id, m["summary"])  # transformer summary OR arXiv abstract
+        arxiv_id_with_version = m["url"].split("/")[-1]
+        arxiv_id = normalize_arxiv_id(arxiv_id_with_version)
+        summary = summary_map.get(arxiv_id, m["summary"])  # transformer summary OR arXiv abstract
 
         print(f"{rank}. {m['title']}")
         print(f"   {m['url']}")

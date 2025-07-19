@@ -93,12 +93,16 @@ def chunk_text(text, tokenizer, max_tokens=900):
 
 def summarize_with_transformer(text, model_name="facebook/bart-large-cnn",
                                max_chunk_length=900, max_length=180):
+    
+    import torch
+    device = 0 if torch.cuda.is_available() else -1
+
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
     summarizer = pipeline("summarization",
                           model=model_name,
                           tokenizer=tokenizer,
-                          device=-1,       # keep CPU (-1) or change to 0 for CUDA
+                          device=device,       # keep CPU (-1) or change to 0 for CUDA
                           truncation=True) # <- always truncate safely
 
     chunks = chunk_text(text, tokenizer, max_tokens=max_chunk_length)
@@ -178,7 +182,9 @@ def process_folder(input_folder, output_folder, model_name="facebook/bart-large-
             cleaned = clean_text(raw_text)
             summary = summarize_with_transformer(cleaned, model_name=model_name, max_length=max_length)
 
-            output_file = output_path / f"{input_file.stem}_summary.txt"
+            arxiv_id = input_file.stem.replace("_output", "").split("v")[0]
+            output_file = output_path / f"{arxiv_id}_summary.txt"
+
             with open(output_file, "w", encoding="utf-8") as f:
                 f.write(summary)
 
