@@ -4,10 +4,19 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
+from pathlib import Path
 
 # Config
 RECIPIENT_EMAIL = "ggwpfax@gmail.com"
-JSON_PATH = os.path.join("preprint-bot", "arxiv_pipeline_data", "ranked_matches.json")  # adjust if needed
+JSON_PATH = Path("ranked_matches.json")
+
+if not JSON_PATH.exists():
+    print(f"JSON file not found at {JSON_PATH}")
+    exit(1)
+
+# If found, load
+with open(JSON_PATH, "r", encoding="utf-8") as f:
+    matches = json.load(f)
 
 def format_date(iso_str):
     try:

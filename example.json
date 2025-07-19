@@ -1,9 +1,0 @@
-[
-  {
-    "title": "Automating Steering for Safe Multimodal Large Language Models",
-    "summary": "Recent progress in Multimodal Large Language Models (MLLMs) has unlocked\npowerful cross-modal reasoning abilities, but also raised new safety concerns,\nparticularly when faced with adversarial multimodal inputs. To improve the\nsafety of MLLMs during inference, we introduce a modular and adaptive\ninference-time intervention technology, AutoSteer, without requiring any\nfine-tuning of the underlying model. AutoSteer incorporates three core\ncomponents: (1) a novel Safety Awareness Score (SAS) that automatically\nidentifies the most safety-relevant distinctions among the model's internal\nlayers; (2) an adaptive safety prober trained to estimate the likelihood of\ntoxic outputs from intermediate representations; and (3) a lightweight Refusal\nHead that selectively intervenes to modulate generation when safety risks are\ndetected. Experiments on LLaVA-OV and Chameleon across diverse safety-critical\nbenchmarks demonstrate that AutoSteer significantly reduces the Attack Success\nRate (ASR) for textual, visual, and cross-modal threats, while maintaining\ngeneral abilities. These findings position AutoSteer as a practical,\ninterpretable, and effective framework for safer deployment of multimodal AI\nsystems.",
-    "url": "http://arxiv.org/abs/2507.13255v1",
-    "published": "2025-07-17T16:04:55Z",
-    "score": 0.6056371927261353
-  }
-]

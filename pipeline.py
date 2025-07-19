@@ -209,17 +209,27 @@ def main():
         print("\nNo matches above threshold.  Try lowering --threshold?\n")
         sys.exit(0)
 
-    print(f"\n★ Found {len(matches)} relevant papers:\n")
-    for rank, m in enumerate(matches, 1):
+    print(f"\nFound {len(matches)} relevant papers:\n")
+    output_matches = []
+    for m in matches:
         arxiv_id_with_version = m["url"].split("/")[-1]
         arxiv_id = normalize_arxiv_id(arxiv_id_with_version)
-        summary = summary_map.get(arxiv_id, m["summary"])  # transformer summary OR arXiv abstract
+        summary = summary_map.get(arxiv_id, m["summary"])  # transformer summary or fallback abstract
 
-        print(f"{rank}. {m['title']}")
-        print(f"   {m['url']}")
-        print(f"   Similarity score: {m['score']:.3f}")
-        print("   Summary:")
-        print(f"   {summary}\n")
+        output_matches.append({
+            "title": m["title"],
+            "summary": summary,
+            "url": m["url"],
+            "published": m.get("published", ""),
+            "score": m["score"],
+        })
+
+    # Then write to JSON file
+    output_path = "ranked_matches.json"
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(output_matches, f, indent=2)
+
+    print(f"\n✅ Saved ranked matches to: {output_path}")
 
 
 if __name__ == "__main__":

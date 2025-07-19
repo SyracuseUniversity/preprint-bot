@@ -1,0 +1,9 @@
+[
+  {
+    "title": "Automating Steering for Safe Multimodal Large Language Models",
+    "summary": "AutoSteer is an automated and adaptive safety framework for MLLMs. It dynamically identifies safety-relevant layers and applies a lightweight safety prober and refusal mechanism at inference time. It proves especially effective in settings where traditional steering methods fall short. Inference-time safety defense is a promising approach to enhance MLLM safety without retraining.",
+    "url": "http://arxiv.org/abs/2507.13255v1",
+    "published": "2025-07-17T16:04:55Z",
+    "score": 0.6056371927261353
+  }
+]
