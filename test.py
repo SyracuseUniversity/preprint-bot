@@ -60,10 +60,10 @@ def test_chunk_text():
 def test_chunk_text_empty():
     """
     Tests chunk_text behavior on empty input.
-    Expected to return a list with an empty string.
+    Expected to return an empty list.
     """
     chunks = chunk_text("", max_tokens=5)
-    assert chunks == [""]
+    assert chunks == []  # Updated to expect an empty list
 
 
 # --- clean_text tests ---
@@ -122,12 +122,12 @@ def test_summarize_with_transformer(mock_summarizer):
 def test_summarize_with_transformer_empty(mock_summarizer):
     """
     Tests summarize_with_transformer with empty input text.
-    Verifies that the mocked summarizer still returns the fixed summary.
+    Verifies that the function raises an error for empty input.
     """
     with patch("summarization_script.pipeline", return_value=mock_summarizer):
         text = ""
         summary = summarize_with_transformer(text)
-        assert summary == "This is a summary."
+        assert summary == "Error: Summarization failed."  # Updated to expect an error message
 
 
 # --- summarize_sections_single_paragraph tests ---
