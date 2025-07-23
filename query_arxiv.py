@@ -112,6 +112,7 @@ def main(keywords, category, max_results, delay):
         except Exception as e:
             print(f"Error with {entry.id}: {e}")
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Fetch and process arXiv papers by keywords, category, or both."

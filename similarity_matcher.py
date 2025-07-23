@@ -37,10 +37,10 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Tuple
-
 import faiss  # type: ignore
 import numpy as np
 from sentence_transformers import SentenceTransformer
+import query_arxiv  # must expose fetch_and_parse(category: str)
 
 # Global configuration ─ modify these constants if needed
 ARXIV_CATEGORIES: List[str] = [
@@ -48,7 +48,7 @@ ARXIV_CATEGORIES: List[str] = [
 ]
 
 SIMILARITY_THRESHOLDS: Dict[str, float] = {
-    "low": 0.50,
+    "low": 0.60,
     "medium": 0.70,
     "high": 0.85,
 }
@@ -323,7 +323,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--category",
-        default="cs.CL",
+        default="cs.LG",
         help="arXiv category code, e.g. cs.CL, astro-ph",
     )
     parser.add_argument(
