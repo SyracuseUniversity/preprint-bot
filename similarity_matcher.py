@@ -37,8 +37,6 @@ import json
 import os
 from pathlib import Path
 from typing import Dict, List, Tuple
-
-
 import faiss  # type: ignore
 import numpy as np
 from sentence_transformers import SentenceTransformer
