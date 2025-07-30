@@ -46,28 +46,26 @@ from pathlib import Path
 
 import feedparser  # only needed for very quick metadata conversion
 
-#Local project imports 
-from config import DATA_DIR, DEFAULT_MODEL_NAME
-from download_arxiv_pdfs import download_arxiv_pdfs
-from embed_papers import embed_abstracts, embed_sections
-from extract_grobid import process_folder as grobid_process_folder
-from query_arxiv import get_recent_arxiv_entries
-from similarity_matcher import hybrid_similarity_pipeline
+# Local project imports (use relative imports)
+from .config import DATA_DIR, DEFAULT_MODEL_NAME
+from .download_arxiv_pdfs import download_arxiv_pdfs
+from .embed_papers import embed_abstracts, embed_sections
+from .extract_grobid import process_folder as grobid_process_folder
+from .query_arxiv import get_recent_arxiv_entries
+from .similarity_matcher import hybrid_similarity_pipeline
 
-# NB: the file was originally named summarization-script.py.  Make sure it has an
-# underscore so Python can import it.
 try:
-    import summarization_script as summariser
+    from . import summarization_script as summariser
 except ModuleNotFoundError as e:
     print("Could not import `summarization_script`")
     raise e
 
 # Folder layout (overrides welcome via environment variables)                   #
-USER_PDF_FOLDER      = os.getenv("USER_PDF_FOLDER", "my_papers")
-ARXIV_PDF_FOLDER     = os.path.join(DATA_DIR, "arxiv_pdfs")
-USER_PROCESSED       = os.path.join(DATA_DIR, "processed_users")
-ARXIV_PROCESSED      = os.path.join(DATA_DIR, "processed_arxiv")
-ARXIV_SUMMARY_FOLDER = os.path.join(DATA_DIR, "summaries_arxiv")
+USER_PDF_FOLDER      = os.getenv("USER_PDF_FOLDER", os.path.join(os.path.dirname(__file__), "..", "user_pdfs"))
+ARXIV_PDF_FOLDER     = os.path.join(os.path.dirname(__file__), "..", "arxiv_pdfs")
+USER_PROCESSED       = os.path.join(os.path.dirname(__file__), "..", "processed_users")
+ARXIV_PROCESSED      = os.path.join(os.path.dirname(__file__), "..", "processed_arxiv")
+ARXIV_SUMMARY_FOLDER = os.path.join(os.path.dirname(__file__), "..", "summaries_arxiv")
 
 for p in [ARXIV_PDF_FOLDER, USER_PROCESSED, ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDER]:
     os.makedirs(p, exist_ok=True)

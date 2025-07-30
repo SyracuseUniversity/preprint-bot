@@ -2,7 +2,7 @@ import os
 import json
 import numpy as np
 import faiss
-from config import SIMILARITY_THRESHOLDS, DATA_DIR
+from .config import SIMILARITY_THRESHOLDS, DATA_DIR
 
 """
 Hybrid Section-wise Similarity Matching

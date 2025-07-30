@@ -19,7 +19,7 @@ import os
 import time
 import requests
 from pathlib import Path
-from config import DATA_DIR
+from .config import DATA_DIR
 
 # Custom headers to identify the request and avoid getting blocked
 HEADERS = {

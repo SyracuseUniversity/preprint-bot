@@ -177,3 +177,7 @@ cython_debug/
 arxiv_pipeline_data/
 my_papers/
 parsed_arxiv_outputs/
+src/arxiv_pdfs
+src/processed_arxiv
+src/processed_users
+src/summaries_arxiv 

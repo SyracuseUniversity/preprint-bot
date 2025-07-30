@@ -4,13 +4,13 @@ import requests
 import feedparser
 import json
 from urllib.parse import urlparse
-from extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
+from .extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
 
 SAVE_DIR = "parsed_arxiv_outputs"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 # ARXIV_CATEGORY = "cs.CL"
-MAX_RESULTS = 999  # Limit papers for testing
+MAX_RESULTS = 10 # Limit papers for testing
 
 def get_recent_arxiv_entries(category="cs.CL", max_results=5):
     url = f"http://export.arxiv.org/api/query?search_query=cat:{category}&start=0&max_results={max_results}&sortBy=submittedDate&sortOrder=descending"

@@ -26,7 +26,7 @@ def load_model(model_name):
     Returns:
         SentenceTransformer: Loaded embedding model.
     """
-    return SentenceTransformer(model_name)
+    return SentenceTransformer(model_name, device='cpu')
 
 def embed_abstracts(processed_folder, model_name):
     """
