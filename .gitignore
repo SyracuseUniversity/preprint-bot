@@ -181,3 +181,4 @@ src/arxiv_pdfs
 src/processed_arxiv
 src/processed_users
 src/summaries_arxiv 
+src/user_pdfs
