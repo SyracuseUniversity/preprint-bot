@@ -6,11 +6,7 @@ import json
 from urllib.parse import urlparse
 from .extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
 
-SAVE_DIR = "parsed_arxiv_outputs"
-os.makedirs(SAVE_DIR, exist_ok=True)
-
-# ARXIV_CATEGORY = "cs.CL"
-MAX_RESULTS = 10 # Limit papers for testing
+MAX_RESULTS = 999  # Limit papers for testing
 
 def get_recent_arxiv_entries(category="cs.CL", max_results=5):
     url = f"http://export.arxiv.org/api/query?search_query=cat:{category}&start=0&max_results={max_results}&sortBy=submittedDate&sortOrder=descending"
@@ -66,7 +62,7 @@ def write_jsonl(arxiv_id, result, tokenized):
     with open(json_path, "w", encoding="utf-8") as f:
         f.write(json.dumps(record) + "\n")
 
-def main(category):
+def process_arxiv_category(category):
     entries = get_recent_arxiv_entries(category, MAX_RESULTS)
     print(f"Fetched {len(entries)} entries from arXiv.")
 
@@ -95,12 +91,3 @@ def main(category):
 
         except Exception as e:
             print(f"Error with {entry.id}: {e}")
-
-import argparse
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Parse recent arXiv papers by category")
-    parser.add_argument("category", help="arXiv subject category (e.g., cs.CL, stat.ML, math.PR)")
-    args = parser.parse_args()
-
-    main(args.category)

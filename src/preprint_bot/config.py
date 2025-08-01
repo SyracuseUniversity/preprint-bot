@@ -32,7 +32,7 @@ MAX_RESULTS = 10
 DEFAULT_MODEL_NAME = "all-MiniLM-L6-v2"
 
 # Root directory for saving intermediate and final outputs from the pipeline
-DATA_DIR = "src/arxiv_pipeline_data"
+DATA_DIR = "pdf_processes"
 
 # Create the data directory if it doesn't exist
 os.makedirs(DATA_DIR, exist_ok=True)

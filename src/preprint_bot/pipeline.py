@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 End-to-End arXiv Preprint Recommender
 
@@ -46,33 +47,28 @@ from pathlib import Path
 
 import feedparser  # only needed for very quick metadata conversion
 
-# Local project imports (use relative imports)
+#Local project imports 
 from .config import DATA_DIR, DEFAULT_MODEL_NAME
 from .download_arxiv_pdfs import download_arxiv_pdfs
 from .embed_papers import embed_abstracts, embed_sections
 from .extract_grobid import process_folder as grobid_process_folder
 from .query_arxiv import get_recent_arxiv_entries
 from .similarity_matcher import hybrid_similarity_pipeline
-
-try:
-    from . import summarization_script as summariser
-except ModuleNotFoundError as e:
-    print("Could not import `summarization_script`")
-    raise e
+from .summarization_script import process_folder
 
 # Folder layout (overrides welcome via environment variables)                   #
-USER_PDF_FOLDER      = os.getenv("USER_PDF_FOLDER", os.path.join(os.path.dirname(__file__), "..", "user_pdfs"))
-ARXIV_PDF_FOLDER     = os.path.join(os.path.dirname(__file__), "..", "arxiv_pdfs")
-USER_PROCESSED       = os.path.join(os.path.dirname(__file__), "..", "processed_users")
-ARXIV_PROCESSED      = os.path.join(os.path.dirname(__file__), "..", "processed_arxiv")
-ARXIV_SUMMARY_FOLDER = os.path.join(os.path.dirname(__file__), "..", "summaries_arxiv")
+USER_PDF_FOLDER      = os.getenv("USER_PDF_FOLDER", "user_pdfs")
+ARXIV_PDF_FOLDER     = os.path.join(DATA_DIR, "arxiv_pdfs")
+USER_PROCESSED       = os.path.join(DATA_DIR, "processed_users")
+ARXIV_PROCESSED      = os.path.join(DATA_DIR, "processed_arxiv")
+ARXIV_SUMMARY_FOLDER = os.path.join(DATA_DIR, "summaries_arxiv")
 
 for p in [ARXIV_PDF_FOLDER, USER_PROCESSED, ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDER]:
     os.makedirs(p, exist_ok=True)
 
 # Helpers                                                                       #
 
-def fetch_and_parse_arxiv(category: str, max_results:  int = 20 , *, skip_download: bool = False, skip_parse: bool = False):
+def fetch_and_parse_arxiv(category: str, max_results:  int = 5 , *, skip_download: bool = False, skip_parse: bool = False):
     """Return a list of metadata dicts for freshly‑fetched arXiv papers.
 
     Each dict has keys: id (e.g. 2406.12345v1), title, summary (abstract),
@@ -120,7 +116,7 @@ def summarise_arxiv(skip_summarize: bool = False):
         return
 
     print("\n▶ Generating transformer summaries (this can be slow)…")
-    summariser.process_folder(ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDER, max_length=180)
+    process_folder(ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDER, max_length=180)
 
 
 def load_summary_map() -> dict[str, str]:
@@ -223,12 +219,8 @@ def main():
         })
 
     # Then write to JSON file
-    output_path = "ranked_matches.json"
+    output_path = "pdf_processes/ranked_matches.json"
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(output_matches, f, indent=2)
 
     print(f"\n✅ Saved ranked matches to: {output_path}")
-
-
-if __name__ == "__main__":
-    main()

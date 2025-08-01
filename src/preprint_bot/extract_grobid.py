@@ -49,7 +49,9 @@ def extract_grobid_sections(src):
     # 3. Convenience 
     def _txt(el, path):
         found = el.find(path, NS)
-        return found.text.strip() if found is not None and found.text else ""
+        if found is not None:
+            return " ".join(found.itertext()).strip()
+        return ""
 
     # --- 4. Metadata --
     title = _txt(root, ".//tei:titleStmt/tei:title")
