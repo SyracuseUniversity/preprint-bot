@@ -5,10 +5,11 @@ import feedparser
 import json
 from urllib.parse import urlparse
 from .extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
+from .config import MAX_RESULTS
 
 MAX_RESULTS = 999  # Limit papers for testing
 
-def get_recent_arxiv_entries(category="cs.CL", max_results=10):
+def get_recent_arxiv_entries(category="cs.CL", max_results=MAX_RESULTS):
     url = f"http://export.arxiv.org/api/query?search_query=cat:{category}&start=0&max_results={max_results}&sortBy=submittedDate&sortOrder=descending"
     feed = feedparser.parse(requests.get(url).text)
     return feed.entries

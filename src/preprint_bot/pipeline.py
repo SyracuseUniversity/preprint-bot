@@ -5,7 +5,7 @@ End-to-End arXiv Preprint Recommender
 This single script stitches together all the separate building blocks you already wrote—fetching, PDF download, GROBID parsing, summarisation, embedding and similarity matching—into one coherent command-line pipeline.
 
 Main stages
-
+-----------
 Fetch the most recent pre-prints for a chosen arXiv category (via the helper in query_arxiv.py).
 
 Download their PDFs and store them on disk (re-uses download_arxiv_pdfs.py).
@@ -21,9 +21,10 @@ Match user vs arXiv papers with a hybrid FAISS search and rank them (similarity_
 Report the recommendations – title, link, transformer summary (or abstract fallback) and similarity score.
 
 Usage
+-----
 python pipeline.py --category cs.LG --threshold medium --model all-MiniLM-L6-v2
 
-SKipping expensive steps:
+Skipping expensive steps:
 Add the below in your command line to skip downloading, parsing, summarising or embedding steps:
 --skip_download	- Skips downloading arXiv PDFs
 --skip_parse - Skips parsing PDFs through GROBID
@@ -31,6 +32,7 @@ Add the below in your command line to skip downloading, parsing, summarising or 
 --skip_embed - Skips generating embeddings for all papers
 
 Prerequisites
+-------------
 • GROBID running locally on http://localhost:8070
 • transformers, sentence-transformers, faiss, nltk, etc. installed
 • Rename summarization-script.py to summarization_script.py so it can be imported as a Python module
@@ -42,12 +44,11 @@ import argparse
 import json
 import os
 import sys
-import time
 from pathlib import Path
 
 import feedparser  # only needed for very quick metadata conversion
 
-#Local project imports 
+# Local project imports
 from .config import DATA_DIR, DEFAULT_MODEL_NAME
 from .download_arxiv_pdfs import download_arxiv_pdfs
 from .embed_papers import embed_abstracts, embed_sections
@@ -56,7 +57,7 @@ from .query_arxiv import get_recent_arxiv_entries
 from .similarity_matcher import hybrid_similarity_pipeline
 from .summarization_script import process_folder
 
-# Folder layout (overrides welcome via environment variables)                   #
+# Folder layout (overrides welcome via environment variables)
 USER_PDF_FOLDER      = os.getenv("USER_PDF_FOLDER", "user_pdfs")
 ARXIV_PDF_FOLDER     = os.path.join(DATA_DIR, "arxiv_pdfs")
 USER_PROCESSED       = os.path.join(DATA_DIR, "processed_users")
@@ -66,9 +67,9 @@ ARXIV_SUMMARY_FOLDER = os.path.join(DATA_DIR, "summaries_arxiv")
 for p in [ARXIV_PDF_FOLDER, USER_PROCESSED, ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDER]:
     os.makedirs(p, exist_ok=True)
 
-# Helpers                                                                       #
+# Helpers
 
-def fetch_and_parse_arxiv(category: str, max_results:  int = 5 , *, skip_download: bool = False, skip_parse: bool = False):
+def fetch_and_parse_arxiv(category: str, max_results: int = 5, *, skip_download: bool = False, skip_parse: bool = False):
     """Return a list of metadata dicts for freshly‑fetched arXiv papers.
 
     Each dict has keys: id (e.g. 2406.12345v1), title, summary (abstract),
@@ -110,9 +111,9 @@ def fetch_and_parse_arxiv(category: str, max_results:  int = 5 , *, skip_downloa
 
 
 def summarise_arxiv(skip_summarize: bool = False):
-    """Generate transformer summaries for every *_output.txt in ARXIV_PROCESSED."""
+    """Generate transformer summaries for every *_summary.txt in ARXIV_PROCESSED."""
     if skip_summarize:
-        print(" Skipping summarisation step.")
+        print("Skipping summarisation step.")
         return
 
     print("\n▶ Generating transformer summaries (this can be slow)…")
@@ -132,7 +133,6 @@ def load_summary_map() -> dict[str, str]:
     return mapping
 
 
-
 def embed_corpora(model_name: str, *, skip_embed: bool = False):
     """Return embeddings + model + filenames for both user and arXiv corpora."""
     print("\n▶ Embedding abstracts…")
@@ -145,13 +145,13 @@ def embed_corpora(model_name: str, *, skip_embed: bool = False):
 
     return (user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files)
 
+
 def normalize_arxiv_id(arxiv_id_with_version: str) -> str:
     """Strip version suffix from arXiv ID, e.g. '2507.13255v1' → '2507.13255'"""
     return arxiv_id_with_version.split("v")[0]
 
 
-# Main driver                                                                   #
-
+# Main driver
 
 def main():
     parser = argparse.ArgumentParser(description="Run the full arXiv→recommendation pipeline.")
@@ -172,7 +172,7 @@ def main():
         print("\nParsing user PDFs with GROBID…")
         grobid_process_folder(USER_PDF_FOLDER, USER_PROCESSED)
     else:
-        print(" User PDFs already parsed → skipping.")
+        print("User PDFs already parsed → skipping.")
 
     # Step 1/2/3 ‑ fetch, download, parse 
     papers_meta = fetch_and_parse_arxiv(
@@ -188,6 +188,7 @@ def main():
     # Step 5 ‑ embed 
     user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files = embed_corpora(
         model_name=args.model,
+        skip_embed=args.skip_embed
     )
 
     # Step 6 ‑ similarity search 
@@ -198,29 +199,42 @@ def main():
         papers_meta, user_files,
         threshold_label=args.threshold,
     )
-    # Step 7 ‑ collate & print results
+
     if not matches:
-        print("\nNo matches above threshold.  Try lowering --threshold?\n")
+        print("\nNo matches above threshold. Try lowering --threshold?\n")
         sys.exit(0)
 
     print(f"\nFound {len(matches)} relevant papers:\n")
-    output_matches = []
+
+    # Deduplicate matches by URL, keep best scores, and add summary from summary_map
+    unique_matches = {}
     for m in matches:
         arxiv_id_with_version = m["url"].split("/")[-1]
         arxiv_id = normalize_arxiv_id(arxiv_id_with_version)
         summary = summary_map.get(arxiv_id, m["summary"])  # transformer summary or fallback abstract
 
-        output_matches.append({
-            "title": m["title"],
-            "summary": summary,
-            "url": m["url"],
-            "published": m.get("published", ""),
-            "score": m["score"],
-        })
+        # Use URL as key to avoid duplicates, keep highest score if repeated
+        if (m["url"] not in unique_matches) or (m["score"] > unique_matches[m["url"]]["score"]):
+            unique_matches[m["url"]] = {
+                "title": m["title"],
+                "summary": summary,
+                "url": m["url"],
+                "published": m.get("published", ""),
+                "score": m["score"],
+            }
+
+    output_matches = list(unique_matches.values())
+    # Sort descending by score
+    output_matches.sort(key=lambda x: x["score"], reverse=True)
 
     # Then write to JSON file
     output_path = "pdf_processes/ranked_matches.json"
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(output_matches, f, indent=2)
 
     print(f"\n✅ Saved ranked matches to: {output_path}")
+
+
+if __name__ == "__main__":
+    main()
