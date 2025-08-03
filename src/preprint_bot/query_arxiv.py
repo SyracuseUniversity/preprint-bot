@@ -8,7 +8,7 @@ from .extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
 
 MAX_RESULTS = 999  # Limit papers for testing
 
-def get_recent_arxiv_entries(category="cs.CL", max_results=5):
+def get_recent_arxiv_entries(category="cs.CL", max_results=10):
     url = f"http://export.arxiv.org/api/query?search_query=cat:{category}&start=0&max_results={max_results}&sortBy=submittedDate&sortOrder=descending"
     feed = feedparser.parse(requests.get(url).text)
     return feed.entries

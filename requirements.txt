@@ -1,7 +1,5 @@
-# ---------------------
 # arXiv Preprint Bot – Python dependencies
-# Works with Python 3.10+
-# ---------------------
+# Compatible with Python 3.12, Torch + CUDA 12.1
 
 # Networking & feeds
 requests>=2.31.0
@@ -15,8 +13,9 @@ numpy>=1.26.0
 
 # NLP & embeddings
 sentence-transformers>=2.6.0
-transformers>=4.40.0
-torch>=2.2.0
+transformers==4.41.2
+# Pin torch to the latest available CUDA 12.1 build (no 2.6.0 yet)
+torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
 
 # Tokenization & classical NLP
 nltk>=3.9
