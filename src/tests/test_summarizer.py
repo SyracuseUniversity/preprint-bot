@@ -218,8 +218,8 @@ def test_load_transformer_pipeline():
 
     summarizer = pipeline(
         "summarization",
-        model="facebook/bart-large-cnn",
-        tokenizer="facebook/bart-large-cnn",
+        model="google/pegasus-xsum",
+        tokenizer="google/pegasus-xsum",
         use_fast=False,
     )
     assert callable(summarizer)

@@ -107,7 +107,7 @@ def chunk_text(text, max_tokens=900):
         chunks.append(current.strip())
     return chunks
 
-def summarize_with_transformer(text, model_name = "google/long-t5-tglobal-base", max_chunk_length=900, max_length=280):
+def summarize_with_transformer(text, model_name = "google/pegasus-xsum", max_chunk_length=900, max_length=280):
     """
     Summarizes the input text using a transformer-based summarization model.
 
@@ -164,7 +164,7 @@ def summarize_with_transformer(text, model_name = "google/long-t5-tglobal-base",
         print(f"Error during summarization: {e}")
         return "Error: Summarization failed."
 
-def summarize_sections_single_paragraph(sections, model_name="google/long-t5-tglobal-base", max_length=180):
+def summarize_sections_single_paragraph(sections, model_name="google/pegasus-xsum", max_length=180):
     section_keywords = [
         ('introduction', 'Introduction'),
         ('method', 'Methods'),
@@ -186,7 +186,7 @@ def summarize_sections_single_paragraph(sections, model_name="google/long-t5-tgl
             section_summaries.append(summary)
     return ' '.join(section_summaries)
 
-def summarize_abstract_only(sections, model_name="google/long-t5-tglobal-base", max_length=180):
+def summarize_abstract_only(sections, model_name="google/pegasus-xsum", max_length=180):
     abstract_text = ""
     for sec in sections:
         if 'abstract' in sec['header'].lower():
@@ -196,7 +196,7 @@ def summarize_abstract_only(sections, model_name="google/long-t5-tglobal-base", 
         return summarize_with_transformer(abstract_text, model_name=model_name, max_length=max_length)
     return "No abstract found or abstract too short to summarize."
 
-def process_folder(input_folder, output_folder, model_name="google/long-t5-tglobal-base", max_length=180):
+def process_folder(input_folder, output_folder, model_name="google/pegasus-xsum", max_length=180):
     input_path = Path(input_folder)
     output_path = Path(output_folder)
     output_path.mkdir(parents=True, exist_ok=True)

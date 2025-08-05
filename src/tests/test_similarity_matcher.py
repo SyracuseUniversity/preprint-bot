@@ -18,7 +18,7 @@ def test_embed_abstracts_valid_input(tmp_path, monkeypatch):
         - Replaces `load_model` with a dummy encoder returning fixed 10-dim vectors.
         - Confirms output text list, embedding shape, and file list.
     """
-    from similarity_matcher import embed_abstracts
+    from preprint_bot.embed_papers import embed_abstracts
 
     class DummyModel:
         def encode(self, texts, **kwargs):
@@ -48,7 +48,7 @@ def test_embed_abstracts_skips_malformed(tmp_path, monkeypatch):
         - Patches model to avoid actual encoding.
         - Confirms a ValueError is raised due to no valid abstracts.
     """
-    from similarity_matcher import embed_abstracts
+    from embed_papers import embed_abstracts
 
     class DummyModel:
         def encode(self, texts, **kwargs):
@@ -77,7 +77,7 @@ def test_embed_sections_extraction_logic(tmp_path, monkeypatch):
         - Mocks the model to return 10-dim vectors for each valid section.
         - Asserts that only the two longer sections are included in the result.
     """
-    from similarity_matcher import embed_sections
+    from embed_papers import embed_sections
 
     f = tmp_path / "test_output.txt"
     f.write_text("""
