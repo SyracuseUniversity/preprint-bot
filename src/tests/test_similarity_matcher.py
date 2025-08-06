@@ -48,7 +48,7 @@ def test_embed_abstracts_skips_malformed(tmp_path, monkeypatch):
         - Patches model to avoid actual encoding.
         - Confirms a ValueError is raised due to no valid abstracts.
     """
-    from embed_papers import embed_abstracts
+    from preprint_bot.embed_papers import embed_abstracts
 
     class DummyModel:
         def encode(self, texts, **kwargs):
@@ -77,7 +77,7 @@ def test_embed_sections_extraction_logic(tmp_path, monkeypatch):
         - Mocks the model to return 10-dim vectors for each valid section.
         - Asserts that only the two longer sections are included in the result.
     """
-    from embed_papers import embed_sections
+    from preprint_bot.embed_papers import embed_sections
 
     f = tmp_path / "test_output.txt"
     f.write_text("""
@@ -115,7 +115,7 @@ def test_hybrid_similarity_pipeline_basic(tmp_path):
         - Uses identical vectors to ensure a perfect match.
         - Checks that one match is returned and the metadata matches input.
     """
-    from similarity_matcher import hybrid_similarity_pipeline
+    from preprint_bot.similarity_matcher import hybrid_similarity_pipeline
 
     user_sections = {"u.txt": np.array([[1.0] * 10], dtype=np.float32)}
     arxiv_sections = {"a_output.txt": np.array([[1.0] * 10], dtype=np.float32)}
@@ -154,6 +154,6 @@ def test_load_model_returns_sentence_transformer():
         - Calls `load_model()` with a known model ID.
         - Asserts the return value is an instance of `SentenceTransformer`.
     """
-    from similarity_matcher import load_model, SentenceTransformer
+    from preprint_bot.similarity_matcher import load_model, SentenceTransformer
     model = load_model("all-MiniLM-L6-v2")
     assert isinstance(model, SentenceTransformer)

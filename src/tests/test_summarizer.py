@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 
-from summarization_script import (
+from preprint_bot.summarization_script import (
     chunk_text,
     clean_text,
     extract_sections_from_txt,
