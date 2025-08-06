@@ -123,7 +123,7 @@ def summarize_with_transformer(text, model_name = "google/pegasus-xsum", max_chu
         str: The summarized text.
     """
     try:
-        device = 0 if torch.cuda.is_available() else -1
+        device =-1
         print(f"Device set to use {'cuda:0' if device == 0 else 'cpu'}")
 
         summarizer = pipeline("summarization", model=model_name, tokenizer=model_name, use_fast=False, device=device)
