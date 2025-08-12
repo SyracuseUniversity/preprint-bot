@@ -1,7 +1,37 @@
-torch>=2.2.0
-sentence-transformers>=2.7.0
+# arXiv Preprint Bot – Python dependencies
+# Compatible with Python 3.12, Torch + CUDA 12.1
+
+# Networking & feeds
+requests>=2.31.0
+feedparser>=6.0.11
+
+# XML/HTML parsing
+lxml>=5.3.0
+
+# Core numerical stack
+numpy>=1.26.0
+
+# NLP & embeddings
+sentence-transformers>=2.6.0
+transformers==4.41.2
+# Pin torch to the latest available CUDA 12.1 build (no 2.6.0 yet)
+torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+
+# Tokenization & classical NLP
+nltk>=3.9
+spacy>=3.7.3
+# After install, run:  python -m spacy download en_core_web_sm
+
+# Similarity search
 faiss-cpu>=1.7.4
-numpy>=1.24.0
-requests>=2.32.0
-feedparser>=6.0.10
-lxml>=5.2.1
+
+# Packaging and CLI tools
+setuptools>=65.0.0
+wheel>=0.38.0
+twine>=4.0.0
+
+# Optional but recommended for CLI argument parsing
+argparse; python_version < "3.2"
+
+# Optional for secure SMTP email sending
+secure-smtplib>=0.1

@@ -173,6 +173,13 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+<<<<<<< HEAD
+
+# Folders
+pdf_processes
+user_pdfs
+.vscode
+=======
 # Folders
 arxiv_pipeline_data
 arxiv_pipeline_data/arxiv_cs_papers.json
@@ -183,3 +190,4 @@ arxiv_pipeline_data/ranked_matches.json
 main/arxiv_pipeline_data/arxiv_cs_papers.json
 main/
 parsed_arxiv_outputs
+>>>>>>> origin/main
