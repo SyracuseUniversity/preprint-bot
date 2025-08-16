@@ -9,7 +9,9 @@
 
 #!/bin/bash
 
-cd /Users/adiloryspayev/Projects/OSPO/grobid || exit
+# Usage: ./preprint_bot_run_query_cron.sh /path/to/project
+
+cd "$1" || exit
 
 echo "Running query_arxiv.py at $(date)" >> /tmp/query_cron.log
-python3 query_arxiv.py --category cs.CL --max-results 3 --delay 1.0 >> /tmp/query_cron.log 2>&1
+python3 src/preprint_bot/query_arxiv.py --category cs.CL --max-results 3 --delay 1.0 >> /tmp/query_cron.log 2>&1
