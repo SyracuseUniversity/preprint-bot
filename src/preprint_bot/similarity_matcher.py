@@ -1,75 +1,25 @@
 import os
 import json
+import argparse
 import numpy as np
 import faiss
+from qdrant_client import QdrantClient
+from qdrant_client.models import PointStruct, Distance, VectorParams
+from sklearn.metrics.pairwise import cosine_similarity
+
 from .config import SIMILARITY_THRESHOLDS, DATA_DIR
 
-"""
-Hybrid Section-wise Similarity Matching
----------------------------------------
-
-This function compares each user-uploaded paper to every arXiv paper using
-section-level embeddings rather than full-document embeddings.
-
-Why section-wise?
-- Embedding an entire paper into a single vector can blur topic distinctions
-  and run into length limits.
-- Breaking each paper into sections (or chunks) preserves semantic focus,
-  enabling more precise similarity matching.
-- Even if only part of a paper is relevant (e.g., its Methods section), it can be matched.
-
-How it works:
--------------
-1. For each arXiv paper:
-    - Its sections are embedded into vectors.
-    - These vectors are normalized and indexed using FAISS for fast retrieval.
-
-2. For each user paper:
-    - Each section is also embedded and normalized.
-    - For every arXiv paper's FAISS index, we search each user section vector
-      to find the most similar section in the arXiv paper.
-    - This gives a set of similarity scores (one for each section).
-
-3. We take the maximum score from those comparisons as the similarity
-   between the user paper and the arXiv paper.
-
-4. If this best score exceeds a threshold (e.g., 0.7 for "medium"), the arXiv
-   paper is considered a match and is saved with its title, summary, URL, and score.
-
-5. After all comparisons, the matched papers are sorted by score in descending order
-   and saved to disk.
-
-Benefits:
----------
-- Fine-grained comparison captures partial overlaps between papers.
-- Works well even if the structure or section titles vary.
-- More interpretable and accurate than full-document embedding approaches.
-
-Dependencies:
--------------
-- FAISS (for efficient similarity search)
-- Sentence-transformers or similar model for embeddings
-- JSON files with parsed paper sections from GROBID or equivalent
-"""
 
 def hybrid_similarity_pipeline(
     user_abs_embs, arxiv_abs_embs,
     user_sections_dict, arxiv_sections_dict,
     all_cs_papers, user_files,
-    threshold_label="medium"
+    threshold_label="medium",
+    method="faiss"  # options: "faiss", "cosine", "qdrant"
 ):
     """
     Compares user papers to arXiv papers using section-level embeddings.
-
-    For each arXiv paper, builds a FAISS index from its section embeddings.
-    Then, compares each user paper's sections to find the most similar chunk.
-    If the best similarity score exceeds a threshold, the arXiv paper is added
-    to the results. Matches are ranked and saved to disk.
-
-    Returns:
-        A list of matched arXiv papers sorted by similarity score.
     """
-
     threshold = SIMILARITY_THRESHOLDS.get(threshold_label, 0.7)
     final_matches_dict = {}
 
@@ -82,24 +32,60 @@ def hybrid_similarity_pipeline(
             continue
 
         arxiv_chunks = np.array(arxiv_chunks).astype("float32")
-        faiss.normalize_L2(arxiv_chunks)
-
-        dim = arxiv_chunks.shape[1]
-        index = faiss.IndexFlatIP(dim)
-        index.add(arxiv_chunks)
-
         max_score = 0.0
 
+        # ---------- FAISS ----------
+        if method == "faiss":
+            faiss.normalize_L2(arxiv_chunks)
+            dim = arxiv_chunks.shape[1]
+            index = faiss.IndexFlatIP(dim)
+            index.add(arxiv_chunks)
+
+        # ---------- Qdrant (in-memory) ----------
+        elif method == "qdrant":
+            dim = arxiv_chunks.shape[1]
+            client = QdrantClient(":memory:")
+            client.recreate_collection(
+                collection_name="arxiv_chunks",
+                vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+            )
+            points = [
+                PointStruct(id=i, vector=vec.tolist()) for i, vec in enumerate(arxiv_chunks)
+            ]
+            client.upsert(collection_name="arxiv_chunks", points=points)
+
+        # Loop over user files
         for user_file in user_files:
             user_chunks = user_sections_dict.get(user_file)
             if user_chunks is None or len(user_chunks) == 0:
                 continue
 
             user_chunks = np.array(user_chunks).astype("float32")
-            faiss.normalize_L2(user_chunks)
 
-            scores, _ = index.search(user_chunks, k=1)
-            best_score = np.max(scores)
+            if method == "faiss":
+                faiss.normalize_L2(user_chunks)
+                scores, _ = index.search(user_chunks, k=1)
+                best_score = np.max(scores)
+
+            elif method == "cosine":
+                norm_arxiv = arxiv_chunks / np.linalg.norm(arxiv_chunks, axis=1, keepdims=True)
+                norm_user = user_chunks / np.linalg.norm(user_chunks, axis=1, keepdims=True)
+                scores = cosine_similarity(norm_user, norm_arxiv)
+                best_score = np.max(scores)
+
+            elif method == "qdrant":
+                best_score = 0.0
+                for vec in user_chunks:
+                    hits = client.search(
+                        collection_name="arxiv_chunks",
+                        query_vector=vec.tolist(),
+                        limit=1
+                    )
+                    if hits and hits[0].score > best_score:
+                        best_score = hits[0].score
+
+            else:
+                raise ValueError(f"Unknown method: {method}")
 
             max_score = max(max_score, best_score)
 
@@ -118,3 +104,27 @@ def hybrid_similarity_pipeline(
         json.dump(final_matches, f, indent=2)
 
     return final_matches
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Hybrid section-wise similarity matcher")
+    parser.add_argument(
+        "--method",
+        type=str,
+        default="faiss",
+        choices=["faiss", "cosine", "qdrant"],
+        help="Similarity method to use (default: faiss)"
+    )
+    parser.add_argument(
+        "--threshold",
+        type=str,
+        default="medium",
+        choices=list(SIMILARITY_THRESHOLDS.keys()),
+        help="Similarity threshold label (default: medium)"
+    )
+    args = parser.parse_args()
+
+    method = args.method
+    threshold_label = args.threshold
+
+    print(f"Running similarity pipeline with method = {method}, threshold = {threshold_label}")
