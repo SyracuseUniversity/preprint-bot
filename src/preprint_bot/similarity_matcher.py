@@ -1,3 +1,17 @@
+"""
+Hybrid Section-wise Similarity Matcher
+
+This script compares user-uploaded research papers against arXiv papers using
+section-level embeddings. It supports three similarity backends:
+
+- FAISS (vector similarity search using inner product / cosine approximation)
+- Cosine similarity (scikit-learn implementation)
+- Qdrant (in-memory vector database with cosine distance)
+
+The script produces a ranked list of matched arXiv papers above a given threshold,
+sorted by similarity score, and writes them to `ranked_matches.json` in DATA_DIR.
+"""
+
 import os
 import json
 import argparse
@@ -18,7 +32,12 @@ def hybrid_similarity_pipeline(
     method="faiss"  # options: "faiss", "cosine", "qdrant"
 ):
     """
-    Compares user papers to arXiv papers using section-level embeddings.
+    Compare user papers against arXiv papers using section-level embeddings.
+
+    This function computes similarity scores between sections of user papers and
+    arXiv papers using one of several backends (FAISS, cosine similarity, or
+    Qdrant). If the highest similarity score for a paper exceeds the threshold,
+    the arXiv paper is considered a match and stored in the ranked output.
     """
     threshold = SIMILARITY_THRESHOLDS.get(threshold_label, 0.7)
     final_matches_dict = {}
