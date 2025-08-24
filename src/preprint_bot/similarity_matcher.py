@@ -23,6 +23,10 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from .config import SIMILARITY_THRESHOLDS, DATA_DIR
 
+from sentence_transformers import SentenceTransformer
+
+def load_model(model_name="all-MiniLM-L6-v2"):
+    return SentenceTransformer(model_name)
 
 def hybrid_similarity_pipeline(
     user_abs_embs, arxiv_abs_embs,
