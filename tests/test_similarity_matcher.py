@@ -1,159 +1,177 @@
-import numpy as np
 import pytest
-from pathlib import Path
+import numpy as np
+import tempfile
+import json
+from unittest.mock import patch, MagicMock
+
+# Import your functions
+from preprint_bot.similarity_matcher import hybrid_similarity_pipeline
+from preprint_bot.config import SIMILARITY_THRESHOLDS, DATA_DIR
+
+# ----------------------
+# Fixtures
+# ----------------------
+@pytest.fixture
+def fake_arxiv_papers():
+    return [
+        {
+            "arxiv_url": "https://arxiv.org/abs/1234.5678v1",
+            "title": "Paper 1",
+            "summary": "Summary 1",
+            "published": "2024-01-01"
+        },
+        {
+            "arxiv_url": "https://arxiv.org/abs/2345.6789v1",
+            "title": "Paper 2",
+            "summary": "Summary 2",
+            "published": "2024-02-01"
+        }
+    ]
 
 
-# Test: embed_abstracts
-
-def test_embed_abstracts_valid_input(tmp_path, monkeypatch):
-    """
-    Test that `embed_abstracts` correctly processes a valid *_output.txt file.
-
-    Why:
-        Ensures that properly formatted files (with both 'Title' and 'Abstract') 
-        are read, concatenated, and passed to the embedding model correctly.
-
-    How:
-        - Creates a mock *_output.txt file with title and abstract.
-        - Replaces `load_model` with a dummy encoder returning fixed 10-dim vectors.
-        - Confirms output text list, embedding shape, and file list.
-    """
-    from preprint_bot.embed_papers import embed_abstracts
-
-    class DummyModel:
-        def encode(self, texts, **kwargs):
-            return [[1.0 / len(texts)] * 10 for _ in texts]
-
-    monkeypatch.setattr("similarity_matcher.load_model", lambda name: DummyModel())
-
-    f = tmp_path / "1234_output.txt"
-    f.write_text("Title: A\nAbstract: B\nOther\n")
-
-    texts, embs, model, files = embed_abstracts(tmp_path, "dummy")
-    assert texts == ["A. B"]
-    assert embs.shape == (1, 10)
-    assert files == ["1234_output.txt"]
+@pytest.fixture
+def user_files():
+    return ["user1.txt", "user2.txt"]
 
 
-def test_embed_abstracts_skips_malformed(tmp_path, monkeypatch):
-    """
-    Test that `embed_abstracts` raises ValueError when all input files are malformed.
-
-    Why:
-        Validates robustness against bad input data: files missing an abstract or
-        having an invalid format should be skipped and trigger an error if none remain.
-
-    How:
-        - Writes two invalid files: one with only a title, one with the wrong extension.
-        - Patches model to avoid actual encoding.
-        - Confirms a ValueError is raised due to no valid abstracts.
-    """
-    from preprint_bot.embed_papers import embed_abstracts
-
-    class DummyModel:
-        def encode(self, texts, **kwargs):
-            return [[0.1] * 10 for _ in texts]
-
-    monkeypatch.setattr("similarity_matcher.load_model", lambda _: DummyModel())
-
-    (tmp_path / "bad_output.txt").write_text("Title: A\n")
-    (tmp_path / "note.txt").write_text("not a valid paper")
-
-    with pytest.raises(ValueError):
-        embed_abstracts(tmp_path, "dummy")
+@pytest.fixture
+def deterministic_embeddings():
+    # deterministic "fake embeddings" for reproducible tests
+    user_embs = {
+        "user1.txt": np.array([[1, 0, 0], [0, 1, 0]], dtype="float32"),
+        "user2.txt": np.array([[0, 0, 1], [1, 1, 0]], dtype="float32")
+    }
+    arxiv_embs = {
+        "1234.5678v1_output.txt": np.array([[1, 0, 0], [0, 1, 0]], dtype="float32"),
+        "2345.6789v1_output.txt": np.array([[0, 0, 1], [1, 1, 0]], dtype="float32")
+    }
+    return user_embs, arxiv_embs
 
 
-# Test: embed_sections
+# ----------------------
+# Tests
+# ----------------------
+def test_hybrid_pipeline_faiss_deterministic():
+    np.random.seed(0)  # deterministic embeddings
+    user_embs = [np.array([1.0, 0.0], dtype="float32")]
+    arxiv_embs = [np.array([1.0, 0.0], dtype="float32")]
 
-def test_embed_sections_extraction_logic(tmp_path, monkeypatch):
-    """
-    Test that `embed_sections` correctly extracts and embeds section blocks.
+    user_sections = {"file1": user_embs}
+    arxiv_sections = {"paper1_output.txt": arxiv_embs}
+    all_papers = [{"arxiv_url": "https://arxiv.org/abs/paper1", "title": "Paper 1",
+                   "summary": "Summary", "published": "2024"}]
+    user_files = ["file1"]
 
-    Why:
-        Ensures the section parser identifies valid sections and skips very short ones.
-
-    How:
-        - Creates a sample *_output.txt file with three section headers.
-        - Mocks the model to return 10-dim vectors for each valid section.
-        - Asserts that only the two longer sections are included in the result.
-    """
-    from preprint_bot.embed_papers import embed_sections
-
-    f = tmp_path / "test_output.txt"
-    f.write_text("""
-- Introduction: This is the intro section.
-More content.
-
-- Methods: Details of method.
-Another line.
-
-- Short: tiny
-""")
-
-    class DummyModel:
-        def encode(self, text, **kwargs):
-            return [0.5] * 10
-
-    result = embed_sections(tmp_path, DummyModel())
-    assert "test_output.txt" in result
-    arr = result["test_output.txt"]
-    assert arr.shape == (2, 10)  # Two valid sections only
-
-
-# Test: hybrid_similarity_pipeline
-
-def test_hybrid_similarity_pipeline_basic(tmp_path):
-    """
-    Test that `hybrid_similarity_pipeline` correctly matches similar papers.
-
-    Why:
-        Confirms the FAISS-based similarity search identifies matches above the
-        threshold and returns expected metadata.
-
-    How:
-        - Constructs synthetic embeddings for one user and one arXiv paper.
-        - Uses identical vectors to ensure a perfect match.
-        - Checks that one match is returned and the metadata matches input.
-    """
-    from preprint_bot.similarity_matcher import hybrid_similarity_pipeline
-
-    user_sections = {"u.txt": np.array([[1.0] * 10], dtype=np.float32)}
-    arxiv_sections = {"a_output.txt": np.array([[1.0] * 10], dtype=np.float32)}
-    user_abs = np.array([[1.0] * 10], dtype=np.float32)
-    arxiv_abs = np.array([[1.0] * 10], dtype=np.float32)
-
-    arxiv_meta = [{
-        "title": "Sample Paper",
-        "summary": "A test summary.",
-        "arxiv_url": "http://arxiv.org/abs/a",
-        "published": "2025-01-01"
-    }]
-
-    matches = hybrid_similarity_pipeline(
-        user_abs, arxiv_abs,
-        user_sections, arxiv_sections,
-        arxiv_meta, ["u.txt"],
-        threshold_label="low"
-    )
-
+    matches = hybrid_similarity_pipeline(user_embs, arxiv_embs, user_sections,
+                                         arxiv_sections, all_papers, user_files,
+                                         method="faiss", threshold_label="low")
     assert len(matches) == 1
-    assert matches[0]["score"] >= 0.60
-    assert matches[0]["title"] == "Sample Paper"
+    assert matches[0]["score"] == pytest.approx(1.0)
 
 
-# Test: load_model
+def test_hybrid_pipeline_cosine_deterministic(tmp_path, fake_arxiv_papers, user_files, deterministic_embeddings):
+    user_embs, arxiv_embs = deterministic_embeddings
 
-def test_load_model_returns_sentence_transformer():
-    """
-    Test that `load_model` returns a `SentenceTransformer` object.
+    with patch("preprint_bot.config.DATA_DIR", tmp_path):
+        results = hybrid_similarity_pipeline(
+            user_abs_embs=user_embs,
+            arxiv_abs_embs=arxiv_embs,
+            user_sections_dict=user_embs,
+            arxiv_sections_dict=arxiv_embs,
+            all_cs_papers=fake_arxiv_papers,
+            user_files=user_files,
+            method="cosine",
+            threshold_label="low"
+        )
 
-    Why:
-        Ensures the model loading logic returns a valid embedding model instance.
+        assert len(results) > 0
+        # Cosine similarity of identical vectors = 1.0
+        scores = [r["score"] for r in results]
+        assert any(s == pytest.approx(1.0, 0.01) for s in scores)
 
-    How:
-        - Calls `load_model()` with a known model ID.
-        - Asserts the return value is an instance of `SentenceTransformer`.
-    """
-    from preprint_bot.similarity_matcher import load_model, SentenceTransformer
-    model = load_model("all-MiniLM-L6-v2")
-    assert isinstance(model, SentenceTransformer)
+
+@patch("preprint_bot.similarity_matcher.QdrantClient")
+def test_hybrid_pipeline_qdrant_deterministic(mock_client, tmp_path, fake_arxiv_papers, user_files, deterministic_embeddings):
+    user_embs, arxiv_embs = deterministic_embeddings
+    mock_instance = MagicMock()
+    mock_client.return_value = mock_instance
+
+    # Simulate deterministic search results
+    def mock_search(collection_name, query_vector, limit):
+        # Return score 0.95 if vector matches our "deterministic" user vector
+        if query_vector in [[1,0,0],[0,1,0],[0,0,1],[1,1,0]]:
+            hit = MagicMock()
+            hit.score = 0.95
+            return [hit]
+        return []
+
+    mock_instance.search.side_effect = mock_search
+
+    with patch("preprint_bot.config.DATA_DIR", tmp_path):
+        results = hybrid_similarity_pipeline(
+            user_abs_embs=user_embs,
+            arxiv_abs_embs=arxiv_embs,
+            user_sections_dict=user_embs,
+            arxiv_sections_dict=arxiv_embs,
+            all_cs_papers=fake_arxiv_papers,
+            user_files=user_files,
+            method="qdrant",
+            threshold_label="low"
+        )
+
+        assert results
+        for r in results:
+            assert r["score"] == pytest.approx(0.95, 0.01)
+        mock_instance.recreate_collection.assert_called()
+        mock_instance.upsert.assert_called()
+
+
+def test_threshold_filtering(tmp_path, fake_arxiv_papers, user_files, deterministic_embeddings):
+    user_embs, arxiv_embs = deterministic_embeddings
+
+    user_embs = [np.array([0.0, 0.0], dtype="float32")]
+    arxiv_embs = [np.array([1.0, 1.0], dtype="float32")]
+
+    user_sections = {"file1": user_embs}
+    arxiv_sections = {"paper1_output.txt": arxiv_embs}
+    all_papers = [{"arxiv_url": "https://arxiv.org/abs/paper1", "title": "Paper 1",
+                   "summary": "Summary", "published": "2024"}]
+    user_files = ["file1"]
+
+    matches = hybrid_similarity_pipeline(user_embs, arxiv_embs, user_sections,
+                                         arxiv_sections, all_papers, user_files,
+                                         method="faiss", threshold_label="high")
+    assert matches == []  # score below high threshold
+
+
+def test_unknown_method_raises(tmp_path, fake_arxiv_papers, user_files, deterministic_embeddings):
+    user_embs, arxiv_embs = deterministic_embeddings
+
+    with patch("preprint_bot.config.DATA_DIR", tmp_path):
+        with pytest.raises(ValueError):
+            hybrid_similarity_pipeline(
+                user_abs_embs=user_embs,
+                arxiv_abs_embs=arxiv_embs,
+                user_sections_dict=user_embs,
+                arxiv_sections_dict=arxiv_embs,
+                all_cs_papers=fake_arxiv_papers,
+                user_files=user_files,
+                method="invalid_method",
+            )
+
+
+def test_empty_chunks_returns_empty(tmp_path, fake_arxiv_papers, user_files):
+    user_embs = {f: np.array([], dtype="float32") for f in user_files}
+    arxiv_embs = {f"{p['arxiv_url'].split('/')[-1]}_output.txt": np.array([], dtype="float32") for p in fake_arxiv_papers}
+
+    with patch("preprint_bot.config.DATA_DIR", tmp_path):
+        results = hybrid_similarity_pipeline(
+            user_abs_embs=user_embs,
+            arxiv_abs_embs=arxiv_embs,
+            user_sections_dict=user_embs,
+            arxiv_sections_dict=arxiv_embs,
+            all_cs_papers=fake_arxiv_papers,
+            user_files=user_files,
+            method="cosine",
+        )
+        assert results == []

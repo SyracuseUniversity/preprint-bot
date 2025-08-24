@@ -133,15 +133,30 @@ def load_summary_map() -> dict[str, str]:
     return mapping
 
 
-def embed_corpora(model_name: str, *, skip_embed: bool = False):
-    """Return embeddings + model + filenames for both user and arXiv corpora."""
+def embed_corpora(model_name: str, method: str, *, skip_embed: bool = False):
+    """
+    Return embeddings + model + filenames for both user and arXiv corpora.
+    Ensures embeddings are compatible with the chosen method.
+    """
     print("\n▶ Embedding abstracts…")
+    if skip_embed:
+        print("Skipping embedding, loading existing embeddings from disk…")
     user_abs_texts, user_abs_embs, model, user_files = embed_abstracts(USER_PROCESSED, model_name)
     arxiv_abs_texts, arxiv_abs_embs, _, _     = embed_abstracts(ARXIV_PROCESSED, model_name)
 
     print("▶ Embedding section chunks…")
     user_sections  = embed_sections(USER_PROCESSED,  model)
     arxiv_sections = embed_sections(ARXIV_PROCESSED, model)
+
+    # Normalize only for FAISS
+    if method == "faiss":
+        import numpy as np
+        for key in user_sections:
+            user_sections[key] = np.array(user_sections[key], dtype="float32")
+            user_sections[key] /= np.linalg.norm(user_sections[key], axis=1, keepdims=True) + 1e-10
+        for key in arxiv_sections:
+            arxiv_sections[key] = np.array(arxiv_sections[key], dtype="float32")
+            arxiv_sections[key] /= np.linalg.norm(arxiv_sections[key], axis=1, keepdims=True) + 1e-10
 
     return (user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files)
 
@@ -155,49 +170,45 @@ def normalize_arxiv_id(arxiv_id_with_version: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Run the full arXiv→recommendation pipeline.")
-    parser.add_argument("--category",  default="cs.CL", help="arXiv subject class, e.g. cs.CL, stat.ML …")
-    parser.add_argument("--threshold", default="medium", choices=["low", "medium", "high"], help="Similarity threshold label (see config.py).")
-    parser.add_argument("--model",     default=DEFAULT_MODEL_NAME, help="Sentence‑Transformer model name.")
-
-    # Convenience flags to skip expensive work on dev re‑runs
+    parser.add_argument("--category",  default="cs.CL")
+    parser.add_argument("--threshold", default="medium", choices=["low", "medium", "high"])
+    parser.add_argument("--model",     default=DEFAULT_MODEL_NAME)
+    parser.add_argument("--method",    default="faiss", choices=["faiss", "cosine", "qdrant"], help="Similarity backend")
     parser.add_argument("--skip-download",   action="store_true")
     parser.add_argument("--skip-parse",      action="store_true")
     parser.add_argument("--skip-summarize",  action="store_true")
-    parser.add_argument("--skip-embed",      action="store_true")  # mostly not used; embed step is fast
+    parser.add_argument("--skip-embed",      action="store_true")
 
     args = parser.parse_args()
 
-    # Step 0 ‑ ensure user PDFs are parsed 
     if not os.listdir(USER_PROCESSED):
         print("\nParsing user PDFs with GROBID…")
         grobid_process_folder(USER_PDF_FOLDER, USER_PROCESSED)
     else:
         print("User PDFs already parsed → skipping.")
 
-    # Step 1/2/3 ‑ fetch, download, parse 
     papers_meta = fetch_and_parse_arxiv(
         category=args.category,
         skip_download=args.skip_download,
         skip_parse=args.skip_parse,
     )
 
-    # Step 4 ‑ summarise 
     summarise_arxiv(skip_summarize=args.skip_summarize)
     summary_map = load_summary_map()
 
-    # Step 5 ‑ embed 
     user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files = embed_corpora(
         model_name=args.model,
+        method=args.method,
         skip_embed=args.skip_embed
     )
 
-    # Step 6 ‑ similarity search 
-    print("\n▶ Performing hybrid similarity search…")
+    print(f"\n▶ Performing hybrid similarity search with method = {args.method} …")
     matches = hybrid_similarity_pipeline(
         user_abs_embs, arxiv_abs_embs,
         user_sections, arxiv_sections,
         papers_meta, user_files,
         threshold_label=args.threshold,
+        method=args.method,
     )
 
     if not matches:
@@ -206,14 +217,12 @@ def main():
 
     print(f"\nFound {len(matches)} relevant papers:\n")
 
-    # Deduplicate matches by URL, keep best scores, and add summary from summary_map
     unique_matches = {}
     for m in matches:
         arxiv_id_with_version = m["url"].split("/")[-1]
         arxiv_id = normalize_arxiv_id(arxiv_id_with_version)
-        summary = summary_map.get(arxiv_id, m["summary"])  # transformer summary or fallback abstract
+        summary = summary_map.get(arxiv_id, m["summary"])
 
-        # Use URL as key to avoid duplicates, keep highest score if repeated
         if (m["url"] not in unique_matches) or (m["score"] > unique_matches[m["url"]]["score"]):
             unique_matches[m["url"]] = {
                 "title": m["title"],
@@ -224,10 +233,8 @@ def main():
             }
 
     output_matches = list(unique_matches.values())
-    # Sort descending by score
     output_matches.sort(key=lambda x: x["score"], reverse=True)
 
-    # Then write to JSON file
     output_path = "pdf_processes/ranked_matches.json"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:

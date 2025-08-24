@@ -3,9 +3,26 @@
 import argparse
 from preprint_bot.query_arxiv import process_arxiv_category
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Parse recent arXiv papers by category")
-    parser.add_argument("category", help="arXiv subject category (e.g., cs.CL, stat.ML, math.PR)")
-    args = parser.parse_args()
 
-    process_arxiv_category(args.category)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Fetch and process arXiv papers by keywords, category, or both."
+    )
+    parser.add_argument(
+        "--keywords", nargs="*", default=[],
+        help="Keywords to search for, e.g. --keywords attention diffusion"
+    )
+    parser.add_argument(
+        "--category", default=None,
+        help="arXiv subject category, e.g. --category cs.CL"
+    )
+    parser.add_argument(
+        "--max-results", type=int, default=MAX_RESULTS,
+        help="Maximum number of papers to fetch"
+    )
+    parser.add_argument(
+        "--delay", type=float, default=10.0,
+        help="Seconds to sleep between downloads (avoid rate limits)"
+    )
+    args = parser.parse_args()
+    main(args.keywords, args.category, args.max_results, args.delay)

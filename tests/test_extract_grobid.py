@@ -1,104 +1,174 @@
 import pytest
-from unittest.mock import patch, Mock
+import tempfile
 from pathlib import Path
+from unittest.mock import patch, MagicMock
+import builtins
 
-# Test: spacy_tokenize
+# Import your module
+from preprint_bot.extract_grobid import (
+    extract_grobid_sections,
+    extract_grobid_sections_from_bytes,
+    process_folder,
+    spacy_tokenize,
+    NS
+)
+from lxml import etree
 
-def test_spacy_tokenize_basic():
-    from your_module import spacy_tokenize
-    tokens = spacy_tokenize("Deep learning is cool.")
-    assert "Deep" in tokens
-    assert "cool" in tokens
-    assert "." not in tokens  # should be stripped
-
-
-# Test: get_arxiv_pdf_bytes
-
-@patch("your_module.requests.get")
-def test_get_arxiv_pdf_bytes_valid(mock_get):
-    from your_module import get_arxiv_pdf_bytes
-    mock_resp = Mock()
-    mock_resp.status_code = 200
-    mock_resp.content = b"%PDF content"
-    mock_get.return_value = mock_resp
-
-    pdf_bytes, arxiv_id = get_arxiv_pdf_bytes("https://arxiv.org/abs/1234.5678")
-    assert pdf_bytes.startswith(b"%PDF")
-    assert arxiv_id == "1234.5678"
-
-def test_get_arxiv_pdf_bytes_invalid_url():
-    from your_module import get_arxiv_pdf_bytes
-    with pytest.raises(ValueError):
-        get_arxiv_pdf_bytes("https://example.com/paper.pdf")
-
-
-# Test: extract_grobid_sections_from_bytes
-
-@patch("your_module.requests.post")
-def test_extract_grobid_sections_from_bytes_mocked(mock_post):
-    from your_module import extract_grobid_sections_from_bytes
-
-    # Minimal valid GROBID TEI XML response
-    xml = b"""
+# -----------------------------
+# Fixtures
+# -----------------------------
+@pytest.fixture
+def sample_tei_xml():
+    # Minimal TEI XML with one section, one author, and one reference
+    return b"""<?xml version="1.0" encoding="UTF-8"?>
     <TEI xmlns="http://www.tei-c.org/ns/1.0">
-      <teiHeader>
-        <fileDesc>
-          <titleStmt><title>Sample Title</title></titleStmt>
-          <sourceDesc>
-            <analytic>
-              <author><persName><forename>Jane</forename><surname>Doe</surname></persName></author>
-            </analytic>
-          </sourceDesc>
-        </fileDesc>
-        <profileDesc>
-          <abstract><p>This is an abstract.</p></abstract>
-        </profileDesc>
-        <publicationStmt><date>2025</date></publicationStmt>
-      </teiHeader>
-      <text><body>
-        <div>
-          <head>Intro</head>
-          <p>First section paragraph.</p>
-        </div>
-      </body></text>
+        <teiHeader>
+            <fileDesc>
+                <titleStmt><title>Sample Paper</title></titleStmt>
+                <sourceDesc>
+                    <author>
+                        <forename>John</forename>
+                        <surname>Doe</surname>
+                    </author>
+                    <affiliation>Sample University</affiliation>
+                    <date>2024-08-24</date>
+                </sourceDesc>
+            </fileDesc>
+            <profileDesc>
+                <abstract>This is an abstract.</abstract>
+            </profileDesc>
+        </teiHeader>
+        <text>
+            <body>
+                <div>
+                    <head>Introduction</head>
+                    <p>Paragraph 1.</p>
+                    <p>Paragraph 2.</p>
+                </div>
+            </body>
+            <listBibl>
+                <biblStruct>
+                    <title>Ref Paper</title>
+                    <author><surname>Smith</surname></author>
+                </biblStruct>
+            </listBibl>
+        </text>
     </TEI>
     """
-    mock_post.return_value = Mock(status_code=200, content=xml)
-
-    result = extract_grobid_sections_from_bytes(b"dummy")
-    assert result["title"] == "Sample Title"
-    assert result["abstract"] == "This is an abstract."
-    assert result["authors"] == ["Jane Doe"]
-    assert result["pub_date"] == "2025"
-    assert result["sections"][0]["header"] == "Intro"
 
 
-# Test: process_folder
+# -----------------------------
+# Tests
+# -----------------------------
+@patch("preprint_bot.extract_grobid.requests.post")
+def test_extract_grobid_sections_from_bytes(mock_post, sample_tei_xml):
+    # Mock GROBID response
+    mock_resp = MagicMock()
+    mock_resp.content = sample_tei_xml
+    mock_resp.raise_for_status = MagicMock()
+    mock_post.return_value = mock_resp
 
-@patch("your_module.extract_grobid_sections_from_bytes")
-def test_process_folder_tokenization_and_output(tmp_path, mock_extract):
-    from your_module import process_folder
+    # Call with bytes
+    info = extract_grobid_sections_from_bytes(sample_tei_xml)
 
-    # Setup dummy GROBID output
+    assert info["title"] == "Sample Paper"
+    assert info["abstract"] == "This is an abstract."
+    assert info["authors"] == ["John Doe"]
+    assert info["affiliations"] == ["Sample University"]
+    assert info["publication_date"] == "2024-08-24"
+    assert info["sections"][0][0] == "Introduction"
+    assert "Paragraph 1." in info["sections"][0][1]
+    assert info["references"][0]["title"] == "Ref Paper"
+    assert info["references"][0]["authors"] == ["Smith"]
+
+
+@patch("preprint_bot.extract_grobid.requests.post")
+def test_extract_grobid_sections_from_path(tmp_path, patch):
+    fake_pdf = tmp_path / "fake.pdf"
+    fake_pdf.write_bytes(b"%PDF-1.4 fake content")
+
+    # Mock requests.post to return a fake TEI XML
+    class FakeResponse:
+        status_code = 200
+        content = b"<TEI><tei:titleStmt><tei:title>Fake Title</tei:title></tei:titleStmt></TEI>"
+        def raise_for_status(self): pass
+
+    with patch("preprint_bot.extract_grobid.requests.post", return_value=FakeResponse()):
+        from preprint_bot.extract_grobid import extract_grobid_sections
+        result = extract_grobid_sections(str(fake_pdf))
+
+    assert result["title"] == "Fake Title"
+
+
+
+
+def test_spacy_tokenize_fallback(monkeypatch):
+    # Simulate NLP unavailable
+    monkeypatch.setattr("preprint_bot.extract_grobid.NLP", None)
+    text = "Sentence 1.\n\nSentence 2."
+    sentences = spacy_tokenize(text)
+    assert sentences == ["Sentence 1.", "Sentence 2."]
+
+
+@patch("preprint_bot.extract_grobid.extract_grobid_sections")
+def test_process_folder_creates_outputs(mock_extract, tmp_path):
+    # Setup fake PDF files
+    pdf1 = tmp_path / "file1.pdf"
+    pdf2 = tmp_path / "file2.pdf"
+    pdf1.write_bytes(b"fake pdf")
+    pdf2.write_bytes(b"fake pdf")
+
     mock_extract.return_value = {
-        "title": "Test Paper",
-        "abstract": "Some abstract here.",
+        "title": "Title1",
+        "abstract": "Abstract1",
         "authors": ["Alice"],
-        "affiliations": ["Univ X"],
-        "pub_date": "2024",
-        "sections": [{"header": "Methods", "text": "Details of experiment."}]
+        "affiliations": ["Uni1"],
+        "publication_date": "2024-01-01",
+        "sections": [("Intro", "Text")],
+        "references": [{"title": "Ref1", "authors": ["Smith"]}],
     }
 
-    pdf = tmp_path / "test.pdf"
-    pdf.write_bytes(b"%PDF-1.4 dummy")
+    output_folder = tmp_path / "outputs"
+    process_folder(tmp_path, output_folder)
 
-    output_dir = tmp_path / "out"
+    # Check outputs
+    out_files = list(output_folder.glob("*_output.txt"))
+    assert len(out_files) == 2
+    for f in out_files:
+        content = f.read_text()
+        assert "Title1" in content
+        assert "Abstract1" in content
+        assert "Alice" in content
+        assert "Intro" in content
+        assert "Ref1" in content
 
-    process_folder(tmp_path, output_dir)
-    out_file = output_dir / "test_output.txt"
-    assert out_file.exists()
 
-    content = out_file.read_text()
-    assert "Test Paper" in content
-    assert "Methods" in content
-    assert "Tokenized Abstract" in content
+@patch("preprint_bot.extract_grobid.extract_grobid_sections")
+def test_process_folder_continues_on_error(mock_extract, tmp_path):
+    pdf_good = tmp_path / "good.pdf"
+    pdf_bad = tmp_path / "bad.pdf"
+    pdf_good.write_bytes(b"pdf")
+    pdf_bad.write_bytes(b"pdf")
+
+    # First file raises, second returns normal
+    def side_effect(path):
+        if path.name == "bad.pdf":
+            raise RuntimeError("Failed")
+        return {
+            "title": "Good",
+            "abstract": "Abstract",
+            "authors": ["Author"],
+            "affiliations": ["Uni"],
+            "publication_date": "2024-01-01",
+            "sections": [("Sec", "Text")],
+            "references": [],
+        }
+
+    mock_extract.side_effect = side_effect
+
+    output_folder = tmp_path / "out"
+    process_folder(tmp_path, output_folder)
+
+    files = list(output_folder.glob("*_output.txt"))
+    assert len(files) == 1
+    assert "Good" in files[0].read_text()
