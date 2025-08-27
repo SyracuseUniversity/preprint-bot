@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+"""
+CLI launcher for preprint_bot.preprint_bot_summarization
+Allows running from command line without directly calling the module.
+"""
+
+import argparse
+from preprint_bot.preprint_bot_summarization import process_arxiv_query
+ # updated import
+
+def main():
+    parser = argparse.ArgumentParser(description="Fetch arXiv papers and summarize abstracts.")
+    parser.add_argument("query", help="Search term for arXiv")
+    parser.add_argument("--max_results", type=int, default=5, help="Number of papers to fetch")
+    parser.add_argument("--models", type=str, nargs="+", default=["facebook/bart-large-cnn"],
+                        help="List of models to use for summarization")
+    parser.add_argument("--max_length", type=int, default=180, help="Max length of summary")
+    args = parser.parse_args()
+
+    process_arxiv_query(
+        query=args.query,
+        max_results=args.max_results,
+        models=args.models,
+        max_length=args.max_length
+    )
+
+if __name__ == "__main__":
+    main()
+
