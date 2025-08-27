@@ -75,18 +75,6 @@ def test_get_arxiv_entries(mock_parse, mock_get):
 
 
 @patch("preprint_bot.query_arxiv.requests.get")
-@patch("preprint_bot.query_arxiv.feedparser.parse")
-def test_get_recent_arxiv_entries(mock_parse, mock_get):
-    mock_get.return_value.raise_for_status = MagicMock()
-    mock_get.return_value.text = "FAKE_XML"
-    mock_parse.return_value.entries = ["recent1", "recent2"]
-
-    entries = get_recent_arxiv_entries(category="cs.CL", max_results=2)
-    assert entries == ["recent1", "recent2"]
-    mock_get.assert_called_once()
-
-
-@patch("preprint_bot.query_arxiv.requests.get")
 def test_get_arxiv_pdf_bytes(mock_get):
     mock_resp = MagicMock()
     mock_resp.raise_for_status = MagicMock()

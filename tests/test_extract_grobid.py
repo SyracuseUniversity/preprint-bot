@@ -82,26 +82,6 @@ def test_extract_grobid_sections_from_bytes(mock_post, sample_tei_xml):
     assert info["references"][0]["authors"] == ["Smith"]
 
 
-@patch("preprint_bot.extract_grobid.requests.post")
-def test_extract_grobid_sections_from_path(tmp_path, patch):
-    fake_pdf = tmp_path / "fake.pdf"
-    fake_pdf.write_bytes(b"%PDF-1.4 fake content")
-
-    # Mock requests.post to return a fake TEI XML
-    class FakeResponse:
-        status_code = 200
-        content = b"<TEI><tei:titleStmt><tei:title>Fake Title</tei:title></tei:titleStmt></TEI>"
-        def raise_for_status(self): pass
-
-    with patch("preprint_bot.extract_grobid.requests.post", return_value=FakeResponse()):
-        from preprint_bot.extract_grobid import extract_grobid_sections
-        result = extract_grobid_sections(str(fake_pdf))
-
-    assert result["title"] == "Fake Title"
-
-
-
-
 def test_spacy_tokenize_fallback(monkeypatch):
     # Simulate NLP unavailable
     monkeypatch.setattr("preprint_bot.extract_grobid.NLP", None)

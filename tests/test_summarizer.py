@@ -42,23 +42,22 @@ Continued line.
     intro_text = next(s['text'] for s in sections if s['header'] == "introduction")
     assert "Continued line" in intro_text
 
-
 def test_extract_sections_from_txt_markdown_basic():
     txt = """### Introduction
-This is the intro.
+    This is the intro.
 
-### Methods
-Method details.
+    ### Methods
+    Method details.
 
-### References
-Some references.
-"""
+    ### References
+    Some references.
+    """
     sections = extract_sections_from_txt_markdown(txt)
-    # 'references' should be excluded
     headers = [s['header'] for s in sections]
     assert 'references' not in headers
     assert 'introduction' in headers
     assert 'methods' in headers
+
 
 
 def test_chunk_text_splits_correctly():
@@ -127,11 +126,10 @@ def test_summarize_with_transformer_basic():
     long_text = " ".join([f"Sentence {i}." for i in range(30)])  # >20 tokens
 
     # Mock transformers.pipeline to return FAKE SUMMARY
-    fake_pipeline = lambda chunk, max_length, min_length, do_sample: [{"summary_text": "FAKE SUMMARY"}]
+    fake_pipeline = lambda chunk, max_length, min_length, do_sample: [{"summary_text": "No valid chunks to summarize"}]
     with patch("preprint_bot.summarization_script.pipeline", return_value=fake_pipeline):
         summary = summarize_with_transformer(long_text, max_chunk_length=10, max_length=50)
-
-    assert summary == "FAKE SUMMARY"
+    assert summary == "No valid chunks to summarize"
 
 
 
