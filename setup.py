@@ -17,7 +17,7 @@ setup(
         "sentence-transformers>=2.6.0",
         "transformers==4.41.2",
         # Torch + CUDA 12.1 build — requires extra index URL from PyTorch
-        "torch==2.5.1+cu121",
+        "torch==2.5.1", #+cu121",
         "nltk>=3.9",
         "spacy>=3.7.3",
         "faiss-cpu>=1.7.4",
