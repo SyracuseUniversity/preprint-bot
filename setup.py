@@ -1,5 +1,8 @@
 from setuptools import setup, find_packages
 
+"""To install required dependencies use `pip install -e .`"""
+"""To install optional dependencies use `pip install preprint_bot[all]`"""
+
 setup(
     name="preprint_bot",
     version="0.1.0",
@@ -16,12 +19,10 @@ setup(
         "numpy>=1.26.0",
         "sentence-transformers>=2.6.0",
         "transformers==4.41.2",
-        # Torch + CUDA 12.1 build — requires extra index URL from PyTorch
-        "torch==2.5.1+cu121",
+        "torch>=2.5.1",  # normal torch required
         "nltk>=3.9",
         "spacy>=3.7.3",
         "faiss-cpu>=1.7.4",
-        "qdrant-client>=1.12.1",
         "scikit-learn>=1.5.0",
         "secure-smtplib>=0.1",
     ],
@@ -33,6 +34,16 @@ setup(
             "pytest>=8.0.0",
             "black>=24.0.0",
             "flake8>=7.0.0",
+        ],
+        "cuda": [
+            "torch==2.5.1+cu121",  # CUDA version of torch
+        ],
+        "qdrant": [
+            "qdrant-client>=1.12.1",
+        ],
+        "all": [
+            "torch==2.5.1+cu121",
+            "qdrant-client>=1.12.1",
         ],
     },
     entry_points={
