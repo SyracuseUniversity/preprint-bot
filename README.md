@@ -26,6 +26,10 @@ Preprint Bot is an AI based pipeline that automates the discovery of relevant ac
 	python -m venv venv source venv/bin/activate # On Windows, use `venv\Scripts\activate` 
 	pip install -e .
 	```
+4. **Optional Dependencies**: If you want to install optional dependencies such as - GPU supported PyTorch or Qdrant client for similarity matching use:
+```
+pip install preprint_bot[all]
+```
 ## Usage
 1. **Add Your Papers**: Place your own relevant PDF papers (the ones you want to find similar articles to) into the `user_pdfs/` directory.
 2. **Run the Pipeline**: Execute the main pipeline script from your terminal. You can specify the category, similarity threshold and other options.
