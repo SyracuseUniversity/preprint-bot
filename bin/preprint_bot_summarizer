@@ -5,7 +5,7 @@ Allows running from command line without directly calling the module.
 """
 
 import argparse
-from preprint_bot.preprint_bot_summarization import process_arxiv_query
+from preprint_bot.summarization import process_arxiv_query
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch arXiv papers and summarize abstracts.")
