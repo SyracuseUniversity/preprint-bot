@@ -15,7 +15,7 @@ numpy>=1.26.0
 sentence-transformers>=2.6.0
 transformers==4.41.2
 # Pin torch to the latest available CUDA 12.1 build (no 2.6.0 yet)
-torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+torch==2.5.1 #+cu121 --index-url https://download.pytorch.org/whl/cu121
 
 # Tokenization & classical NLP
 nltk>=3.9
