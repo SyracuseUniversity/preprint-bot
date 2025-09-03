@@ -29,7 +29,9 @@ Preprint Bot is an AI based pipeline that automates the discovery of relevant ac
 ## Usage
 1. **Add Your Papers**: Place your own relevant PDF papers (the ones you want to find similar articles to) into the `user_pdfs/` directory.
 2. **Run the Pipeline**: Execute the main pipeline script from your terminal. You can specify the category, similarity threshold and other options.
-	`preprint_bot --category cs.LG --threshold medium`
+	```
+	preprint_bot --category cs.LG --threshold medium
+	```
 	- The `--category` argument specifies the category of papers to search.
 	- The `--threshold` can be `low`, `medium`, or `high` to control how strict the matching is.
 	- This process can take a while, especially the first time it runs. You can use `--skip-` flags (e.g., `--skip-download`, `--skip-parse`, `--skip-summarize`,`--skip-embed`) on subsequent runs to reuse previous results.
