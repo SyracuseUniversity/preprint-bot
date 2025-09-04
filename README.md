@@ -23,15 +23,19 @@ Preprint Bot is an AI based pipeline that automates the discovery of relevant ac
 	```
 3. **Install Dependencies**: It is recommended to use a virtual environment
 	```
+	conda create -n preprint-bot -y -c conda-forge "python>=3.12"  
+	conda activate preprint-bot
+	```
+	```
 	python -m venv venv source venv/bin/activate # On Windows, use `venv\Scripts\activate` 
-	pip install -e .
+	pip install .
 	```
 4. **Optional Dependencies**: If you want to install optional dependencies such as - GPU supported PyTorch or Qdrant client for similarity matching use:
-```
-pip install preprint_bot[all]
-```
+	```
+	pip install preprint_bot[all]
+	```
 ## Usage
-1. **Add Your Papers**: Place your own relevant PDF papers (the ones you want to find similar articles to) into the `user_pdfs/` directory.
+1. **Add Your Papers**: You will be prompted to select the folder with your own research corpus, or you can drop them in `user_pdfs` which would be the default folder for the corpus. 
 2. **Run the Pipeline**: Execute the main pipeline script from your terminal. You can specify the category, similarity threshold and other options.
 	```
 	preprint_bot --category cs.LG --threshold medium

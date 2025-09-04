@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-"""To install required dependencies use `pip install -e .`"""
+"""To install required dependencies use `pip install .`"""
 """To install optional dependencies use `pip install preprint_bot[all]`"""
 
 setup(
