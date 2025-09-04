@@ -10,7 +10,7 @@ Preprint Bot is an AI-based pipeline that automates the discovery of relevant ac
 4. **Embed**: Uses Transformer models to convert the abstracts and section texts of all papers into numerical vectors (embeddings)
 5. **Match**: Compares the vectors from the user's papers against the new preprints to calculate a similarity score
 6. **Rank & Save**: Filters out matches below a certain threshold and saves the final, ranked list. 
-7. **Email**(under development): Reads the ranked list and sends the report to a specified user email
+7. **Email**(under development): Reads the ranked list and sends the report to a specified user email address
 
 ## Setup & Installation
 1. **Prerequisites**: This project requires a locally running GROBID server. GROBID is a machine learning tool that parses scholarly documents.
