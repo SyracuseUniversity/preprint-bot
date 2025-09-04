@@ -1,16 +1,16 @@
 # Preprint Bot
 
-Preprint Bot is an AI based pipeline that automates the discovery of relevant academic preprints from various preprint servers. It takes a collection of your own research papers, finds the latest preprints in a specified category and generated a ranked list of recommendations based on semantic content similarity. The final list of recommendations with a concise summary is delivered to you by email.
+Preprint Bot is an AI-based pipeline that automates the discovery of relevant academic preprints from various preprint servers. It takes a collection of your own research papers, finds the latest preprints in a specified category, and generates a ranked list of recommendations based on semantic content similarity. The final list of recommendations with a concise summary is delivered to you by email.
 
 ## How It Works
 
 1.  **Fetch**: Queries the preprint server API for the most recent papers in a category
 2. **Download & Parse**: Downloads the PDFs for the new papers. It then uses a running GROBID instance to parse both the new PDFs and the user's reference PDFs into structured text.
 3. **Summarization**: Generates an additional AI-based summary for each new paper
-4. **Embed**: Users Transformer models to convert the abstracts and section texts of all papers into numerical vectors (embeddings)
+4. **Embed**: Uses Transformer models to convert the abstracts and section texts of all papers into numerical vectors (embeddings)
 5. **Match**: Compares the vectors from the user's papers against the new preprints to calculate a similarity score
-6. **Rank & Save**: Filters out matchers below a certain threshold and saves the final, ranked list. 
-7. **Email**(under development): Reads the ranked list and sends the report to a specified user email
+6. **Rank & Save**: Filters out matches below a certain threshold and saves the final, ranked list. 
+7. **Email**(under development): Reads the ranked list and sends the report to a specified user email address
 
 ## Setup & Installation
 1. **Prerequisites**: This project requires a locally running GROBID server. GROBID is a machine learning tool that parses scholarly documents.
