@@ -26,7 +26,7 @@ Preprint Bot is an AI-based pipeline that automates the discovery of relevant ac
 	python -m venv venv source venv/bin/activate # On Windows, use `venv\Scripts\activate` 
 	pip install -e .
 	```
-4. **Optional Dependencies**: If you want to install optional dependencies such as - GPU supported PyTorch or Qdrant client for similarity matching use:
+4. **Optional Dependencies**: If you want to install optional dependencies such as GPU supported PyTorch or Qdrant client for similarity matching use:
 ```
 pip install preprint_bot[all]
 ```
