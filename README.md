@@ -26,6 +26,7 @@ Preprint Bot is an AI-based pipeline that automates the discovery of relevant ac
 	conda create -n preprint-bot -y -c conda-forge "python>=3.12"  
 	conda activate preprint-bot
 	```
+	or
 	```
 	python -m venv venv source venv/bin/activate # On Windows, use `venv\Scripts\activate` 
 	pip install .
