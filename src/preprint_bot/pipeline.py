@@ -68,6 +68,16 @@ for p in [ARXIV_PDF_FOLDER, USER_PROCESSED, ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDE
     os.makedirs(p, exist_ok=True)
 
 # Helpers
+import tkinter as tk
+from tkinter import filedialog
+
+def browse_for_folder(prompt="Select a folder containing your PDFs"):
+    """Displays a pop-up which allows the user to select the folder in which the research papers are"""
+    root = tk.Tk()
+    root.withdraw()  # hide the main window
+    folder_selected = filedialog.askdirectory(title=prompt)
+    return folder_selected
+
 
 def fetch_and_parse_arxiv(category: str, max_results: int = 5, *, skip_download: bool = False, skip_parse: bool = False):
     """Return a list of metadata dicts for freshly‑fetched arXiv papers.
@@ -178,8 +188,19 @@ def main():
     parser.add_argument("--skip-parse",      action="store_true")
     parser.add_argument("--skip-summarize",  action="store_true")
     parser.add_argument("--skip-embed",      action="store_true")
+    parser.add_argument("--user-folder",     help="Path to user PDFs (if not set, a browse dialog will appear)")
 
     args = parser.parse_args()
+
+    # If no folder provided, show browse dialog
+    user_pdf_folder = args.user_folder or browse_for_folder()
+
+    if not user_pdf_folder:
+        print("❌ No folder selected, exiting.")
+        sys.exit(1)
+
+    global USER_PDF_FOLDER
+    USER_PDF_FOLDER = user_pdf_folder
 
     if not os.listdir(USER_PROCESSED):
         print("\nParsing user PDFs with GROBID…")
