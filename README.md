@@ -1,6 +1,6 @@
 # Preprint Bot
 
-Preprint Bot is an AI based pipeline that automates the discovery of relevant academic preprints from various preprint servers. It takes a collection of your own research papers, finds the latest preprints in a specified category and generated a ranked list of recommendations based on semantic content similarity. The final list of recommendations with a concise summary is delivered to you by email.
+Preprint Bot is an AI-based pipeline that automates the discovery of relevant academic preprints from various preprint servers. It takes a collection of your own research papers, finds the latest preprints in a specified category, and generates a ranked list of recommendations based on semantic content similarity. The final list of recommendations with a concise summary is delivered to you by email.
 
 ## How It Works
 
