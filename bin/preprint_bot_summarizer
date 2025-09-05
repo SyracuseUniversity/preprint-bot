@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""
+CLI launcher for preprint_bot.preprint_bot_summarization
+Allows running from command line without directly calling the module.
+"""
+
+import argparse
+from preprint_bot.summarization import process_arxiv_query
+
+def main():
+    parser = argparse.ArgumentParser(description="Fetch arXiv papers and summarize abstracts.")
+    
+    # Search query for arXiv
+    parser.add_argument("query", help="Search term for arXiv")
+    
+    # Number of papers to fetch
+    parser.add_argument("--max-results", type=int, default=5, help="Number of papers to fetch")
+    
+    # List of models to use for summarization
+    parser.add_argument("--models", type=str, nargs="+", default=["facebook/bart-large-cnn"],
+                        help="List of models to use for summarization")
+    
+    # Max length of summary
+    parser.add_argument("--max-length", type=int, default=180, help="Max length of summary")
+    
+    # Input folder for storing fetched papers
+    parser.add_argument("--input-folder", type=str, default="input_folder",
+                        help="Folder to store fetched arXiv papers")
+    
+    # Output folder for storing summaries
+    parser.add_argument("--output-folder", type=str, default="summaries",
+                        help="Folder to store generated summaries")
+    
+    args = parser.parse_args()
+
+    # Call the process_arxiv_query function with updated arguments
+    process_arxiv_query(
+        query=args.query,
+        max_results=args.max_results,
+        models=args.models,
+        max_length=args.max_length,
+        input_folder=args.input_folder,
+        output_folder=args.output_folder
+    )
+
+if __name__ == "__main__":
+    main()
