@@ -77,7 +77,7 @@ def extract_sections_from_txt_markdown(txt, exclude_sections=None):
         if line.startswith("### "):  # Markdown level 3 header
             # Save previous section
             if current_header and current_text:
-                if not any(excl in current_header for excl in exclude_sections):
+                if not any(excl in current_header.lower() for excl in exclude_sections):
                     sections.append({'header': current_header.lower(), 'text': ' '.join(current_text)})
             current_header = line[4:].strip()
             current_text = []
@@ -87,11 +87,12 @@ def extract_sections_from_txt_markdown(txt, exclude_sections=None):
 
     # Save last section
     if current_header and current_text:
-        if not any(excl in current_header for excl in exclude_sections):
+        if not any(excl in current_header.lower() for excl in exclude_sections):
             sections.append({'header': current_header.lower(), 'text': ' '.join(current_text)})
 
     # Clean texts
     return [{'header': s['header'], 'text': clean_text(s['text'])} for s in sections]
+
 
 def chunk_text(text, max_tokens=900):
     sentences = sent_tokenize(text)
