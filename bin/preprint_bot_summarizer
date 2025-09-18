@@ -5,43 +5,30 @@ Allows running from command line without directly calling the module.
 """
 
 import argparse
-from preprint_bot.summarization import process_arxiv_query
+from pathlib import Path
+from preprint_bot.summarization_script import process_folder, TransformerSummarizer, LlamaSummarizer
 
 def main():
-    parser = argparse.ArgumentParser(description="Fetch arXiv papers and summarize abstracts.")
-    
-    # Search query for arXiv
-    parser.add_argument("query", help="Search term for arXiv")
-    
-    # Number of papers to fetch
-    parser.add_argument("--max-results", type=int, default=5, help="Number of papers to fetch")
-    
-    # List of models to use for summarization
-    parser.add_argument("--models", type=str, nargs="+", default=["facebook/bart-large-cnn"],
-                        help="List of models to use for summarization")
-    
-    # Max length of summary
-    parser.add_argument("--max-length", type=int, default=180, help="Max length of summary")
-    
-    # Input folder for storing fetched papers
-    parser.add_argument("--input-folder", type=str, default="input_folder",
-                        help="Folder to store fetched arXiv papers")
-    
-    # Output folder for storing summaries
-    parser.add_argument("--output-folder", type=str, default="summaries",
-                        help="Folder to store generated summaries")
-    
+    parser = argparse.ArgumentParser(description="Summarize text files using transformer or local LLaMA.")
+    parser.add_argument("--input_folder", type=str, required=True, help="Folder containing input .txt files")
+    parser.add_argument("--output_folder", type=str, default="summaries", help="Folder to save summaries")
+    parser.add_argument("--max_length", type=int, default=180, help="Max summary length per section")
+    parser.add_argument("--mode", type=str, choices=["transformer", "llama"], default="transformer",
+                        help="Choose summarization mode: transformer (default) or llama")
+
     args = parser.parse_args()
 
-    # Call the process_arxiv_query function with updated arguments
-    process_arxiv_query(
-        query=args.query,
-        max_results=args.max_results,
-        models=args.models,
-        max_length=args.max_length,
-        input_folder=args.input_folder,
-        output_folder=args.output_folder
-    )
+    if args.mode == "transformer":
+        summarizer = TransformerSummarizer()
+    else:
+        # Use fixed LLaMA model path
+        model_path = Path("models") / "llama-3.2-1b-instruct-q4_k_m.gguf"
+        if not model_path.exists():
+            raise FileNotFoundError(f"LLaMA model not found: {model_path}")
+        summarizer = LlamaSummarizer(model_path)
+
+    process_folder(args.input_folder, args.output_folder, summarizer, max_length=args.max_length)
+
 
 if __name__ == "__main__":
     main()

@@ -19,8 +19,7 @@ setup(
         "numpy>=1.26.0",
         "sentence-transformers>=2.6.0",
         "transformers==4.41.2",
-        # Torch + CUDA 12.1 build — requires extra index URL from PyTorch
-        "torch==2.5.1", #+cu121",
+        "torch==2.5.1",  # CPU build by default
         "nltk>=3.9",
         "spacy>=3.7.3",
         "faiss-cpu>=1.7.4",
@@ -42,9 +41,13 @@ setup(
         "qdrant": [
             "qdrant-client>=1.12.1",
         ],
+        "llama": [
+            "llama-cpp-python>=0.1.83",  # LLaMA C++ bindings
+        ],
         "all": [
             "torch==2.5.1+cu121",
             "qdrant-client>=1.12.1",
+            "llama-cpp-python>=0.1.83",
         ],
     },
     entry_points={
