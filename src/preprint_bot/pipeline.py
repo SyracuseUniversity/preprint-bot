@@ -50,7 +50,7 @@ from tkinter import filedialog
 import feedparser  # only needed for metadata conversion
 
 # Local project imports
-from .config import DATA_DIR, DEFAULT_MODEL_NAME
+from .config import DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS
 from .download_arxiv_pdfs import download_arxiv_pdfs
 from .embed_papers import embed_abstracts, embed_sections
 from .extract_grobid import process_folder as grobid_process_folder
@@ -72,7 +72,7 @@ def browse_for_folder(prompt="Select a folder containing your PDFs"):
     root.withdraw()
     return filedialog.askdirectory(title=prompt)
 
-def fetch_and_parse_arxiv(category: str, max_results: int = 30, *, skip_download: bool = False, skip_parse: bool = False):
+def fetch_and_parse_arxiv(category: str, max_results: int = MAX_RESULTS, *, skip_download: bool = False, skip_parse: bool = False):
     print(f"\n▶ Fetching {max_results} most recent papers from {category}…")
     entries = get_recent_arxiv_entries(category=category, max_results=max_results)
 

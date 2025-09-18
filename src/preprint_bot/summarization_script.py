@@ -119,7 +119,7 @@ class LlamaSummarizer:
         prompt = (
             "You are an expert academic summarizer. "
             "Read the following research paper text and summarize what it is about clearly, "
-            "in under 4 lines:\n\n"
+            "Make it the length of a tweet (no ps no hashtags and use concise language):\n\n" # Try teling it its a tweet
             f"{text}\n\nSummary:"
         )
         result = self.llm(prompt, max_tokens=max_length, temperature=0.3, top_p=0.9, echo=False)
@@ -162,7 +162,7 @@ def process_file(input_file, output_file, summarizer, max_length=180):
     summary = summarize_sections_single_paragraph(sections, summarizer, max_length=max_length)
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(summary)
-    print(f"✅ Summary saved to {output_file}")
+    print(f"Summary saved to {output_file}")
 
 
 def process_folder(input_folder, output_folder, summarizer, max_length=180):
