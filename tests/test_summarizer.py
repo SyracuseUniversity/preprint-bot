@@ -9,7 +9,6 @@ from preprint_bot.summarization_script import (
     extract_sections_from_txt_markdown,
     chunk_text,
     TransformerSummarizer,
-    LlamaSummarizer,
     summarize_sections_single_paragraph,
     process_folder,
 )
@@ -58,19 +57,6 @@ def test_transformer_summarizer_mocked():
         summarizer = TransformerSummarizer(model_name="google/pegasus-xsum")
         result = summarizer.summarize("This is a long test sentence " * 10, max_length=50)
         assert "fake summary" in result
-
-
-def test_llama_summarizer_mocked():
-    """Test that LlamaSummarizer calls the llama_cpp Llama class and returns the generated text."""
-    fake_llm = MagicMock()
-    fake_llm.tokenize.return_value = [1, 2, 3]
-    fake_llm.detokenize.return_value = b"short text"
-    fake_llm.return_value = {"choices": [{"text": "llama summary"}]}
-
-    with patch("preprint_bot.summarization_script.Llama", return_value=fake_llm):
-        summarizer = LlamaSummarizer("fake/path/to/model")
-        result = summarizer.summarize("Some test text", max_length=50)
-        assert "llama summary" in result
 
 
 @patch("preprint_bot.summarization_script.TransformerSummarizer.summarize", return_value="section summary")
