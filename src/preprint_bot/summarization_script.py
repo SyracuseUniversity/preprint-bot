@@ -4,9 +4,9 @@ from pathlib import Path
 from nltk.tokenize import sent_tokenize
 from nltk import download
 from transformers import pipeline
-import argparse
 import torch
 from llama_cpp import Llama
+import json
 
 # NLTK setup
 try:
@@ -78,7 +78,7 @@ class TransformerSummarizer:
         print(f"Transformer summarizer using {'cuda:0' if device == 0 else 'cpu'}")
         self.summarizer = pipeline("summarization", model=model_name, tokenizer=model_name, use_fast=False, device=device)
 
-    def summarize(self, text, max_length=180):
+    def summarize(self, text, max_length=180, mode="abstract"):
         chunks = chunk_text(text)
         summaries = []
         for chunk in chunks:
@@ -89,6 +89,7 @@ class TransformerSummarizer:
                 summaries.append(result[0]['summary_text'])
             except Exception as e:
                 print(f"Chunk summarization error: {e}")
+
         if len(summaries) > 1:
             try:
                 combined = ' '.join(summaries)
@@ -96,6 +97,7 @@ class TransformerSummarizer:
                 return final_summary
             except Exception:
                 return ' '.join(summaries)
+
         if summaries:
             return summaries[0]
         return "No valid chunks to summarize."
@@ -111,18 +113,28 @@ class LlamaSummarizer:
             n_gpu_layers=20
         )
 
-    def summarize(self, text: str, max_length: int = 200) -> str:
+    def summarize(self, text: str, max_length: int = 200, mode: str = "abstract") -> str:
         tokens = self.llm.tokenize(text.encode("utf-8"))
         if len(tokens) > 1800:
             tokens = tokens[:1800]
             text = self.llm.detokenize(tokens).decode("utf-8", errors="ignore")
-        prompt = (
-            "You are an expert academic summarizer. "
-            "Read the following research paper text and summarize what it is about clearly, "
-            "Make it the length of a tweet (no ps no hashtags and use concise language):\n\n" # Try teling it its a tweet
-            f"{text}\n\nSummary:"
-        )
-        result = self.llm(prompt, max_tokens=max_length, temperature=0.3, top_p=0.9, echo=False)
+
+        if mode == "abstract":
+            prompt_text = (
+                "You are an expert academic summarizer. "
+                "Summarize the following research paper abstract into at most 3 concise sentences. "
+                "Keep it clear, academic, and to the point:\n\n"
+                f"{text}\n\nSummary:"
+            )
+        else:
+            prompt_text = (
+                "You are an expert academic summarizer. "
+                "Read the following full research paper text and summarize it clearly in at most 3 concise sentences. "
+                "Focus on key methods, results, and conclusions, and keep it to the point:\n\n"
+                f"{text}\n\nSummary:"
+            )
+
+        result = self.llm(prompt_text, max_tokens=max_length, temperature=0.3, top_p=0.9, echo=False)
         if isinstance(result, dict):
             if "choices" in result and len(result["choices"]) > 0:
                 return result["choices"][0].get("text", "").strip()
@@ -150,7 +162,7 @@ def summarize_sections_single_paragraph(sections, summarizer, max_length=180):
     for _, label in section_keywords:
         text = section_texts[label]
         if text and len(text.split()) > 25:
-            section_summaries.append(summarizer.summarize(text, max_length=max_length))
+            section_summaries.append(summarizer.summarize(text, max_length=max_length, mode="full"))
     return ' '.join(section_summaries)
 
 
@@ -174,3 +186,26 @@ def process_folder(input_folder, output_folder, summarizer, max_length=180):
         output_file = output_path / f"{input_file.stem}_summary.txt"
         process_file(input_file, output_file, summarizer, max_length=max_length)
 
+
+# Metadata processing
+def process_metadata(metadata_path, output_path, summarizer, max_length=120, mode="abstract"):
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        papers = json.load(f)
+
+    updated_papers = []
+    for paper in papers:
+        original_summary = paper.get("summary", "")
+        if not original_summary.strip():
+            paper["llm_summary"] = "No summary available."
+        else:
+            try:
+                concise_summary = summarizer.summarize(original_summary, max_length=max_length, mode=mode)
+                paper["llm_summary"] = concise_summary
+            except Exception as e:
+                paper["llm_summary"] = f"Error summarizing: {e}"
+        updated_papers.append(paper)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(updated_papers, f, indent=2, ensure_ascii=False)
+
+    print(f"Updated metadata with LLM summaries saved to {output_path} (mode={mode})")

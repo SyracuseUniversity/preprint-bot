@@ -1,0 +1,30 @@
+[
+  {
+    "title": "MaRVIn: A Cross-Layer Mixed-Precision RISC-V Framework for DNN\n  Inference, from ISA Extension to Hardware Acceleration",
+    "summary": "This research proposes a novel ISA extension and micro-architecture implementation for mixed-precision neural network (NN) execution on RISC-V architectures. The proposed MaRVIn framework enhances power efficiency and performance by optimizing mixed-precision quantization, ISA-level optimizations, and cycle-accurate emulation. Experimental evaluation demonstrates that the proposed framework can achieve significant speedup and outperform existing RISC-V cores, while maintaining acceptable accuracy.",
+    "url": "http://arxiv.org/abs/2509.15187v1",
+    "published": "2025-09-18T17:48:20Z",
+    "score": 0.9984368085861206
+  },
+  {
+    "title": "Fast and Fluent Diffusion Language Models via Convolutional Decoding and\n  Rejective Fine-tuning",
+    "summary": "This research proposes a novel method, Convolutional decoding (Conv), to address the long decoding-window problem in diffusion-based language models. By normalizing the decoding window, Conv improves fluency and flexibility without sacrificing speed, and it also introduces Rejecting Rule-based Fine-Tuning (R2FT), a post-hoc training scheme that aligns tokens at positions far from context. The proposed methods achieve state-of-the-art results on benchmarking tasks, demonstrating significant improvements in both speed and quality.",
+    "url": "http://arxiv.org/abs/2509.15188v1",
+    "published": "2025-09-18T17:48:21Z",
+    "score": 0.6929547786712646
+  },
+  {
+    "title": "Generalizable Geometric Image Caption Synthesis",
+    "summary": "This paper proposes a novel approach to training multimodal large language models by leveraging Reinforcement Learning with Verifiable Rewards (RLVR) to improve their reasoning abilities, particularly in solving complex geometric problems. By incorporating RLVR into the data generation pipeline, the authors demonstrate significant improvements in both statistical and non-geometric tasks, including accuracy gains of up to 4.8% in various domains. This approach enables multimodal language models to generalize better to out-of-distribution scenarios.",
+    "url": "http://arxiv.org/abs/2509.15217v1",
+    "published": "2025-09-18T17:59:11Z",
+    "score": 0.614189863204956
+  },
+  {
+    "title": "Who to Trust? Aggregating Client Knowledge in Logit-Based Federated\n  Learning",
+    "summary": "This research paper investigates logit-based federated learning, a method that reduces the cost of sharing model weights by aggregating logit values from heterogeneous clients. The authors compare three logit aggregation methods and evaluate their performance on MNIST and CIFAR-10 datasets, finding that each method improves communication overhead, robustness, and accuracy compared to centralized training. The results suggest that logit-based federated learning is a viable alternative for large-scale federated learning applications.",
+    "url": "http://arxiv.org/abs/2509.15147v1",
+    "published": "2025-09-18T16:54:23Z",
+    "score": 0.6032742261886597
+  }
+]
