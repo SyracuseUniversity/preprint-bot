@@ -75,14 +75,16 @@ def test_process_folder_creates_summary(mock_summarizer):
         txt_file = Path(tmp_in) / "test.txt"
         txt_file.write_text("### Introduction\nSome text")
 
-        from preprint_bot.summarization_script import TransformerSummarizer
-        summarizer = TransformerSummarizer(model_name="fake-model")
+        # Replace with a dummy summarizer that won’t hit Hugging Face
+        class DummySummarizer:
+            def summarize(self, text, max_length=150):
+                return "dummy summary"
 
-        process_folder(tmp_in, tmp_out, summarizer)
+        process_folder(tmp_in, tmp_out, DummySummarizer())
         output_file = Path(tmp_out) / "test_summary.txt"
         assert output_file.exists()
-        content = output_file.read_text()
-        assert "summary" in content
+        assert "summary" in output_file.read_text()
+
 
 
 def test_chunk_text_with_short_sentences():
