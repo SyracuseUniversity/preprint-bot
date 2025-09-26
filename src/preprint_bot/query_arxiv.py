@@ -7,11 +7,12 @@ import json
 from urllib.parse import urlparse
 
 from .extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
-from .config import MAX_RESULTS as CONFIG_MAX_RESULTS
+from .config import MAX_RESULTS as CONFIG_MAX_RESULTS, DATA_DIR
 
 # Output directory
-SAVE_DIR = "parsed_arxiv_outputs"
+SAVE_DIR = os.path.join(os.getcwd(), "pdf_processes")
 os.makedirs(SAVE_DIR, exist_ok=True)
+
 
 # Default MAX_RESULTS (can be overridden by CLI or config)
 MAX_RESULTS = CONFIG_MAX_RESULTS if CONFIG_MAX_RESULTS else 50
@@ -60,6 +61,9 @@ def get_recent_arxiv_entries(category="cs.CL", max_results=MAX_RESULTS):
 
 
 def get_arxiv_pdf_bytes(arxiv_url):
+    """
+    Download the PDF bytes given an arXiv entry URL.
+    """
     parsed = urlparse(arxiv_url)
     arxiv_id = parsed.path.strip("/").split("/")[-1]
     pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
@@ -68,27 +72,29 @@ def get_arxiv_pdf_bytes(arxiv_url):
     return response.content, arxiv_id
 
 
-def write_output(arxiv_id, result, tokenized):
-    txt_path = os.path.join(SAVE_DIR, f"{arxiv_id}_output.txt")
-    with open(txt_path, "w", encoding="utf-8") as f:
-        f.write(f"Title: {result['title']}\n")
-        f.write(f"Abstract: {result['abstract']}\n\n")
-        f.write(f"Authors: {', '.join(result['authors'])}\n")
-        f.write(f"Affiliations: {', '.join(result['affiliations'])}\n")
-        f.write(f"Publication Date: {result['pub_date']}\n\n")
-        f.write("Sections:\n")
-        for sec in result['sections']:
-            f.write(f"\n- {sec['header']}:\n{sec['text']}\n")
+def process_entry(entry, delay):
+    """
+    Process a single arXiv entry: download PDF, extract sections, tokenize,
+    save outputs, and return record.
+    """
+    arxiv_id = entry.id.split('/')[-1]
+    print(f"\nProcessing {arxiv_id}")
 
-        f.write("\nTokenized Title:\n" + " ".join(tokenized['title']) + "\n")
-        f.write("\nTokenized Abstract:\n" + " ".join(tokenized['abstract']) + "\n")
-        f.write("\nTokenized Sections:\n")
-        for sec in tokenized['sections']:
-            f.write(f"\n- {sec['header']}:\n{' '.join(sec['tokens'])}\n")
+    # Fetch PDF and parse
+    pdf_bytes, _ = get_arxiv_pdf_bytes(entry.id)
+    result = extract_grobid_sections_from_bytes(pdf_bytes)
 
+    # Tokenize sections
+    tokenized = {
+        'title': spacy_tokenize(result['title']),
+        'abstract': spacy_tokenize(result['abstract']),
+        'sections': [
+            {'header': sec['header'], 'tokens': spacy_tokenize(sec['text'])}
+            for sec in result['sections']
+        ]
+    }
 
-def write_jsonl(arxiv_id, result, tokenized):
-    json_path = os.path.join(SAVE_DIR, f"{arxiv_id}_output.jsonl")
+    # Build structured record
     record = {
         "arxiv_id": arxiv_id,
         "title": result['title'],
@@ -99,48 +105,62 @@ def write_jsonl(arxiv_id, result, tokenized):
         "sections": result['sections'],
         "tokens": tokenized
     }
-    with open(json_path, "w", encoding="utf-8") as f:
-        f.write(json.dumps(record) + "\n")
 
+    # --- Write outputs (so tests can find them) ---
+    txt_path = os.path.join(SAVE_DIR, f"{arxiv_id}_output.txt")
+    jsonl_path = os.path.join(SAVE_DIR, f"{arxiv_id}_output.jsonl")
 
-def process_entry(entry, delay):
-    """
-    Process a single arXiv entry: download PDF, extract sections, tokenize, save.
-    """
-    arxiv_id = entry.id.split('/')[-1]
-    print(f"\nProcessing {arxiv_id}")
-    pdf_bytes, _ = get_arxiv_pdf_bytes(entry.id)
-    result = extract_grobid_sections_from_bytes(pdf_bytes)
+    with open(txt_path, "w", encoding="utf-8") as f:
+        f.write(result['title'] + "\n\n")
+        f.write(result['abstract'] + "\n\n")
+        for sec in result['sections']:
+            f.write(sec['header'] + "\n")
+            f.write(sec['text'] + "\n\n")
 
-    tokenized = {
-        'title': spacy_tokenize(result['title']),
-        'abstract': spacy_tokenize(result['abstract']),
-        'sections': [
-            {'header': sec['header'], 'tokens': spacy_tokenize(sec['text'])}
-            for sec in result['sections']
-        ]
-    }
-
-    write_output(arxiv_id, result, tokenized)
-    write_jsonl(arxiv_id, result, tokenized)
+    with open(jsonl_path, "w", encoding="utf-8") as f:
+        json.dump(record, f, indent=2)
 
     print(f"Finished: {arxiv_id}")
     time.sleep(delay)
+    return record
+
+
+
+SAVE_DIR = os.path.join(os.getcwd(), "pdf_processes")
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+def write_all_json(records, filename="metadata.json"):
+    """
+    Save all fetched papers' metadata into one JSON file.
+    """
+    json_path = os.path.join(SAVE_DIR, filename)
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(records, f, indent=2)
+    print(f"✅ Saved {len(records)} papers into {json_path}")
+
 
 
 def main(keywords, category, max_results, delay):
+    """
+    Run the full pipeline: fetch entries, process them, save metadata.json.
+    """
     if keywords or category:
         query = build_query(keywords, category)
         print("Search Query:", query)
         entries = get_arxiv_entries(query, max_results)
     else:
-        # fallback to default category fetch
         entries = get_recent_arxiv_entries("cs.CL", max_results)
 
     print(f"Fetched {len(entries)} entries from arXiv.")
+    all_records = []
+
     for entry in entries:
         try:
-            process_entry(entry, delay)
+            record = process_entry(entry, delay)
+            all_records.append(record)
         except Exception as e:
             print(f"Error with {entry.id}: {e}")
 
+    # ✅ Now safe to write metadata.json
+    write_all_json(all_records, filename="metadata.json")
+    print(f"\nSaved {len(all_records)} papers into {os.path.join(SAVE_DIR, 'metadata.json')}")

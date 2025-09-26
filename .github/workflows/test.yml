@@ -27,7 +27,8 @@ jobs:
           pip install "numpy<2.0"
           # Install all dependencies (torch CPU wheel will come from PyTorch index)
           pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-          pip install .
+          pip install -e .
+          pip install llama-cpp-python
           python -m nltk.downloader punkt punkt_tab
           python -m spacy download en_core_web_sm
 

@@ -1,3 +1,4 @@
+from __future__ import annotations # This has to stay at the top most position
 #!/usr/bin/env python3
 """
 End-to-End arXiv Preprint Recommender
@@ -38,26 +39,37 @@ Prerequisites
 • Rename summarization-script.py to summarization_script.py so it can be imported as a Python module
 """
 
-from __future__ import annotations
+#!/usr/bin/env python3
+"""
+End-to-End arXiv Preprint Recommender with flexible summary mode
+
+Summary mode (--summary-mode) can be:
+- abstract: summarize only paper abstracts (default)
+- full: summarize full paper text sections
+"""
 
 import argparse
 import json
 import os
 import sys
 from pathlib import Path
+import tkinter as tk
+from tkinter import filedialog
 
-import feedparser  # only needed for very quick metadata conversion
+import feedparser
 
 # Local project imports
-from .config import DATA_DIR, DEFAULT_MODEL_NAME
+from .config import DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS
 from .download_arxiv_pdfs import download_arxiv_pdfs
 from .embed_papers import embed_abstracts, embed_sections
 from .extract_grobid import process_folder as grobid_process_folder
-from .query_arxiv import get_recent_arxiv_entries
+from .query_arxiv import get_recent_arxiv_entries, write_all_json
 from .similarity_matcher import hybrid_similarity_pipeline
-from .summarization_script import process_folder
+from .summarization_script import (
+    process_folder, TransformerSummarizer, LlamaSummarizer, process_metadata
+)
 
-# Folder layout (overrides welcome via environment variables)
+# Folder layout
 USER_PDF_FOLDER      = os.getenv("USER_PDF_FOLDER", "user_pdfs")
 ARXIV_PDF_FOLDER     = os.path.join(DATA_DIR, "arxiv_pdfs")
 USER_PROCESSED       = os.path.join(DATA_DIR, "processed_users")
@@ -67,50 +79,38 @@ ARXIV_SUMMARY_FOLDER = os.path.join(DATA_DIR, "summaries_arxiv")
 for p in [ARXIV_PDF_FOLDER, USER_PROCESSED, ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDER]:
     os.makedirs(p, exist_ok=True)
 
-# Helpers
-import tkinter as tk
-from tkinter import filedialog
-
+# Helper
 def browse_for_folder(prompt="Select a folder containing your PDFs"):
-    """Displays a pop-up which allows the user to select the folder in which the research papers are"""
     root = tk.Tk()
-    root.withdraw()  # hide the main window
-    folder_selected = filedialog.askdirectory(title=prompt)
-    return folder_selected
+    root.withdraw()
+    return filedialog.askdirectory(title=prompt)
 
-
-def fetch_and_parse_arxiv(category: str, max_results: int = 5, *, skip_download: bool = False, skip_parse: bool = False):
-    """Return a list of metadata dicts for freshly‑fetched arXiv papers.
-
-    Each dict has keys: id (e.g. 2406.12345v1), title, summary (abstract),
-    published, arxiv_url.  PDFs are downloaded to *ARXIV_PDF_FOLDER* and parsed
-    to *ARXIV_PROCESSED*.
-    """
+def fetch_and_parse_arxiv(category: str, max_results=MAX_RESULTS, *, skip_download=False, skip_parse=False):
     print(f"\n▶ Fetching {max_results} most recent papers from {category}…")
     entries = get_recent_arxiv_entries(category=category, max_results=max_results)
 
-    # Convert feedparser entries → simple dicts expected by downstream code.
     papers = []
     for e in entries:
-        arxiv_id = e.id.split("/")[-1]  # e.g. 2406.12345v1
+        arxiv_id = e.id.split("/")[-1]
         papers.append({
-            "title":      e.title.strip(),
-            "summary":    e.summary.strip(),
-            "published":  getattr(e, "published", ""),
-            "arxiv_url":  e.id,
-            "arxiv_id":   arxiv_id,
+            "title": e.title.strip(),
+            "summary": e.summary.strip(),
+            "published": getattr(e, "published", ""),
+            "arxiv_url": e.id,
+            "arxiv_id": arxiv_id,
         })
+
+    write_all_json(papers, filename="metadata.json")
+    print(f"\nSaved {len(papers)} papers into {os.path.join(DATA_DIR, 'metadata.json')}")
 
     if skip_download and skip_parse:
         return papers
 
-    # 1) Download PDFs 
     if not skip_download:
         download_arxiv_pdfs(papers, output_folder=ARXIV_PDF_FOLDER, delay_seconds=2)
     else:
         print("Skipping PDF download (assumed complete).")
 
-    # 2) Parse PDFs through GROBID 
     if not skip_parse:
         print("\n▶ Parsing arXiv PDFs with GROBID…")
         grobid_process_folder(ARXIV_PDF_FOLDER, ARXIV_PROCESSED)
@@ -119,46 +119,61 @@ def fetch_and_parse_arxiv(category: str, max_results: int = 5, *, skip_download:
 
     return papers
 
-
-def summarise_arxiv(skip_summarize: bool = False):
-    """Generate transformer summaries for every *_summary.txt in ARXIV_PROCESSED."""
+# Summarization
+def summarise_arxiv(summarizer=None, skip_summarize=False, mode="abstract"):
     if skip_summarize:
         print("Skipping summarisation step.")
         return
 
-    print("\n▶ Generating transformer summaries (this can be slow)…")
-    process_folder(ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDER, max_length=180)
+    if summarizer is None:
+        summarizer = TransformerSummarizer()
 
+    print(f"\n▶ Generating summaries (mode={mode}, this can be slow)…")
+    if mode == "full":
+        process_folder(ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDER, summarizer, max_length=180)
+    else:
+        # for abstracts, use metadata LLM summaries
+        process_metadata(
+            metadata_path=os.path.join(DATA_DIR, "metadata.json"),
+            output_path=os.path.join(DATA_DIR, "metadata_with_summaries.json"),
+            summarizer=summarizer,
+            max_length=120,
+            mode="abstract"
+        )
 
 def load_summary_map() -> dict[str, str]:
-    """Return {arxiv_id: summary_text}. Falls back to empty dict if none."""
     mapping = {}
     for fp in Path(ARXIV_SUMMARY_FOLDER).glob("*_summary.txt"):
         raw_id = fp.stem.replace("_summary", "")
-        arxiv_id = raw_id.split("v")[0]  # normalize ID by removing version
+        arxiv_id = raw_id.split("v")[0]
         try:
             mapping[arxiv_id] = fp.read_text(encoding="utf-8").strip()
         except Exception as e:
             print(f"Could not read summary {fp}: {e}")
+    # Also try metadata_with_summaries.json if abstracts
+    metadata_summary_path = os.path.join(DATA_DIR, "metadata_with_summaries.json")
+    if os.path.exists(metadata_summary_path):
+        try:
+            with open(metadata_summary_path, "r", encoding="utf-8") as f:
+                papers = json.load(f)
+            for p in papers:
+                mapping[p["arxiv_id"].split("v")[0]] = p.get("llm_summary", p.get("summary", ""))
+        except Exception as e:
+            print(f"Could not read metadata summaries: {e}")
     return mapping
 
-
-def embed_corpora(model_name: str, method: str, *, skip_embed: bool = False):
-    """
-    Return embeddings + model + filenames for both user and arXiv corpora.
-    Ensures embeddings are compatible with the chosen method.
-    """
+# Embedding
+def embed_corpora(model_name: str, method: str, *, skip_embed=False):
     print("\n▶ Embedding abstracts…")
     if skip_embed:
         print("Skipping embedding, loading existing embeddings from disk…")
     user_abs_texts, user_abs_embs, model, user_files = embed_abstracts(USER_PROCESSED, model_name)
-    arxiv_abs_texts, arxiv_abs_embs, _, _     = embed_abstracts(ARXIV_PROCESSED, model_name)
+    arxiv_abs_texts, arxiv_abs_embs, _, _ = embed_abstracts(ARXIV_PROCESSED, model_name)
 
     print("▶ Embedding section chunks…")
-    user_sections  = embed_sections(USER_PROCESSED,  model)
+    user_sections  = embed_sections(USER_PROCESSED, model)
     arxiv_sections = embed_sections(ARXIV_PROCESSED, model)
 
-    # Normalize only for FAISS
     if method == "faiss":
         import numpy as np
         for key in user_sections:
@@ -170,14 +185,10 @@ def embed_corpora(model_name: str, method: str, *, skip_embed: bool = False):
 
     return (user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files)
 
-
 def normalize_arxiv_id(arxiv_id_with_version: str) -> str:
-    """Strip version suffix from arXiv ID, e.g. '2507.13255v1' → '2507.13255'"""
     return arxiv_id_with_version.split("v")[0]
 
-
-# Main driver
-
+# Main drive
 def main():
     parser = argparse.ArgumentParser(description="Run the full arXiv→recommendation pipeline.")
     parser.add_argument("--category",  default="cs.CL")
@@ -189,12 +200,14 @@ def main():
     parser.add_argument("--skip-summarize",  action="store_true")
     parser.add_argument("--skip-embed",      action="store_true")
     parser.add_argument("--user-folder",     help="Path to user PDFs (if not set, a browse dialog will appear)")
+    parser.add_argument("--summarizer", type=str, choices=["transformer", "llama"], default="transformer")
+    parser.add_argument("--summary-mode", type=str, choices=["abstract", "full"], default="abstract",
+                        help="Whether to summarize abstracts or full papers")
+    parser.add_argument("--models_dir", type=str, help="Required if summarizer=llama: folder with GGUF model files")
 
     args = parser.parse_args()
 
-    # If no folder provided, show browse dialog
     user_pdf_folder = args.user_folder or browse_for_folder()
-
     if not user_pdf_folder:
         print("❌ No folder selected, exiting.")
         sys.exit(1)
@@ -214,7 +227,20 @@ def main():
         skip_parse=args.skip_parse,
     )
 
-    summarise_arxiv(skip_summarize=args.skip_summarize)
+    # Summarizer selection
+    LLAMA_MODEL_PATH = Path("models") / "llama-3.2-1b-instruct-q4_k_m.gguf"
+
+    if args.summarizer == "transformer":
+        summarizer = TransformerSummarizer()
+    else:
+        if not LLAMA_MODEL_PATH.exists():
+            raise FileNotFoundError(f"LLaMA model not found: {LLAMA_MODEL_PATH}")
+        print(f"Using LLaMA model at: {LLAMA_MODEL_PATH}")
+        summarizer = LlamaSummarizer(LLAMA_MODEL_PATH)
+
+    # Run summarization according to mode
+    summarise_arxiv(summarizer=summarizer, skip_summarize=args.skip_summarize, mode=args.summary_mode)
+
     summary_map = load_summary_map()
 
     user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files = embed_corpora(
@@ -235,8 +261,6 @@ def main():
     if not matches:
         print("\nNo matches above threshold. Try lowering --threshold?\n")
         sys.exit(0)
-
-    print(f"\nFound {len(matches)} relevant papers:\n")
 
     unique_matches = {}
     for m in matches:

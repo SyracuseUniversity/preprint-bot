@@ -26,7 +26,7 @@ SIMILARITY_THRESHOLDS = {
 }
 
 # Maximum number of results to retrieve per query from arXiv
-MAX_RESULTS = 30
+MAX_RESULTS = 15
 
 # Default SentenceTransformer model used for embedding abstracts and sections
 DEFAULT_MODEL_NAME = "all-MiniLM-L6-v2"
