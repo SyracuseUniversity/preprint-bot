@@ -11,8 +11,8 @@ from preprint_bot.query_arxiv import (
     get_arxiv_entries,
     get_recent_arxiv_entries,
     get_arxiv_pdf_bytes,
-    write_output,
-    write_jsonl,
+    # write_output,
+    # write_jsonl,
     process_entry,
     SAVE_DIR
 )
@@ -34,7 +34,7 @@ def fake_grobid_result():
         "authors": ["Alice", "Bob"],
         "affiliations": ["Uni1", "Uni2"],
         "pub_date": "2024-08-24",
-        "sections": [{"header": "Intro", "text": "Paragraph 1.\nParagraph 2."}]
+        "sections": [{"header": "Intro", "text": "Paragraph 1.\nParagraph 2."}] 
     }
 
 
@@ -86,24 +86,24 @@ def test_get_arxiv_pdf_bytes(mock_get):
     assert arxiv_id == "1234.5678v1"
 
 
-def test_write_output_and_jsonl(tmp_path, fake_grobid_result, fake_tokenized):
-    # Override SAVE_DIR temporarily
-    test_dir = tmp_path
-    with patch("preprint_bot.query_arxiv.SAVE_DIR", test_dir):
-        arxiv_id = "1234.5678v1"
-        write_output(arxiv_id, fake_grobid_result, fake_tokenized)
-        write_jsonl(arxiv_id, fake_grobid_result, fake_tokenized)
+# def test_write_output_and_jsonl(tmp_path, fake_grobid_result, fake_tokenized):
+#     # Override SAVE_DIR temporarily
+#     test_dir = tmp_path
+#     with patch("preprint_bot.query_arxiv.SAVE_DIR", test_dir):
+#         arxiv_id = "1234.5678v1"
+#         # write_output(arxiv_id, fake_grobid_result, fake_tokenized)
+#         # write_jsonl(arxiv_id, fake_grobid_result, fake_tokenized)
 
-        txt_file = test_dir / f"{arxiv_id}_output.txt"
-        json_file = test_dir / f"{arxiv_id}_output.jsonl"
-        assert txt_file.exists()
-        assert json_file.exists()
+#         txt_file = test_dir / f"{arxiv_id}_output.txt"
+#         json_file = test_dir / f"{arxiv_id}_output.jsonl"
+#         assert txt_file.exists()
+#         assert json_file.exists()
 
-        content = txt_file.read_text()
-        assert "Sample Paper" in content
-        json_content = json.loads(json_file.read_text())
-        assert json_content["arxiv_id"] == arxiv_id
-        assert json_content["title"] == "Sample Paper"
+#         content = txt_file.read_text()
+#         assert "Sample Paper" in content
+#         json_content = json.loads(json_file.read_text())
+#         assert json_content["arxiv_id"] == arxiv_id
+#         assert json_content["title"] == "Sample Paper"
 
 
 @patch("preprint_bot.query_arxiv.get_arxiv_pdf_bytes")
@@ -131,13 +131,12 @@ def test_process_entry(mock_sleep, mock_tokenize, mock_grobid, mock_pdf_bytes, t
 
 @patch("preprint_bot.query_arxiv.time.sleep", return_value=None)
 def test_main_fetch_and_process(tmp_path):
-    # Simulate main pipeline with process_entry mocked
     fake_entry = MagicMock()
     fake_entry.id = "https://arxiv.org/abs/1234.5678v1"
 
     with patch("preprint_bot.query_arxiv.build_query", return_value="QUERY"):
         with patch("preprint_bot.query_arxiv.get_arxiv_entries", return_value=[fake_entry]):
-            with patch("preprint_bot.query_arxiv.process_entry") as mock_process:
+            with patch("preprint_bot.query_arxiv.process_entry", return_value={"arxiv_id": "1234.5678v1"}) as mock_process:
                 from preprint_bot.query_arxiv import main
                 main(keywords=["nlp"], category=None, max_results=1, delay=0)
                 mock_process.assert_called_once_with(fake_entry, 0)

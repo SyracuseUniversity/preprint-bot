@@ -74,13 +74,17 @@ def get_arxiv_pdf_bytes(arxiv_url):
 
 def process_entry(entry, delay):
     """
-    Process a single arXiv entry: download PDF, extract sections, tokenize, return record.
+    Process a single arXiv entry: download PDF, extract sections, tokenize,
+    save outputs, and return record.
     """
     arxiv_id = entry.id.split('/')[-1]
     print(f"\nProcessing {arxiv_id}")
+
+    # Fetch PDF and parse
     pdf_bytes, _ = get_arxiv_pdf_bytes(entry.id)
     result = extract_grobid_sections_from_bytes(pdf_bytes)
 
+    # Tokenize sections
     tokenized = {
         'title': spacy_tokenize(result['title']),
         'abstract': spacy_tokenize(result['abstract']),
@@ -90,6 +94,7 @@ def process_entry(entry, delay):
         ]
     }
 
+    # Build structured record
     record = {
         "arxiv_id": arxiv_id,
         "title": result['title'],
@@ -101,9 +106,24 @@ def process_entry(entry, delay):
         "tokens": tokenized
     }
 
+    # --- Write outputs (so tests can find them) ---
+    txt_path = os.path.join(SAVE_DIR, f"{arxiv_id}_output.txt")
+    jsonl_path = os.path.join(SAVE_DIR, f"{arxiv_id}_output.jsonl")
+
+    with open(txt_path, "w", encoding="utf-8") as f:
+        f.write(result['title'] + "\n\n")
+        f.write(result['abstract'] + "\n\n")
+        for sec in result['sections']:
+            f.write(sec['header'] + "\n")
+            f.write(sec['text'] + "\n\n")
+
+    with open(jsonl_path, "w", encoding="utf-8") as f:
+        json.dump(record, f, indent=2)
+
     print(f"Finished: {arxiv_id}")
     time.sleep(delay)
     return record
+
 
 
 SAVE_DIR = os.path.join(os.getcwd(), "pdf_processes")
@@ -121,15 +141,14 @@ def write_all_json(records, filename="metadata.json"):
 
 
 def main(keywords, category, max_results, delay):
-    # save all results into one JSON file
-    write_all_json(all_records, filename="metadata.json")
-    print(f"\nSaved {len(all_records)} papers into {os.path.join(SAVE_DIR, 'metadata.json')}")
+    """
+    Run the full pipeline: fetch entries, process them, save metadata.json.
+    """
     if keywords or category:
         query = build_query(keywords, category)
         print("Search Query:", query)
         entries = get_arxiv_entries(query, max_results)
     else:
-        # fallback to default category fetch
         entries = get_recent_arxiv_entries("cs.CL", max_results)
 
     print(f"Fetched {len(entries)} entries from arXiv.")
@@ -142,5 +161,6 @@ def main(keywords, category, max_results, delay):
         except Exception as e:
             print(f"Error with {entry.id}: {e}")
 
-
-
+    # ✅ Now safe to write metadata.json
+    write_all_json(all_records, filename="metadata.json")
+    print(f"\nSaved {len(all_records)} papers into {os.path.join(SAVE_DIR, 'metadata.json')}")
