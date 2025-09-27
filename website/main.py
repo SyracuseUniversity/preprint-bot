@@ -5,6 +5,39 @@ from pathlib import Path
 from datetime import datetime
 import json
 
+import bcrypt
+from typing import Optional
+
+# --- Simple in-memory users (email -> bcrypt hash). Generate hashes with bcrypt.hashpw(...) once and paste here.
+USERS = {
+    "demo@example.com": b"$2b$12$5rqH0P7a3Jm2j9JwH3t6xOGq9b6t3lD6O9y8y1QYgJwVtY3R2kzTe",  # password: demo1234
+}
+
+def verify_password(plain: str, hashed: bytes) -> bool:
+    try:
+        return bcrypt.checkpw(plain.encode(), hashed)
+    except Exception:
+        return False
+
+def require_login() -> Optional[str]:
+    # Returns logged-in email or None
+    if "user_email" in st.session_state:
+        return st.session_state["user_email"]
+
+    st.subheader("Sign in")
+    with st.form("login_form", clear_on_submit=False):
+        email_in = st.text_input("Email", key="login_email")
+        pw_in = st.text_input("Password", type="password", key="login_password")
+        submitted = st.form_submit_button("Sign in")
+    if submitted:
+        if email_in in USERS and verify_password(pw_in, USERS[email_in]):
+            st.session_state["user_email"] = email_in
+            st.success("Signed in.")
+            st.rerun()
+        else:
+            st.error("Invalid email or password.")
+    return None
+
 app = FastAPI()
 
 class Settings(BaseModel):
