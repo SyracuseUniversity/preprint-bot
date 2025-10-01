@@ -4,6 +4,7 @@ import requests
 import feedparser
 import argparse
 import json
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from .extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
@@ -13,24 +14,55 @@ from .config import MAX_RESULTS as CONFIG_MAX_RESULTS, DATA_DIR
 SAVE_DIR = os.path.join(os.getcwd(), "pdf_processes")
 os.makedirs(SAVE_DIR, exist_ok=True)
 
-
 # Default MAX_RESULTS (can be overridden by CLI or config)
-MAX_RESULTS = CONFIG_MAX_RESULTS if CONFIG_MAX_RESULTS else 50
+MAX_RESULTS = CONFIG_MAX_RESULTS if CONFIG_MAX_RESULTS else 500  # increase, since we want *all*
 
 
-def build_query(keywords, category):
+def get_yesterday_entries(rate_limit: float = 3.0):
     """
-    Build the arXiv API search query combining category and/or keywords.
+    Fetch all arXiv entries submitted yesterday (UTC), regardless of category, with pagination.
+    
+    Args:
+        rate_limit (float): Seconds to sleep between requests. Default=3.0 sec (per arXiv guidelines).
     """
-    parts = []
-    if category:
-        parts.append(f"cat:{category}")
-    if keywords:
-        kw_query = "+OR+".join([f'all:"{kw}"' for kw in keywords])
-        parts.append(f"({kw_query})")
-    if not parts:
-        raise ValueError("At least one of --keywords or --category must be provided.")
-    return "+AND+".join(parts)
+    yesterday = datetime.utcnow().date() - timedelta(days=1)
+    start = yesterday.strftime("%Y%m%d000000")
+    end = yesterday.strftime("%Y%m%d235959")
+    query = f"submittedDate:[{start} TO {end}]"
+
+    all_entries = []
+    start_index = 0
+    batch_size = 2000   # arXiv max per query
+
+    while True:
+        url = (
+            "http://export.arxiv.org/api/query?"
+            + f"search_query={query}"
+            + f"&start={start_index}&max_results={batch_size}"
+            + "&sortBy=submittedDate&sortOrder=descending"
+        )
+        print(f"▶ Fetching batch starting at {start_index} …")
+        resp = requests.get(url)
+        resp.raise_for_status()
+        feed = feedparser.parse(resp.text)
+        entries = feed.entries
+
+        if not entries:
+            break
+
+        all_entries.extend(entries)
+        start_index += batch_size
+
+        # stop if fewer than batch_size returned → end of results
+        if len(entries) < batch_size:
+            break
+
+        # Respect arXiv API rate limits
+        print(f"⏳ Sleeping {rate_limit} sec before next request…")
+        time.sleep(rate_limit)
+
+    print(f"✅ Retrieved total {len(all_entries)} entries from yesterday.")
+    return all_entries
 
 
 def get_arxiv_entries(query, max_results):
@@ -41,19 +73,6 @@ def get_arxiv_entries(query, max_results):
         "http://export.arxiv.org/api/query?"
         + "search_query=" + query
         + f"&start=0&max_results={max_results}&sortBy=submittedDate&sortOrder=descending"
-    )
-    resp = requests.get(url)
-    resp.raise_for_status()
-    return feedparser.parse(resp.text).entries
-
-
-def get_recent_arxiv_entries(category="cs.CL", max_results=MAX_RESULTS):
-    """
-    Convenience: Fetch recent entries for a category only (no keywords).
-    """
-    url = (
-        f"http://export.arxiv.org/api/query?search_query=cat:{category}"
-        f"&start=0&max_results={max_results}&sortBy=submittedDate&sortOrder=descending"
     )
     resp = requests.get(url)
     resp.raise_for_status()
@@ -94,7 +113,6 @@ def process_entry(entry, delay):
         ]
     }
 
-    # Build structured record
     record = {
         "arxiv_id": arxiv_id,
         "title": result['title'],
@@ -106,7 +124,7 @@ def process_entry(entry, delay):
         "tokens": tokenized
     }
 
-    # --- Write outputs (so tests can find them) ---
+    # Save outputs
     txt_path = os.path.join(SAVE_DIR, f"{arxiv_id}_output.txt")
     jsonl_path = os.path.join(SAVE_DIR, f"{arxiv_id}_output.jsonl")
 
@@ -125,10 +143,6 @@ def process_entry(entry, delay):
     return record
 
 
-
-SAVE_DIR = os.path.join(os.getcwd(), "pdf_processes")
-os.makedirs(SAVE_DIR, exist_ok=True)
-
 def write_all_json(records, filename="metadata.json"):
     """
     Save all fetched papers' metadata into one JSON file.
@@ -139,17 +153,13 @@ def write_all_json(records, filename="metadata.json"):
     print(f"✅ Saved {len(records)} papers into {json_path}")
 
 
-
-def main(keywords, category, max_results, delay):
+def main(max_results=MAX_RESULTS, delay=2):
     """
-    Run the full pipeline: fetch entries, process them, save metadata.json.
+    Run pipeline for ALL preprints from yesterday.
     """
-    if keywords or category:
-        query = build_query(keywords, category)
-        print("Search Query:", query)
-        entries = get_arxiv_entries(query, max_results)
-    else:
-        entries = get_recent_arxiv_entries("cs.CL", max_results)
+    query = get_yesterday_query()
+    print("Search Query:", query)
+    entries = get_arxiv_entries(query, max_results)
 
     print(f"Fetched {len(entries)} entries from arXiv.")
     all_records = []
@@ -161,6 +171,5 @@ def main(keywords, category, max_results, delay):
         except Exception as e:
             print(f"Error with {entry.id}: {e}")
 
-    # ✅ Now safe to write metadata.json
     write_all_json(all_records, filename="metadata.json")
     print(f"\nSaved {len(all_records)} papers into {os.path.join(SAVE_DIR, 'metadata.json')}")

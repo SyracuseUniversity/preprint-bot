@@ -53,7 +53,7 @@ from .config import DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS
 from .download_arxiv_pdfs import download_arxiv_pdfs
 from .embed_papers import embed_abstracts, embed_sections
 from .extract_grobid import process_folder as grobid_process_folder
-from .query_arxiv import get_recent_arxiv_entries, write_all_json
+from .query_arxiv import get_recent_arxiv_entries, write_all_json, get_yesterday_entries
 from .similarity_matcher import hybrid_similarity_pipeline
 from .summarization_script import (
     process_folder,
@@ -80,9 +80,13 @@ def browse_for_folder(prompt="Select a folder containing your PDFs"):
     return filedialog.askdirectory(title=prompt)
 
 
-def fetch_and_parse_arxiv(category: str, max_results=MAX_RESULTS, *, skip_download=False, skip_parse=False):
-    print(f"\n▶ Fetching {max_results} most recent papers from {category}…")
-    entries = get_recent_arxiv_entries(category=category, max_results=max_results)
+def fetch_and_parse_arxiv(category: str, *, skip_download=False, skip_parse=False, rate_limit: float = 3.0):
+    if category == "all":
+        print(f"\n▶ Fetching ALL preprints from yesterday (paginated, rate_limit={rate_limit}s)…")
+        entries = get_yesterday_entries(rate_limit=rate_limit)
+    else:
+        print(f"\n▶ Fetching {MAX_RESULTS} most recent papers from {category}…")
+        entries = get_recent_arxiv_entries(category=category, max_results=MAX_RESULTS)
 
     papers = []
     for e in entries:
