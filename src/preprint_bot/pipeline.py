@@ -23,7 +23,7 @@ Report the recommendations – title, link, transformer summary (or abstract fal
 
 Usage
 -----
-python pipeline.py --category cs.LG --threshold medium --model all-MiniLM-L6-v2
+preprint_bot --category cs.LG --threshold medium --model all-MiniLM-L6-v2
 
 Skipping expensive steps:
 Add the below in your command line to skip downloading, parsing, summarising or embedding steps:
@@ -39,14 +39,6 @@ Prerequisites
 • Rename summarization-script.py to summarization_script.py so it can be imported as a Python module
 """
 
-#!/usr/bin/env python3
-"""
-End-to-End arXiv Preprint Recommender with flexible summary mode
-
-Summary mode (--summary-mode) can be:
-- abstract: summarize only paper abstracts (default)
-- full: summarize full paper text sections
-"""
 
 import argparse
 import json
@@ -56,9 +48,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog
 
-import feedparser
-
-# Local project imports
+# Local imports (assumes running as `python pipeline.py` in project root)
 from .config import DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS
 from .download_arxiv_pdfs import download_arxiv_pdfs
 from .embed_papers import embed_abstracts, embed_sections
@@ -66,24 +56,29 @@ from .extract_grobid import process_folder as grobid_process_folder
 from .query_arxiv import get_recent_arxiv_entries, write_all_json
 from .similarity_matcher import hybrid_similarity_pipeline
 from .summarization_script import (
-    process_folder, TransformerSummarizer, LlamaSummarizer, process_metadata
+    process_folder,
+    TransformerSummarizer,
+    LlamaSummarizer,
+    process_metadata,
 )
 
 # Folder layout
-USER_PDF_FOLDER      = os.getenv("USER_PDF_FOLDER", "user_pdfs")
-ARXIV_PDF_FOLDER     = os.path.join(DATA_DIR, "arxiv_pdfs")
-USER_PROCESSED       = os.path.join(DATA_DIR, "processed_users")
-ARXIV_PROCESSED      = os.path.join(DATA_DIR, "processed_arxiv")
+USER_PDF_FOLDER = os.getenv("USER_PDF_FOLDER", "user_pdfs")
+ARXIV_PDF_FOLDER = os.path.join(DATA_DIR, "arxiv_pdfs")
+USER_PROCESSED = os.path.join(DATA_DIR, "processed_users")
+ARXIV_PROCESSED = os.path.join(DATA_DIR, "processed_arxiv")
 ARXIV_SUMMARY_FOLDER = os.path.join(DATA_DIR, "summaries_arxiv")
 
 for p in [ARXIV_PDF_FOLDER, USER_PROCESSED, ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDER]:
     os.makedirs(p, exist_ok=True)
 
-# Helper
+
+# Helpers
 def browse_for_folder(prompt="Select a folder containing your PDFs"):
     root = tk.Tk()
     root.withdraw()
     return filedialog.askdirectory(title=prompt)
+
 
 def fetch_and_parse_arxiv(category: str, max_results=MAX_RESULTS, *, skip_download=False, skip_parse=False):
     print(f"\n▶ Fetching {max_results} most recent papers from {category}…")
@@ -92,13 +87,15 @@ def fetch_and_parse_arxiv(category: str, max_results=MAX_RESULTS, *, skip_downlo
     papers = []
     for e in entries:
         arxiv_id = e.id.split("/")[-1]
-        papers.append({
-            "title": e.title.strip(),
-            "summary": e.summary.strip(),
-            "published": getattr(e, "published", ""),
-            "arxiv_url": e.id,
-            "arxiv_id": arxiv_id,
-        })
+        papers.append(
+            {
+                "title": e.title.strip(),
+                "summary": e.summary.strip(),
+                "published": getattr(e, "published", ""),
+                "arxiv_url": e.id,
+                "arxiv_id": arxiv_id,
+            }
+        )
 
     write_all_json(papers, filename="metadata.json")
     print(f"\nSaved {len(papers)} papers into {os.path.join(DATA_DIR, 'metadata.json')}")
@@ -119,7 +116,7 @@ def fetch_and_parse_arxiv(category: str, max_results=MAX_RESULTS, *, skip_downlo
 
     return papers
 
-# Summarization
+
 def summarise_arxiv(summarizer=None, skip_summarize=False, mode="abstract"):
     if skip_summarize:
         print("Skipping summarisation step.")
@@ -132,160 +129,209 @@ def summarise_arxiv(summarizer=None, skip_summarize=False, mode="abstract"):
     if mode == "full":
         process_folder(ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDER, summarizer, max_length=180)
     else:
-        # for abstracts, use metadata LLM summaries
         process_metadata(
             metadata_path=os.path.join(DATA_DIR, "metadata.json"),
             output_path=os.path.join(DATA_DIR, "metadata_with_summaries.json"),
             summarizer=summarizer,
             max_length=120,
-            mode="abstract"
+            mode="abstract",
         )
 
-def load_summary_map() -> dict[str, str]:
-    mapping = {}
-    for fp in Path(ARXIV_SUMMARY_FOLDER).glob("*_summary.txt"):
-        raw_id = fp.stem.replace("_summary", "")
-        arxiv_id = raw_id.split("v")[0]
-        try:
-            mapping[arxiv_id] = fp.read_text(encoding="utf-8").strip()
-        except Exception as e:
-            print(f"Could not read summary {fp}: {e}")
-    # Also try metadata_with_summaries.json if abstracts
-    metadata_summary_path = os.path.join(DATA_DIR, "metadata_with_summaries.json")
-    if os.path.exists(metadata_summary_path):
-        try:
-            with open(metadata_summary_path, "r", encoding="utf-8") as f:
-                papers = json.load(f)
-            for p in papers:
-                mapping[p["arxiv_id"].split("v")[0]] = p.get("llm_summary", p.get("summary", ""))
-        except Exception as e:
-            print(f"Could not read metadata summaries: {e}")
-    return mapping
 
-# Embedding
-def embed_corpora(model_name: str, method: str, *, skip_embed=False):
-    print("\n▶ Embedding abstracts…")
-    if skip_embed:
-        print("Skipping embedding, loading existing embeddings from disk…")
-    user_abs_texts, user_abs_embs, model, user_files = embed_abstracts(USER_PROCESSED, model_name)
-    arxiv_abs_texts, arxiv_abs_embs, _, _ = embed_abstracts(ARXIV_PROCESSED, model_name)
+def embed_corpora(model_name: str, method: str, *, embed_users: bool = True, embed_arxiv: bool = True, skip_embed: bool = False):
+    import numpy as np
 
-    print("▶ Embedding section chunks…")
-    user_sections  = embed_sections(USER_PROCESSED, model)
-    arxiv_sections = embed_sections(ARXIV_PROCESSED, model)
+    user_abs_embs, arxiv_abs_embs = None, None
+    user_sections, arxiv_sections = {}, {}
+    user_files = []
+    model = None
 
+    if embed_users:
+        print("\n▶ Embedding user abstracts…")
+        user_abs_texts, user_abs_embs, model, user_files = embed_abstracts(USER_PROCESSED, model_name)
+        print("▶ Embedding user section chunks…")
+        user_sections = embed_sections(USER_PROCESSED, model)
+
+    if embed_arxiv:
+        print("\n▶ Embedding arXiv abstracts…")
+        arxiv_abs_texts, arxiv_abs_embs, model, _ = embed_abstracts(ARXIV_PROCESSED, model_name)
+        print("▶ Embedding arXiv section chunks…")
+        arxiv_sections = embed_sections(ARXIV_PROCESSED, model)
+
+    # Normalize embeddings if FAISS backend
     if method == "faiss":
-        import numpy as np
+        if user_abs_embs is not None:
+            user_abs_embs = np.array(user_abs_embs, dtype="float32")
+            user_abs_embs /= np.linalg.norm(user_abs_embs, axis=1, keepdims=True) + 1e-10
+        if arxiv_abs_embs is not None:
+            arxiv_abs_embs = np.array(arxiv_abs_embs, dtype="float32")
+            arxiv_abs_embs /= np.linalg.norm(arxiv_abs_embs, axis=1, keepdims=True) + 1e-10
         for key in user_sections:
-            user_sections[key] = np.array(user_sections[key], dtype="float32")
-            user_sections[key] /= np.linalg.norm(user_sections[key], axis=1, keepdims=True) + 1e-10
+            arr = np.array(user_sections[key], dtype="float32")
+            arr /= np.linalg.norm(arr, axis=1, keepdims=True) + 1e-10
+            user_sections[key] = arr
         for key in arxiv_sections:
-            arxiv_sections[key] = np.array(arxiv_sections[key], dtype="float32")
-            arxiv_sections[key] /= np.linalg.norm(arxiv_sections[key], axis=1, keepdims=True) + 1e-10
+            arr = np.array(arxiv_sections[key], dtype="float32")
+            arr /= np.linalg.norm(arr, axis=1, keepdims=True) + 1e-10
+            arxiv_sections[key] = arr
 
     return (user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files)
 
-def normalize_arxiv_id(arxiv_id_with_version: str) -> str:
-    return arxiv_id_with_version.split("v")[0]
 
-# Main drive
-def main():
-    parser = argparse.ArgumentParser(description="Run the full arXiv→recommendation pipeline.")
-    parser.add_argument("--category",  default="cs.CL")
-    parser.add_argument("--threshold", default="medium", choices=["low", "medium", "high"])
-    parser.add_argument("--model",     default=DEFAULT_MODEL_NAME)
-    parser.add_argument("--method",    default="faiss", choices=["faiss", "cosine", "qdrant"], help="Similarity backend")
-    parser.add_argument("--skip-download",   action="store_true")
-    parser.add_argument("--skip-parse",      action="store_true")
-    parser.add_argument("--skip-summarize",  action="store_true")
-    parser.add_argument("--skip-embed",      action="store_true")
-    parser.add_argument("--user-folder",     help="Path to user PDFs (if not set, a browse dialog will appear)")
-    parser.add_argument("--summarizer", type=str, choices=["transformer", "llama"], default="transformer")
-    parser.add_argument("--summary-mode", type=str, choices=["abstract", "full"], default="abstract",
-                        help="Whether to summarize abstracts or full papers")
-    parser.add_argument("--models_dir", type=str, help="Required if summarizer=llama: folder with GGUF model files")
-
-    args = parser.parse_args()
-
-    user_pdf_folder = args.user_folder or browse_for_folder()
-    if not user_pdf_folder:
-        print("❌ No folder selected, exiting.")
-        sys.exit(1)
-
-    global USER_PDF_FOLDER
-    USER_PDF_FOLDER = user_pdf_folder
-
-    if not os.listdir(USER_PROCESSED):
-        print("\nParsing user PDFs with GROBID…")
-        grobid_process_folder(USER_PDF_FOLDER, USER_PROCESSED)
-    else:
-        print("User PDFs already parsed → skipping.")
-
+# Modes
+def run_corpus_mode(args):
+    # Fetch, parse, summarize
     papers_meta = fetch_and_parse_arxiv(
         category=args.category,
         skip_download=args.skip_download,
         skip_parse=args.skip_parse,
     )
 
-    # Summarizer selection
-    LLAMA_MODEL_PATH = Path("models") / "llama-3.2-1b-instruct-q4_k_m.gguf"
-
+    # Summarizer
     if args.summarizer == "transformer":
         summarizer = TransformerSummarizer()
     else:
-        if not LLAMA_MODEL_PATH.exists():
-            raise FileNotFoundError(f"LLaMA model not found: {LLAMA_MODEL_PATH}")
-        print(f"Using LLaMA model at: {LLAMA_MODEL_PATH}")
-        summarizer = LlamaSummarizer(LLAMA_MODEL_PATH)
+        if not args.models_dir:
+            raise ValueError("--models_dir required for llama summarizer")
+        llama_path = Path(args.models_dir) / "Llama-3.2-1B-Instruct.fp16.gguf"
+        if not llama_path.exists():
+            raise FileNotFoundError(f"LLaMA model not found: {llama_path}")
+        summarizer = LlamaSummarizer(llama_path)
 
-    # Run summarization according to mode
-    summarise_arxiv(summarizer=summarizer, skip_summarize=args.skip_summarize, mode=args.summary_mode)
+    summarise_arxiv(summarizer, skip_summarize=args.skip_summarize, mode=args.summary_mode)
 
-    summary_map = load_summary_map()
-
-    user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files = embed_corpora(
+    # Only embed ArXiv side
+    _, arxiv_abs_embs, _, arxiv_sections, _ = embed_corpora(
         model_name=args.model,
         method=args.method,
+        embed_users=False,   # prevent touching processed_users
+        embed_arxiv=True,
         skip_embed=args.skip_embed
     )
 
-    print(f"\n▶ Performing hybrid similarity search with method = {args.method} …")
+    # Save corpus
+    corpus_out = os.path.join(DATA_DIR, "arxiv_corpus.json")
+    with open(corpus_out, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "papers_meta": papers_meta,
+                "abs_embs": arxiv_abs_embs.tolist(),
+                "sections": {k: v.tolist() for k, v in arxiv_sections.items()},
+            },
+            f,
+        )
+    print(f"\n Corpus saved to {corpus_out}")
+
+    # Save corpus
+    corpus_out = os.path.join(DATA_DIR, "arxiv_corpus.json")
+    with open(corpus_out, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "papers_meta": papers_meta,
+                "abs_embs": arxiv_abs_embs.tolist(),
+                "sections": {k: v.tolist() for k, v in arxiv_sections.items()},
+            },
+            f,
+        )
+    print(f"\nCorpus saved to {corpus_out}")
+
+
+def run_user_mode(args):
+    user_pdf_folder = args.user_folder or browse_for_folder()
+    if not user_pdf_folder:
+        print("No user folder selected")
+        sys.exit(1)
+
+    global USER_PDF_FOLDER
+    USER_PDF_FOLDER = user_pdf_folder
+
+    if not os.listdir(USER_PROCESSED):
+        print("\n▶ Parsing user PDFs with GROBID…")
+        grobid_process_folder(USER_PDF_FOLDER, USER_PROCESSED)
+    else:
+        print("User PDFs already parsed → skipping.")
+
+    # Only embed user side
+    user_abs_embs, _, user_sections, _, user_files = embed_corpora(
+        model_name=args.model,
+        method=args.method,
+        embed_users=True,
+        embed_arxiv=False,
+        skip_embed=args.skip_embed
+    )
+
+    # Load precomputed ArXiv corpus
+    corpus_path = os.path.join(DATA_DIR, "arxiv_corpus.json")
+    if not os.path.exists(corpus_path):
+        print(f"Corpus file not found at {corpus_path}. Run --mode corpus first.")
+        sys.exit(1)
+
+    with open(corpus_path, "r", encoding="utf-8") as f:
+        corpus = json.load(f)
+
+    arxiv_abs_embs = corpus["abs_embs"]
+    arxiv_sections = corpus["sections"]
+    papers_meta = corpus["papers_meta"]
+
+    # Load LLM summaries
+    summary_map = {}
+    metadata_summary_path = os.path.join(DATA_DIR, "metadata_with_summaries.json")
+    if os.path.exists(metadata_summary_path):
+        with open(metadata_summary_path, "r", encoding="utf-8") as f:
+            papers_with_summaries = json.load(f)
+        for p in papers_with_summaries:
+            base_id = p["arxiv_id"].split("v")[0]  # strip version numbers
+            summary_map[base_id] = p.get("llm_summary", p.get("summary", ""))
+
+    # Match
+    print(f"\n▶ Running similarity search with method={args.method}")
     matches = hybrid_similarity_pipeline(
-        user_abs_embs, arxiv_abs_embs,
-        user_sections, arxiv_sections,
-        papers_meta, user_files,
+        user_abs_embs,
+        arxiv_abs_embs,
+        user_sections,
+        arxiv_sections,
+        papers_meta,
+        user_files,
         threshold_label=args.threshold,
         method=args.method,
     )
 
-    if not matches:
-        print("\nNo matches above threshold. Try lowering --threshold?\n")
-        sys.exit(0)
-
-    unique_matches = {}
+    # Replace summary field with llm_summary when available
     for m in matches:
-        arxiv_id_with_version = m["url"].split("/")[-1]
-        arxiv_id = normalize_arxiv_id(arxiv_id_with_version)
-        summary = summary_map.get(arxiv_id, m["summary"])
+        arxiv_id = m["url"].split("/")[-1].split("v")[0]
+        if arxiv_id in summary_map:
+            m["summary"] = summary_map[arxiv_id]
 
-        if (m["url"] not in unique_matches) or (m["score"] > unique_matches[m["url"]]["score"]):
-            unique_matches[m["url"]] = {
-                "title": m["title"],
-                "summary": summary,
-                "url": m["url"],
-                "published": m.get("published", ""),
-                "score": m["score"],
-            }
-
-    output_matches = list(unique_matches.values())
-    output_matches.sort(key=lambda x: x["score"], reverse=True)
-
-    output_path = "pdf_processes/ranked_matches.json"
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_path = os.path.join(DATA_DIR, "ranked_matches.json")
     with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(output_matches, f, indent=2)
+        json.dump(matches, f, indent=2)
+    print(f"\nMatches saved to {output_path} (with LLM summaries where available)")
 
-    print(f"\n✅ Saved ranked matches to: {output_path}")
+
+# Main
+def main():
+    parser = argparse.ArgumentParser(description="Run the arXiv recommender pipeline.")
+    parser.add_argument("--mode", choices=["corpus", "user"], required=True)
+
+    parser.add_argument("--category", default="cs.LG")
+    parser.add_argument("--threshold", default="medium", choices=["low", "medium", "high"])
+    parser.add_argument("--model", default=DEFAULT_MODEL_NAME)
+    parser.add_argument("--method", default="faiss", choices=["faiss", "cosine", "qdrant"])
+    parser.add_argument("--skip-download", action="store_true")
+    parser.add_argument("--skip-parse", action="store_true")
+    parser.add_argument("--skip-summarize", action="store_true")
+    parser.add_argument("--skip-embed", action="store_true")
+    parser.add_argument("--user-folder", help="Path to user PDFs (required in user mode)")
+    parser.add_argument("--summarizer", choices=["transformer", "llama"], default="transformer")
+    parser.add_argument("--summary-mode", choices=["abstract", "full"], default="abstract")
+    parser.add_argument("--models_dir", type=str, help="Required if summarizer=llama")
+
+    args = parser.parse_args()
+
+    if args.mode == "corpus":
+        run_corpus_mode(args)
+    elif args.mode == "user":
+        run_user_mode(args)
 
 
 if __name__ == "__main__":
