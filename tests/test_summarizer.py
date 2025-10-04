@@ -1,94 +1,167 @@
-# import pytest
-# from pathlib import Path
-# import tempfile
-# from unittest.mock import patch, MagicMock
+# tests/test_summarization_script.py
+import os
+import json
+import tempfile
+import pytest
+from pathlib import Path
 
-# # Import only pure functions (safe to test without transformers)
-# from preprint_bot.summarization_script import (
-#     clean_text,
-#     extract_sections_from_txt_markdown,
-#     chunk_text,
-#     summarize_sections_single_paragraph,
-#     process_folder,
-# )
+import sys, os
+# add the src folder to sys.path so Python can import from it
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
-
-# def test_clean_text_removes_unwanted_patterns():
-#     raw = "This is a test-\n\nwith [1] references (Smith, 2020)."
-#     cleaned = clean_text(raw)
-#     assert "[1]" not in cleaned
-#     assert "(Smith, 2020)" not in cleaned
-#     assert "\n" not in cleaned
-#     assert cleaned.startswith("This is a test")
+import summarization_script as ss
 
 
-# def test_extract_sections_from_txt_markdown_basic():
-#     txt = """### Introduction
-#     This is the intro.
-
-#     ### Methods
-#     Method details.
-
-#     ### References
-#     Some references.
-#     """
-#     sections = extract_sections_from_txt_markdown(txt)
-#     headers = [s['header'] for s in sections]
-#     assert 'introduction' in headers
-#     assert 'methods' in headers
-#     assert 'references' not in headers
+# -------------------------------
+# clean_text
+# -------------------------------
+def test_clean_text_basic():
+    raw = "This is a test-\n\nwith [1] references (Smith, 2020)."
+    cleaned = ss.clean_text(raw)
+    assert "-\n" not in cleaned
+    assert "[1]" not in cleaned
+    assert "(Smith, 2020)" not in cleaned
+    assert "\n" not in cleaned
+    assert cleaned.startswith("This is a test")
 
 
-# def test_chunk_text_splits_correctly():
-#     text = "Sentence one. Sentence two. Sentence three."
-#     chunks = chunk_text(text, max_tokens=2)
-#     assert len(chunks) >= 2
-#     assert all(isinstance(c, str) for c in chunks)
+# -------------------------------
+# extract_sections_from_txt_markdown
+# -------------------------------
+def test_extract_sections_from_txt_markdown_excludes_references():
+    txt = """### Introduction
+    This is intro text.
+
+    ### References
+    A list of references.
+    """
+    sections = ss.extract_sections_from_txt_markdown(txt)
+    headers = [s["header"] for s in sections]
+    assert "introduction" in headers
+    assert all("reference" not in h for h in headers)
 
 
-# def test_transformer_summarizer_mocked():
-#     """Patch pipeline so no real transformers dependency is needed."""
-#     fake_pipeline = MagicMock(return_value=[{"summary_text": "fake summary"}])
-#     with patch("preprint_bot.summarization_script.pipeline", return_value=fake_pipeline):
-#         from preprint_bot.summarization_script import TransformerSummarizer
-#         summarizer = TransformerSummarizer(model_name="any-model")  # safe, won’t hit HF
-#         result = summarizer.summarize("This is a long test sentence " * 10, max_length=50)
-#         assert "fake summary" in result
+def test_extract_sections_multiple_headers():
+    txt = """### Introduction
+    Intro stuff.
+    ### Methods
+    Method stuff.
+    """
+    sections = ss.extract_sections_from_txt_markdown(txt)
+    assert len(sections) == 2
+    assert sections[0]["header"] == "introduction"
+    assert "Intro stuff." in sections[0]["text"]
 
 
-# @patch("preprint_bot.summarization_script.TransformerSummarizer", autospec=True)
-# def test_summarize_sections_single_paragraph(mock_cls):
-#     sections = [
-#         {"header": "Introduction", "text": "Word " * 30},
-#         {"header": "Methods", "text": "Word " * 30},
-#         {"header": "Conclusion", "text": "Word " * 30},
-#     ]
-
-#     fake_instance = mock_cls.return_value
-#     fake_instance.summarize.return_value = "section summary"
-
-#     result = summarize_sections_single_paragraph(sections, fake_instance)
-#     assert "section summary" in result
+# -------------------------------
+# chunk_text
+# -------------------------------
+def test_chunk_text_respects_max_tokens():
+    text = "Sentence " * 200
+    chunks = ss.chunk_text(text, max_tokens=20)
+    # Each chunk should not exceed ~20 words
+    assert all(len(c.split()) <= 20 for c in chunks)
+    # Should produce multiple chunks
+    assert len(chunks) > 1
 
 
-# @patch("preprint_bot.summarization_script.summarize_sections_single_paragraph", return_value="summary")
-# def test_process_folder_creates_summary(mock_summarizer):
-#     with tempfile.TemporaryDirectory() as tmp_in, tempfile.TemporaryDirectory() as tmp_out:
-#         txt_file = Path(tmp_in) / "test.txt"
-#         txt_file.write_text("### Introduction\nSome text")
-
-#         # Use a dummy summarizer so no HF model is downloaded
-#         class DummySummarizer:
-#             def summarize(self, text, max_length=150):
-#                 return "summary"
-
-#         process_folder(tmp_in, tmp_out, DummySummarizer())
-#         output_file = Path(tmp_out) / "test_summary.txt"
-#         assert output_file.exists()
-#         assert "summary" in output_file.read_text()
+def test_chunk_text_short_text_single_chunk():
+    text = "This is a short sentence."
+    chunks = ss.chunk_text(text, max_tokens=50)
+    assert chunks == [text]
 
 
-# def test_chunk_text_with_short_sentences():
-#     text = "Sentence 1. Sentence 2. Sentence 3. Sentence 4."
-#     chunks = chunk_text(text, max_tokens=2)
-#     assert len(chunks) >= 3
+# -------------------------------
+# summarize_sections_single_paragraph
+# -------------------------------
+class DummySummarizer:
+    def summarize(self, text, max_length=180, mode="full"):
+        return f"SUM:{text[:10]}"
+
+
+def test_summarize_sections_single_paragraph_uses_sections():
+    sections = [
+        {"header": "Introduction", "text": "This introduction has more than 25 words. " * 2},
+        {"header": "Methods", "text": "Method section with enough words. " * 2},
+    ]
+    result = ss.summarize_sections_single_paragraph(sections, DummySummarizer())
+    assert "SUM" in result
+    # Should contain both intro + methods summaries
+    assert result.count("SUM:") >= 2
+
+
+# -------------------------------
+# process_file / process_folder
+# -------------------------------
+def test_process_file_and_folder(tmp_path):
+    input_file = tmp_path / "paper.txt"
+    output_file = tmp_path / "paper_summary.txt"
+
+    text = """### Introduction
+    This introduction has enough words for summarization. """ + ("word " * 30)
+    input_file.write_text(text)
+
+    ss.process_file(input_file, output_file, DummySummarizer())
+    assert output_file.exists()
+    content = output_file.read_text()
+    assert "SUM:" in content
+
+    # folder processing
+    out_folder = tmp_path / "out"
+    ss.process_folder(tmp_path, out_folder, DummySummarizer())
+    summary_files = list(out_folder.glob("*_summary.txt"))
+    assert summary_files
+
+
+# -------------------------------
+# process_metadata
+# -------------------------------
+def test_process_metadata(tmp_path):
+    metadata_file = tmp_path / "metadata.json"
+    output_file = tmp_path / "metadata_out.json"
+
+    papers = [
+        {"title": "Test1", "summary": "This is a long text summary with many words. " * 5},
+        {"title": "Test2", "summary": ""},
+    ]
+    metadata_file.write_text(json.dumps(papers))
+
+    ss.process_metadata(metadata_file, output_file, DummySummarizer())
+    assert output_file.exists()
+
+    updated = json.loads(output_file.read_text())
+    assert "llm_summary" in updated[0]
+    assert updated[1]["llm_summary"].startswith("No summary")
+
+
+# -------------------------------
+# TransformerSummarizer + LlamaSummarizer
+# -------------------------------
+def test_transformer_summarizer_init_and_summarize(monkeypatch):
+    class FakePipeline:
+        def __call__(self, text, **kwargs):
+            return [{"summary_text": "fake summary"}]
+
+    monkeypatch.setattr(ss, "pipeline", lambda *a, **k: FakePipeline())
+
+    ts = ss.TransformerSummarizer(model_name="dummy")
+    result = ts.summarize("This is a long enough text for summarization. " * 5)
+    assert "fake summary" in result
+
+
+def test_llama_summarizer_summarize(monkeypatch):
+    class FakeLlama:
+        def tokenize(self, text):
+            return list(range(100))
+
+        def detokenize(self, tokens):
+            return b"shortened text"
+
+        def __call__(self, prompt_text, **kwargs):
+            return {"choices": [{"text": "llama summary"}]}
+
+    monkeypatch.setattr(ss, "Llama", lambda *a, **k: FakeLlama())
+
+    ls = ss.LlamaSummarizer("dummy_path")
+    result = ls.summarize("This is a test text " * 50)
+    assert "llama summary" in result
