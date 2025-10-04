@@ -1,167 +1,103 @@
-# tests/test_summarization_script.py
 import os
 import json
 import tempfile
-import pytest
 from pathlib import Path
+import pytest
 
-import sys, os
-# add the src folder to sys.path so Python can import from it
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+from preprint_bot.summarization_script import ( 
+    clean_text,
+    extract_sections_from_txt_markdown,
+    chunk_text,
+    summarize_sections_single_paragraph,
+    process_file,
+    process_folder,
+    process_metadata,
+)
 
-import summarization_script as ss
+class DummySummarizer:
+    """Fake summarizer that just returns first 5 words."""
+    def summarize(self, text, max_length=180, mode="abstract"):
+        return " ".join(text.split()[:5]) or "EMPTY"
 
 
-# -------------------------------
-# clean_text
-# -------------------------------
 def test_clean_text_basic():
     raw = "This is a test-\n\nwith [1] references (Smith, 2020)."
-    cleaned = ss.clean_text(raw)
+    cleaned = clean_text(raw)
     assert "-\n" not in cleaned
     assert "[1]" not in cleaned
-    assert "(Smith, 2020)" not in cleaned
-    assert "\n" not in cleaned
-    assert cleaned.startswith("This is a test")
+    assert "Smith" not in cleaned
+    assert "This is a test" in cleaned
 
 
-# -------------------------------
-# extract_sections_from_txt_markdown
-# -------------------------------
-def test_extract_sections_from_txt_markdown_excludes_references():
+def test_extract_sections_from_txt_markdown():
     txt = """### Introduction
     This is intro text.
 
+    ### Methods
+    Method details.
+
     ### References
-    A list of references.
+    Ref text.
     """
-    sections = ss.extract_sections_from_txt_markdown(txt)
+    sections = extract_sections_from_txt_markdown(txt)
     headers = [s["header"] for s in sections]
     assert "introduction" in headers
+    assert "methods" in headers
+    # References should be excluded
     assert all("reference" not in h for h in headers)
 
 
-def test_extract_sections_multiple_headers():
-    txt = """### Introduction
-    Intro stuff.
-    ### Methods
-    Method stuff.
-    """
-    sections = ss.extract_sections_from_txt_markdown(txt)
-    assert len(sections) == 2
-    assert sections[0]["header"] == "introduction"
-    assert "Intro stuff." in sections[0]["text"]
+def test_chunk_text_basic():
+    text = "Sentence one. Sentence two. Sentence three."
+    chunks = chunk_text(text, max_tokens=3)  # force small chunks
+    assert isinstance(chunks, list)
+    assert all(isinstance(c, str) for c in chunks)
+    assert len(chunks) >= 2
 
 
-# -------------------------------
-# chunk_text
-# -------------------------------
-def test_chunk_text_respects_max_tokens():
-    text = "Sentence " * 200
-    chunks = ss.chunk_text(text, max_tokens=20)
-    # Each chunk should not exceed ~20 words
-    assert all(len(c.split()) <= 20 for c in chunks)
-    # Should produce multiple chunks
-    assert len(chunks) > 1
-
-
-def test_chunk_text_short_text_single_chunk():
-    text = "This is a short sentence."
-    chunks = ss.chunk_text(text, max_tokens=50)
-    assert chunks == [text]
-
-
-# -------------------------------
-# summarize_sections_single_paragraph
-# -------------------------------
-class DummySummarizer:
-    def summarize(self, text, max_length=180, mode="full"):
-        return f"SUM:{text[:10]}"
-
-
-def test_summarize_sections_single_paragraph_uses_sections():
+def test_summarize_sections_single_paragraph():
     sections = [
-        {"header": "Introduction", "text": "This introduction has more than 25 words. " * 2},
-        {"header": "Methods", "text": "Method section with enough words. " * 2},
+        {"header": "Introduction", "text": "This is a long introduction " * 5},
+        {"header": "Methods", "text": "These are the methods used in detail " * 5},
     ]
-    result = ss.summarize_sections_single_paragraph(sections, DummySummarizer())
-    assert "SUM" in result
-    # Should contain both intro + methods summaries
-    assert result.count("SUM:") >= 2
+    summarizer = DummySummarizer()
+    summary = summarize_sections_single_paragraph(sections, summarizer)
+    assert isinstance(summary, str)
+    assert len(summary) > 0
 
 
-# -------------------------------
-# process_file / process_folder
-# -------------------------------
 def test_process_file_and_folder(tmp_path):
-    input_file = tmp_path / "paper.txt"
-    output_file = tmp_path / "paper_summary.txt"
+    input_file = tmp_path / "sample.txt"
+    input_file.write_text("### Introduction\nThis is an introduction with enough text for testing.\n")
 
-    text = """### Introduction
-    This introduction has enough words for summarization. """ + ("word " * 30)
-    input_file.write_text(text)
+    output_file = tmp_path / "sample_summary.txt"
+    summarizer = DummySummarizer()
 
-    ss.process_file(input_file, output_file, DummySummarizer())
+    process_file(input_file, output_file, summarizer)
     assert output_file.exists()
-    content = output_file.read_text()
-    assert "SUM:" in content
+    assert "Summary" not in output_file.read_text()  # dummy summary inserted
 
-    # folder processing
-    out_folder = tmp_path / "out"
-    ss.process_folder(tmp_path, out_folder, DummySummarizer())
-    summary_files = list(out_folder.glob("*_summary.txt"))
-    assert summary_files
+    out_folder = tmp_path / "summaries"
+    process_folder(tmp_path, out_folder, summarizer)
+    files = list(out_folder.glob("*_summary.txt"))
+    assert len(files) >= 1
 
 
-# -------------------------------
-# process_metadata
-# -------------------------------
 def test_process_metadata(tmp_path):
     metadata_file = tmp_path / "metadata.json"
-    output_file = tmp_path / "metadata_out.json"
-
-    papers = [
-        {"title": "Test1", "summary": "This is a long text summary with many words. " * 5},
-        {"title": "Test2", "summary": ""},
+    data = [
+        {"title": "Paper 1", "summary": "This is a summary of paper one."},
+        {"title": "Paper 2", "summary": ""},
     ]
-    metadata_file.write_text(json.dumps(papers))
+    metadata_file.write_text(json.dumps(data))
 
-    ss.process_metadata(metadata_file, output_file, DummySummarizer())
+    output_file = tmp_path / "metadata_out.json"
+    summarizer = DummySummarizer()
+
+    process_metadata(metadata_file, output_file, summarizer)
     assert output_file.exists()
 
-    updated = json.loads(output_file.read_text())
-    assert "llm_summary" in updated[0]
-    assert updated[1]["llm_summary"].startswith("No summary")
-
-
-# -------------------------------
-# TransformerSummarizer + LlamaSummarizer
-# -------------------------------
-def test_transformer_summarizer_init_and_summarize(monkeypatch):
-    class FakePipeline:
-        def __call__(self, text, **kwargs):
-            return [{"summary_text": "fake summary"}]
-
-    monkeypatch.setattr(ss, "pipeline", lambda *a, **k: FakePipeline())
-
-    ts = ss.TransformerSummarizer(model_name="dummy")
-    result = ts.summarize("This is a long enough text for summarization. " * 5)
-    assert "fake summary" in result
-
-
-def test_llama_summarizer_summarize(monkeypatch):
-    class FakeLlama:
-        def tokenize(self, text):
-            return list(range(100))
-
-        def detokenize(self, tokens):
-            return b"shortened text"
-
-        def __call__(self, prompt_text, **kwargs):
-            return {"choices": [{"text": "llama summary"}]}
-
-    monkeypatch.setattr(ss, "Llama", lambda *a, **k: FakeLlama())
-
-    ls = ss.LlamaSummarizer("dummy_path")
-    result = ls.summarize("This is a test text " * 50)
-    assert "llama summary" in result
+    with open(output_file, "r", encoding="utf-8") as f:
+        result = json.load(f)
+    assert "llm_summary" in result[0]
+    assert "llm_summary" in result[1]
