@@ -281,7 +281,7 @@ def run_user_mode(args):
     base_folder = args.user_folder or USER_PDF_FOLDER
 
     if not os.path.exists(base_folder):
-        print(f"❌ Folder not found: {base_folder}")
+        print(f"Folder not found: {base_folder}")
         sys.exit(1)
 
     # Detect subfolders
@@ -298,7 +298,7 @@ def run_user_mode(args):
     # Load precomputed arXiv corpus
     corpus_path = os.path.join(DATA_DIR, "arxiv_corpus.json")
     if not os.path.exists(corpus_path):
-        print(f"❌ Corpus file not found at {corpus_path}. Run --mode corpus first.")
+        print(f"Corpus file not found at {corpus_path}. Run --mode corpus first.")
         sys.exit(1)
 
     with open(corpus_path, "r", encoding="utf-8") as f:
@@ -320,7 +320,6 @@ def run_user_mode(args):
     # Process each user independently
     for user_path in subfolders:
         user_id = os.path.basename(user_path)
-        print(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         print(f"▶ Processing user: {user_id}")
 
         user_processed = os.path.join(USER_PROCESSED, user_id)
@@ -359,7 +358,7 @@ def run_user_mode(args):
             )
 
             if not matches:
-                print(f"⚠️ No matches found for user {user_id}.")
+                print(f"No matches found for user {user_id}.")
                 continue
 
             # Apply summaries
@@ -373,10 +372,10 @@ def run_user_mode(args):
             with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(matches, f, indent=2)
 
-            print(f"✅ Matches saved for user {user_id} → {output_path}")
+            print(f"Matches saved for user {user_id} → {output_path}")
 
         except Exception as e:
-            print(f"❌ Error processing user {user_id}: {e}")
+            print(f"Error processing user {user_id}: {e}")
             continue  # proceed to next user
 
 
