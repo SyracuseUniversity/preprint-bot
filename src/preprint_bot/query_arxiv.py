@@ -18,57 +18,115 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 MAX_RESULTS = CONFIG_MAX_RESULTS if CONFIG_MAX_RESULTS else 500  # increase, since we want *all*
 
 
-def get_yesterday_entries(rate_limit: float = 3.0):
+def get_yesterday_entries(rate_limit: float = 3.0, per_category: int = 10):
     """
-    Fetch all arXiv entries submitted yesterday (UTC), regardless of category, with pagination.
-    
+    Fetch up to `per_category` entries submitted yesterday (UTC) for each arXiv category.
+    Combines all results into a single list.
+
     Args:
-        rate_limit (float): Seconds to sleep between requests. Default=3.0 sec (per arXiv guidelines).
+        rate_limit (float): Seconds to sleep between requests. Default=3.0.
+        per_category (int): Max number of papers per category (default=100).
+
+    Returns:
+        list: Combined list of feedparser entries from all categories.
     """
+    # Major arXiv top-level categories
+    categories = [
+        "cs.AI", "cs.CL", "cs.CV", "cs.LG", "cs.IR", "cs.NE", "cs.DS",
+        "math.PR", "math.ST", "stat.ML",
+        "astro-ph", "cond-mat", "econ.EM", "physics.optics", "quant-ph",
+        "eess.AS", "eess.SP", "q-bio.NC", "q-fin.ST"
+    ]
+
+    # All arxiv categories
+    all_categories = [
+    # Computer Science (cs)
+    "cs.AI", "cs.AR", "cs.CC", "cs.CE", "cs.CG", "cs.CL", "cs.CR", "cs.CV",
+    "cs.CY", "cs.DB", "cs.DC", "cs.DL", "cs.DM", "cs.DS", "cs.ET", "cs.FL",
+    "cs.GL", "cs.GR", "cs.GT", "cs.HC", "cs.IR", "cs.IT", "cs.LG", "cs.LO",
+    "cs.MA", "cs.MM", "cs.MS", "cs.NA", "cs.NE", "cs.NI", "cs.OH", "cs.OS",
+    "cs.PF", "cs.PL", "cs.RO", "cs.SC", "cs.SD", "cs.SE", "cs.SI", "cs.SY",
+
+    # Economics
+    "econ.EM", "econ.GN", "econ.TH",
+
+    # Electrical Engineering and Systems Science (eess)
+    "eess.AS", "eess.IV", "eess.SP", "eess.SY",
+
+    # Mathematics (math)
+    "math.AC", "math.AG", "math.AP", "math.AT", "math.CA", "math.CO",
+    "math.CT", "math.CV", "math.CS", "math.DG", "math.DS", "math.FA",
+    "math.GM", "math.GN", "math.GR", "math.GT", "math.HO", "math.IT",
+    "math.KT", "math.LO", "math.MG", "math.MI", "math.NA", "math.NT",
+    "math.OA", "math.OC", "math.PR", "math.QA", "math.RA", "math.RM",
+    "math.ST", "math.SG", "math.SP", "math.TO",
+
+    # Physics
+    "astro-ph.SR",  # Solar & Stellar Astrophysics (under astro-ph)
+    # The physics categories often have “cond-mat”, “gr-qc”, “hep-*”, etc.
+    "cond-mat.dis-nn", "cond-mat.mes-hall", "cond-mat.mtrl-sci",
+    "cond-mat.other", "cond-mat.quant-gas", "cond-mat.soft",
+    "cond-mat.stat-mech", "cond-mat.str-el", "cond-mat.supr-con",
+    "gr-qc",
+    "hep-ex", "hep-lat", "hep-ph", "hep-th",
+    "math-ph",  # “Mathematical Physics” sits under physics archive :contentReference[oaicite:1]{index=1}
+    # Also physics.* direct (some physics subcategories)
+    "physics.pop-ph", "physics.soc-ph", "physics.space-ph",
+    "quant-ph",
+
+    # Quantitative Biology (q-bio)
+    "q-bio.BM", "q-bio.MN", "q-bio.NC", "q-bio.OT", "q-bio.SC", "q-bio.TO",
+
+    # Quantitative Finance (q-fin)
+    "q-fin.CP", "q-fin.EC", "q-fin.GN", "q-fin.MF", "q-fin.PM", "q-fin.RM",
+    "q-fin.ST", "q-fin.TR",
+
+    # Statistics (stat)
+    "stat.AP", "stat.CO", "stat.ME", "stat.ML", "stat.OT"
+]
+
     yesterday = datetime.utcnow().date() - timedelta(days=1)
     start = yesterday.strftime("%Y%m%d000000")
     end = yesterday.strftime("%Y%m%d235959")
-    query = f"submittedDate:[{start} TO {end}]"
 
     all_entries = []
-    start_index = 0
-    batch_size = 2000   # arXiv max per query
 
-    while True:
+    print(f"▶ Fetching up to {per_category} papers *per category* from {yesterday}…")
+    print(f"Total categories: {len(categories)}\n")
+
+    for cat in categories:
+        query = f"cat:{cat}+AND+submittedDate:[{start}+TO+{end}]"
         url = (
             "http://export.arxiv.org/api/query?"
-            + f"search_query={query}"
-            + f"&start={start_index}&max_results={batch_size}"
-            + "&sortBy=submittedDate&sortOrder=descending"
+            f"search_query={query}"
+            f"&start=0&max_results={per_category}"
+            "&sortBy=submittedDate&sortOrder=descending"
         )
-        print(f"▶ Fetching batch starting at {start_index} …")
-        resp = requests.get(url)
-        resp.raise_for_status()
-        feed = feedparser.parse(resp.text)
-        entries = feed.entries
 
-        if not entries:
-            break
+        print(f"📘 Category: {cat} — fetching up to {per_category} papers…")
+        try:
+            resp = requests.get(url)
+            resp.raise_for_status()
+            feed = feedparser.parse(resp.text)
+            entries = feed.entries
+            count = len(entries)
+            print(f"Retrieved {count} papers for {cat}")
+            all_entries.extend(entries)
+        except Exception as e:
+            print(f"Failed for {cat}: {e}")
+            continue
 
-        all_entries.extend(entries)
-        start_index += batch_size
+        time.sleep(rate_limit)  # be polite to arXiv servers
 
-        # stop if fewer than batch_size returned → end of results
-        if len(entries) < batch_size:
-            break
-
-        # Respect arXiv API rate limits
-        print(f"⏳ Sleeping {rate_limit} sec before next request…")
-        time.sleep(rate_limit)
-
-    print(f"✅ Retrieved total {len(all_entries)} entries from yesterday.")
+    print(f"\nTotal collected: {len(all_entries)} papers across {len(categories)} categories.")
     return all_entries
 
 
-def get_arxiv_entries(query, max_results):
+def get_arxiv_entries(category: str, max_results: int = 50):
     """
-    Fetch arXiv entries using a full query string.
+    Fetch the most recent arXiv entries for a given category (e.g., 'cs.LG').
     """
+    query = f"cat:{category}"
     url = (
         "http://export.arxiv.org/api/query?"
         + "search_query=" + query
@@ -77,6 +135,7 @@ def get_arxiv_entries(query, max_results):
     resp = requests.get(url)
     resp.raise_for_status()
     return feedparser.parse(resp.text).entries
+
 
 
 def get_arxiv_pdf_bytes(arxiv_url):

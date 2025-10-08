@@ -53,7 +53,7 @@ from .config import DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS
 from .download_arxiv_pdfs import download_arxiv_pdfs
 from .embed_papers import embed_abstracts, embed_sections
 from .extract_grobid import process_folder as grobid_process_folder
-from .query_arxiv import get_recent_arxiv_entries, write_all_json, get_yesterday_entries
+from .query_arxiv import get_arxiv_entries, write_all_json, get_yesterday_entries
 from .similarity_matcher import hybrid_similarity_pipeline
 from .summarization_script import (
     process_folder,
@@ -73,6 +73,21 @@ for p in [ARXIV_PDF_FOLDER, USER_PROCESSED, ARXIV_PROCESSED, ARXIV_SUMMARY_FOLDE
     os.makedirs(p, exist_ok=True)
 
 
+from sentence_transformers import SentenceTransformer
+
+def load_embedding_model(model_name: str):
+    """
+    Load a SentenceTransformer embedding model.
+    """
+    try:
+        model = SentenceTransformer(model_name)
+        return model
+    except Exception as e:
+        print(f"Error loading embedding model '{model_name}': {e}")
+        sys.exit(1)
+
+
+
 # Helpers
 def browse_for_folder(prompt="Select a folder containing your PDFs"):
     root = tk.Tk()
@@ -86,7 +101,7 @@ def fetch_and_parse_arxiv(category: str, *, skip_download=False, skip_parse=Fals
         entries = get_yesterday_entries(rate_limit=rate_limit)
     else:
         print(f"\n▶ Fetching {MAX_RESULTS} most recent papers from {category}…")
-        entries = get_recent_arxiv_entries(category=category, max_results=MAX_RESULTS)
+        entries = get_arxiv_entries(category=category, max_results=MAX_RESULTS)
 
     papers = []
     for e in entries:
@@ -142,44 +157,62 @@ def summarise_arxiv(summarizer=None, skip_summarize=False, mode="abstract"):
         )
 
 
-def embed_corpora(model_name: str, method: str, *, embed_users: bool = True, embed_arxiv: bool = True, skip_embed: bool = False):
-    import numpy as np
+def embed_corpora(
+    model_name: str,
+    method: str,
+    embed_users: bool = False,
+    embed_arxiv: bool = False,
+    skip_embed: bool = False,
+    user_processed_path: str | None = None
+):
+    """
+    Embed abstracts and section texts for user and/or arXiv corpora.
+    """
 
-    user_abs_embs, arxiv_abs_embs = None, None
-    user_sections, arxiv_sections = {}, {}
-    user_files = []
-    model = None
+    user_abs_embs = arxiv_abs_embs = None
+    user_sections = arxiv_sections = None
+    user_files = None
+
+    print(f"▶ Loading embedding model: {model_name}")
+    model = load_embedding_model(model_name)  # ✅ actual SentenceTransformer object
 
     if embed_users:
-        print("\n▶ Embedding user abstracts…")
-        user_abs_texts, user_abs_embs, model, user_files = embed_abstracts(USER_PROCESSED, model_name)
-        print("▶ Embedding user section chunks…")
-        user_sections = embed_sections(USER_PROCESSED, model)
+        folder_to_embed = user_processed_path or USER_PROCESSED
+        print(f"▶ Embedding user abstracts and sections from: {folder_to_embed}")
+
+        if not os.path.exists(folder_to_embed) or not os.listdir(folder_to_embed):
+            raise ValueError(f"No parsed PDFs found in {folder_to_embed}. Run GROBID first.")
+
+        if skip_embed:
+            print("⏭️ Skipping user embedding (using existing cached files if available)…")
+
+        # ✅ Pass model object, not model_name
+        user_abs_texts, user_abs_embs, _, user_files = embed_abstracts(folder_to_embed, model)
+        user_sections = embed_sections(folder_to_embed, model)
+
+        print(f"User embeddings complete for {len(user_abs_texts)} abstracts.")
 
     if embed_arxiv:
-        print("\n▶ Embedding arXiv abstracts…")
-        arxiv_abs_texts, arxiv_abs_embs, model, _ = embed_abstracts(ARXIV_PROCESSED, model_name)
-        print("▶ Embedding arXiv section chunks…")
+        print(f"▶ Embedding arXiv abstracts and sections from: {ARXIV_PROCESSED}")
+        if not os.path.exists(ARXIV_PROCESSED) or not os.listdir(ARXIV_PROCESSED):
+            raise ValueError(f"No processed arXiv files found in {ARXIV_PROCESSED}. Run corpus mode first.")
+
+        if skip_embed:
+            print("⏭️ Skipping arXiv embedding (using existing cached files if available)…")
+
+        # ✅ Pass model object here too
+        arxiv_abs_texts, arxiv_abs_embs, _, _ = embed_abstracts(ARXIV_PROCESSED, model)
         arxiv_sections = embed_sections(ARXIV_PROCESSED, model)
 
-    # Normalize embeddings if FAISS backend
-    if method == "faiss":
-        if user_abs_embs is not None:
-            user_abs_embs = np.array(user_abs_embs, dtype="float32")
-            user_abs_embs /= np.linalg.norm(user_abs_embs, axis=1, keepdims=True) + 1e-10
-        if arxiv_abs_embs is not None:
-            arxiv_abs_embs = np.array(arxiv_abs_embs, dtype="float32")
-            arxiv_abs_embs /= np.linalg.norm(arxiv_abs_embs, axis=1, keepdims=True) + 1e-10
-        for key in user_sections:
-            arr = np.array(user_sections[key], dtype="float32")
-            arr /= np.linalg.norm(arr, axis=1, keepdims=True) + 1e-10
-            user_sections[key] = arr
-        for key in arxiv_sections:
-            arr = np.array(arxiv_sections[key], dtype="float32")
-            arr /= np.linalg.norm(arr, axis=1, keepdims=True) + 1e-10
-            arxiv_sections[key] = arr
+        print(f"ArXiv embeddings complete for {len(arxiv_abs_texts)} abstracts.")
 
-    return (user_abs_embs, arxiv_abs_embs, user_sections, arxiv_sections, user_files)
+    return (
+        user_abs_embs,
+        arxiv_abs_embs,
+        user_sections,
+        arxiv_sections,
+        user_files
+    )
 
 
 # Modes
@@ -241,33 +274,31 @@ def run_corpus_mode(args):
 
 
 def run_user_mode(args):
-    user_pdf_folder = args.user_folder or browse_for_folder()
-    if not user_pdf_folder:
-        print("No user folder selected")
+    """
+    Run the user mode for one or multiple users.
+    Each user folder will be processed separately to generate ranked matches.
+    """
+    base_folder = args.user_folder or USER_PDF_FOLDER
+
+    if not os.path.exists(base_folder):
+        print(f"❌ Folder not found: {base_folder}")
         sys.exit(1)
 
-    global USER_PDF_FOLDER
-    USER_PDF_FOLDER = user_pdf_folder
+    # Detect subfolders
+    subfolders = [
+        os.path.join(base_folder, d)
+        for d in os.listdir(base_folder)
+        if os.path.isdir(os.path.join(base_folder, d))
+    ]
+    if not subfolders:
+        subfolders = [base_folder]
 
-    if not os.listdir(USER_PROCESSED):
-        print("\n▶ Parsing user PDFs with GROBID…")
-        grobid_process_folder(USER_PDF_FOLDER, USER_PROCESSED)
-    else:
-        print("User PDFs already parsed → skipping.")
+    print(f"\n▶ Found {len(subfolders)} user folder(s): {[os.path.basename(f) for f in subfolders]}")
 
-    # Only embed user side
-    user_abs_embs, _, user_sections, _, user_files = embed_corpora(
-        model_name=args.model,
-        method=args.method,
-        embed_users=True,
-        embed_arxiv=False,
-        skip_embed=args.skip_embed
-    )
-
-    # Load precomputed ArXiv corpus
+    # Load precomputed arXiv corpus
     corpus_path = os.path.join(DATA_DIR, "arxiv_corpus.json")
     if not os.path.exists(corpus_path):
-        print(f"Corpus file not found at {corpus_path}. Run --mode corpus first.")
+        print(f"❌ Corpus file not found at {corpus_path}. Run --mode corpus first.")
         sys.exit(1)
 
     with open(corpus_path, "r", encoding="utf-8") as f:
@@ -277,39 +308,76 @@ def run_user_mode(args):
     arxiv_sections = corpus["sections"]
     papers_meta = corpus["papers_meta"]
 
-    # Load LLM summaries
+    # Optional: load summaries
     summary_map = {}
-    metadata_summary_path = os.path.join(DATA_DIR, "metadata_with_summaries.json")
-    if os.path.exists(metadata_summary_path):
-        with open(metadata_summary_path, "r", encoding="utf-8") as f:
-            papers_with_summaries = json.load(f)
-        for p in papers_with_summaries:
-            base_id = p["arxiv_id"].split("v")[0]  # strip version numbers
-            summary_map[base_id] = p.get("llm_summary", p.get("summary", ""))
+    summary_file = os.path.join(DATA_DIR, "metadata_with_summaries.json")
+    if os.path.exists(summary_file):
+        with open(summary_file, "r", encoding="utf-8") as f:
+            for p in json.load(f):
+                base_id = p["arxiv_id"].split("v")[0]
+                summary_map[base_id] = p.get("llm_summary", p.get("summary", ""))
 
-    # Match
-    print(f"\n▶ Running similarity search with method={args.method}")
-    matches = hybrid_similarity_pipeline(
-        user_abs_embs,
-        arxiv_abs_embs,
-        user_sections,
-        arxiv_sections,
-        papers_meta,
-        user_files,
-        threshold_label=args.threshold,
-        method=args.method,
-    )
+    # Process each user independently
+    for user_path in subfolders:
+        user_id = os.path.basename(user_path)
+        print(f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print(f"▶ Processing user: {user_id}")
 
-    # Replace summary field with llm_summary when available
-    for m in matches:
-        arxiv_id = m["url"].split("/")[-1].split("v")[0]
-        if arxiv_id in summary_map:
-            m["summary"] = summary_map[arxiv_id]
+        user_processed = os.path.join(USER_PROCESSED, user_id)
+        os.makedirs(user_processed, exist_ok=True)
 
-    output_path = os.path.join(DATA_DIR, "ranked_matches.json")
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(matches, f, indent=2)
-    print(f"\nMatches saved to {output_path} (with LLM summaries where available)")
+        # GROBID parsing
+        if not os.listdir(user_processed):
+            print("▶ Parsing user PDFs with GROBID…")
+            grobid_process_folder(user_path, user_processed)
+        else:
+            print("User PDFs already parsed → skipping.")
+
+        try:
+            # Embed
+            print(f"▶ Embedding from: {user_processed}")
+            user_abs_embs, _, user_sections, _, user_files = embed_corpora(
+                model_name=args.model,
+                method=args.method,
+                embed_users=True,
+                embed_arxiv=False,
+                skip_embed=args.skip_embed,
+                user_processed_path=user_processed,
+            )
+
+            # Similarity match
+            print(f"▶ Running similarity search for {user_id}…")
+            matches = hybrid_similarity_pipeline(
+                user_abs_embs,
+                arxiv_abs_embs,
+                user_sections,
+                arxiv_sections,
+                papers_meta,
+                user_files,
+                threshold_label=args.threshold,
+                method=args.method,
+            )
+
+            if not matches:
+                print(f"⚠️ No matches found for user {user_id}.")
+                continue
+
+            # Apply summaries
+            for m in matches:
+                arxiv_id = m["url"].split("/")[-1].split("v")[0]
+                if arxiv_id in summary_map:
+                    m["summary"] = summary_map[arxiv_id]
+
+            # Save per-user
+            output_path = os.path.join(DATA_DIR, f"ranked_matches_{user_id}.json")
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(matches, f, indent=2)
+
+            print(f"✅ Matches saved for user {user_id} → {output_path}")
+
+        except Exception as e:
+            print(f"❌ Error processing user {user_id}: {e}")
+            continue  # proceed to next user
 
 
 # Main
