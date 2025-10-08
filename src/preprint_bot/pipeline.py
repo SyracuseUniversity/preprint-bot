@@ -184,9 +184,8 @@ def embed_corpora(
             raise ValueError(f"No parsed PDFs found in {folder_to_embed}. Run GROBID first.")
 
         if skip_embed:
-            print("⏭️ Skipping user embedding (using existing cached files if available)…")
+            print("Skipping user embedding (using existing cached files if available)…")
 
-        # ✅ Pass model object, not model_name
         user_abs_texts, user_abs_embs, _, user_files = embed_abstracts(folder_to_embed, model)
         user_sections = embed_sections(folder_to_embed, model)
 
@@ -198,9 +197,8 @@ def embed_corpora(
             raise ValueError(f"No processed arXiv files found in {ARXIV_PROCESSED}. Run corpus mode first.")
 
         if skip_embed:
-            print("⏭️ Skipping arXiv embedding (using existing cached files if available)…")
+            print("Skipping arXiv embedding (using existing cached files if available)…")
 
-        # ✅ Pass model object here too
         arxiv_abs_texts, arxiv_abs_embs, _, _ = embed_abstracts(ARXIV_PROCESSED, model)
         arxiv_sections = embed_sections(ARXIV_PROCESSED, model)
 
