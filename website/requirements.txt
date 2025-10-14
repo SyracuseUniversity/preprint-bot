@@ -1,6 +1,8 @@
+streamlit
 fastapi
 uvicorn
-streamlit
-requests
-pydantic
+sqlite3-binary
 bcrypt
+pydantic
+python-multipart
+requests
