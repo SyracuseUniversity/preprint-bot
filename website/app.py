@@ -16,6 +16,14 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent
 DB_PATH = os.environ.get("APP_DB_PATH", str(ROOT / "app.db"))
 
+ARXIV_CATEGORIES = [
+    "Physics", "Mathematics", "Quantitative Biology", "Computer Science", "Quantitative Finance",
+    "Statistics", "Electrical Engineering and Systems Science", "Economics"
+]
+
+def arxiv_category_options() -> List[str]:
+    return sorted(ARXIV_CATEGORIES)
+
 @contextmanager
 def dbh():
     dbp = Path(DB_PATH)
@@ -105,7 +113,7 @@ def logout():
     st.rerun()
 
 
-# Category utilities (for `category` or `categories` JSON)
+# Category utilities
 
 def _has_column(db, table: str, col: str) -> bool:
     cols = q(db, f"PRAGMA table_info({table})")
@@ -307,7 +315,7 @@ def page_profiles(user: UserCtx) -> None:
                     kwcsv = st.text_input("Keywords (comma-separated)", value=default["kw"])
                 with c_kw2:
                     # category choice here is for filtering the Add Paper picker below
-                    prof_cat_opts = ["All"] + category_options(user.id)
+                    prof_cat_opts = ["All"] + arxiv_category_options()
                     st.session_state["profile_add_cat"] = st.selectbox("Category", options=prof_cat_opts, index=0)
 
                 ok = st.form_submit_button("Save")
@@ -352,7 +360,7 @@ def page_recommendations(user: UserCtx) -> None:
     with dbh() as db:
         authors = [r["authors"] for r in q(db, "SELECT DISTINCT authors FROM papers WHERE authors IS NOT NULL AND authors!='' ORDER BY authors")]
         titles  = [r["title"] for r in q(db, "SELECT DISTINCT title FROM papers ORDER BY title")]
-    cats = category_options(user.id)
+    cats = arxiv_category_options()
 
     # Filters
     with st.expander("Filters", expanded=True):
@@ -425,7 +433,7 @@ def page_settings(user: UserCtx) -> None:
 
     # Single preferences form
     with st.form("prefs"):
-        opts = category_options(user.id)
+        opts = arxiv_category_options()
         if not opts and cats_saved:
             opts = sorted(set(cats_saved))
 
@@ -457,42 +465,117 @@ def page_settings(user: UserCtx) -> None:
         c2.metric("Papers", paper_cnt)
         c3.metric("Profiles", prof_cnt)
         c4.metric("Recommendations", rec_cnt)
-    else:
-        st.caption("Admin stats are available to admin users only.")
 
 # App Frame
 
+def _login(email: str, password: str) -> bool:
+    if not email or not password:
+        st.warning("Enter email and password.")
+        return False
+    with dbh() as db:
+        row = q(db, "SELECT id, email, password_hash FROM users WHERE lower(email)=? LIMIT 1", (email.lower().strip(),))
+        if not row:
+            st.error("Account not found.")
+            return False
+        stored = row[0]["password_hash"] or ""
+        if stored == password:
+            set_user_session(row[0]["email"])
+            return True
+        st.error("Incorrect password.")
+        return False
+
+def _create_account(email: str, password: str, confirm: str) -> bool:
+    if not email or not password:
+        st.warning("Enter email and password.")
+        return False
+    if password != confirm:
+        st.error("Passwords do not match.")
+        return False
+    with dbh() as db:
+        exists = q(db, "SELECT 1 FROM users WHERE lower(email)=? LIMIT 1", (email.lower().strip(),))
+        if exists:
+            st.error("An account with this email already exists.")
+            return False
+        e(db, "INSERT INTO users(email, password_hash) VALUES (?,?)", (email.strip(), password))
+    set_user_session(email.strip())
+    st.success("Account created.")
+    return True
+
 def auth_bar():
     user = current_user()
-    left, right = st.columns([3,1])
+    if "auth_mode" not in st.session_state:
+        st.session_state["auth_mode"] = "login"
+
+    # Top bar
+    left, right = st.columns([3, 1])
     with left:
         if not user:
-            st.text_input("Email", key="login_email", placeholder="you@example.com")
+            st.caption("Welcome. Please sign in.")
         else:
             st.caption(f"Signed in as: **{user.email}**" + ("  •  admin" if user.is_admin else ""))
     with right:
-        if not user:
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Login", use_container_width=True, key="login_btn"):
-                    email = st.session_state.get("login_email", "").strip()
-                    if email:
-                        set_user_session(email)
-                        st.rerun()
-                    else:
-                        st.warning("Enter an email to login.")
-            with col2:
-                if st.button("Demo Admin", use_container_width=True, key="demo_admin_btn"):
-                    ensure_demo_admin()
-                    set_user_session("demo_admin@example.com")
-                    st.rerun()
-        else:
+        if user:
             if st.button("Logout", use_container_width=True, key="logout_btn"):
                 logout()
 
+    if not user:
+        if st.session_state["auth_mode"] == "login":
+            with st.container(border=True):
+                st.subheader("Sign in")
+                with st.form("login_form", enter_to_submit=True):
+                    email = st.text_input("Email", key="login_email", placeholder="you@example.com")
+                    pwd   = st.text_input("Password", key="login_pwd", type="password", placeholder="••••••••")
+
+                    # buttons
+                    b1, b2 = st.columns([1, 1])
+                    with b1:
+                        do_login = st.form_submit_button("Login", use_container_width=True)
+                    with b2:
+                        to_signup = st.form_submit_button("Create account", use_container_width=True)
+
+                if do_login and _login(email, pwd):
+                    st.rerun()
+                if to_signup:
+                    st.session_state["auth_mode"] = "signup"
+                    st.rerun()
+
+                # quick demo admin
+                demo_col, _ = st.columns([1, 3])
+                with demo_col:
+                    if st.button("Demo Admin", key="demo_admin_btn", use_container_width=True):
+                        ensure_demo_admin()
+                        if _login(DEMO_ADMIN_EMAIL, "demoadmin"):
+                            st.rerun()
+
+        else:
+            with st.container(border=True):
+                st.subheader("Create account")
+                with st.form("signup_form", enter_to_submit=True):
+                    email = st.text_input("Email", key="signup_email", placeholder="you@example.com")
+                    pwd   = st.text_input("Password", key="signup_pwd", type="password", placeholder="Choose a password")
+                    cpw   = st.text_input("Confirm password", key="signup_cpw", type="password", placeholder="Repeat")
+
+                    # Create + Back to login
+                    b1, b2 = st.columns([1, 1])
+                    with b1:
+                        ok = st.form_submit_button("Create account", use_container_width=True)
+                    with b2:
+                        to_login = st.form_submit_button("Back to login", use_container_width=True)
+
+                if ok and _create_account(email, pwd, cpw):
+                    st.rerun()
+                if to_login:
+                    st.session_state["auth_mode"] = "login"
+                    st.rerun()
+
 def main():
-    st.set_page_config(page_title="Research Recs", page_icon="🧠", layout="wide")
-    st.title("Research Recs")
+    st.set_page_config(
+        page_title="Preprint Bot",
+        page_icon="PB",
+        layout="wide",
+        initial_sidebar_state="collapsed",  # hide the sidebar by default
+    )
+    st.title("Preprint Bot")
     auth_bar()
 
     user = current_user()
@@ -500,16 +583,14 @@ def main():
         st.info("Please log in to continue.")
         return
 
-    st.sidebar.title("Main")
-    nav = st.sidebar.radio("Navigation", ["Dashboard","Profiles","Recommendations","Settings"], label_visibility="collapsed")
-
-    if nav == "Dashboard":
+    tabs = st.tabs(["Dashboard", "Profiles", "Recommendations", "Settings"])
+    with tabs[0]:
         page_dashboard(user)
-    elif nav == "Profiles":
+    with tabs[1]:
         page_profiles(user)
-    elif nav == "Recommendations":
+    with tabs[2]:
         page_recommendations(user)
-    elif nav == "Settings":
+    with tabs[3]:
         page_settings(user)
 
 if __name__ == "__main__":
