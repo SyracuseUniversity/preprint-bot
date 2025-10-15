@@ -8,3 +8,4 @@ python-multipart==0.0.12
 pydantic==2.9.2
 requests==2.32.3
 orjson==3.10.7
+pydantic[email]==2.9.2
