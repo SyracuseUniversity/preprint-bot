@@ -1,8 +1,10 @@
-streamlit
-fastapi
-uvicorn
-sqlite3-binary
-bcrypt
-pydantic
-python-multipart
-requests
+streamlit==1.50.0
+fastapi==0.119.0
+uvicorn==0.37.0
+
+# Auth / parsing / http
+bcrypt==4.2.0
+python-multipart==0.0.12
+pydantic==2.9.2
+requests==2.32.3
+orjson==3.10.7
