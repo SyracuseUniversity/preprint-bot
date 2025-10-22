@@ -7,6 +7,16 @@ from dataclasses import dataclass
 from typing import Optional, Sequence, Any, List, Dict, Set
 from collections import defaultdict
 from pathlib import Path
+import secrets, binascii, hashlib
+from datetime import datetime, timedelta
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
+from datetime import datetime, timedelta, UTC 
+
+from dotenv import load_dotenv
+load_dotenv()
 
 import streamlit as st
 
@@ -43,6 +53,104 @@ def e(db, sql: str, params: Sequence[Any] = ()):
     db.execute(sql, params)
 
 
+def run_migrations():
+    with dbh() as db:
+        # users table should already exist; ensure password_hash column exists
+        cols = {r["name"] for r in q(db, "PRAGMA table_info(users)")}
+        if "password_hash" not in cols:
+            e(db, "ALTER TABLE users ADD COLUMN password_hash TEXT")
+
+        # password_resets table
+        e(db, """
+        CREATE TABLE IF NOT EXISTS password_resets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """)
+
+
+# Password hashing (PBKDF2)
+PBKDF2_ITER = 200_000
+
+def _hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PBKDF2_ITER)
+    return "pbkdf2$%d$%s$%s" % (PBKDF2_ITER, binascii.hexlify(salt).decode(), binascii.hexlify(dk).decode())
+
+def _verify_password(password: str, stored: str) -> bool:
+    try:
+        scheme, iters, salt_hex, hash_hex = stored.split("$", 3)
+        if scheme != "pbkdf2":
+            return False
+        iters = int(iters)
+        salt = binascii.unhexlify(salt_hex)
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iters)
+        return binascii.hexlify(dk).decode() == hash_hex
+    except Exception:
+        return False
+
+# Password reset helpers
+
+def _create_reset_token(email: str) -> bool:
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+
+    with dbh() as db:
+        row = q(db, "SELECT id FROM users WHERE lower(email)=? LIMIT 1", (email,))
+        if not row:
+            # Don't disclose existence
+            return True
+
+        uid = row[0]["id"]
+        token = secrets.token_urlsafe(32)
+        # timezone-aware UTC
+        expires = (datetime.now(UTC) + timedelta(hours=1)).isoformat(timespec="seconds")
+        e(db, "INSERT INTO password_resets(user_id, token, expires_at) VALUES (?,?,?)", (uid, token, expires))
+
+    # Email the token (no link)
+    body = (
+        "Hello,\n\n"
+        "Here is your Preprint Bot password reset token (valid for 1 hour):\n\n"
+        f"{token}\n\n"
+        "Open the app, go to 'Reset password', paste this token, and choose a new password.\n\n"
+        "If you didn’t request this, you can ignore this email.\n\n"
+        "– Preprint Bot"
+    )
+    _send_email(email, "Your Preprint Bot reset token", body)
+    return True
+
+def _reset_password_with_token(token: str, new_password: str) -> bool:
+    token = (token or "").strip()
+    if not token or not new_password:
+        return False
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    with dbh() as db:
+        rows = q(db, """
+            SELECT pr.id, pr.user_id, pr.expires_at, pr.used_at
+            FROM password_resets pr
+            WHERE pr.token=? LIMIT 1
+        """, (token,))
+        if not rows:
+            return False
+        pr = rows[0]
+        if pr["used_at"]:
+            return False
+        if pr["expires_at"] < now:  # ISO timestamps compare lexicographically OK
+            return False
+
+        # Update password
+        hpw = _hash_password(new_password)
+        e(db, "UPDATE users SET password_hash=? WHERE id=?", (hpw, pr["user_id"]))
+        e(db, "UPDATE password_resets SET used_at=CURRENT_TIMESTAMP WHERE id=?", (pr["id"],))
+        return True
+
+
 # Authentication
 
 @dataclass
@@ -55,10 +163,17 @@ DEMO_ADMIN_EMAIL = "demo_admin@example.com"
 
 def ensure_demo_admin():
     with dbh() as db:
-        rows = q(db, "SELECT id FROM users WHERE lower(email)=?", (DEMO_ADMIN_EMAIL.lower(),))
+        rows = q(db, "SELECT id, password_hash FROM users WHERE lower(email)=?", (DEMO_ADMIN_EMAIL.lower(),))
         if not rows:
-            e(db, "INSERT INTO users(email, password_hash) VALUES (?,?)", (DEMO_ADMIN_EMAIL, "demoadmin"))
-        # add user_roles(user_id, role) if the table exists
+            e(db, "INSERT INTO users(email, password_hash) VALUES (?,?)", (DEMO_ADMIN_EMAIL, _hash_password("demoadmin")))
+        else:
+            # migrate existing plaintext demo pass, if present
+            uid = rows[0]["id"]
+            ph = rows[0]["password_hash"] or ""
+            if ph and not ph.startswith("pbkdf2$"):
+                # assume it's plaintext; re-hash
+                e(db, "UPDATE users SET password_hash=? WHERE id=?", (_hash_password(ph), uid))
+        # roles (best effort)
         try:
             uid = q(db, "SELECT id FROM users WHERE lower(email)=?", (DEMO_ADMIN_EMAIL.lower(),))[0]["id"]
             has_roles = q(db, "SELECT name FROM sqlite_master WHERE type='table' AND name='user_roles'")
@@ -111,6 +226,32 @@ def logout():
         del st.session_state["user_ctx"]
     st.success("Logged out.")
     st.rerun()
+    
+def _send_email(to_email: str, subject: str, body: str) -> bool:
+    host = os.environ.get("EMAIL_HOST")
+    port = int(os.environ.get("EMAIL_PORT", "587"))
+    user = os.environ.get("EMAIL_USER")
+    password = os.environ.get("EMAIL_PASS")
+
+    if not all([host, port, user, password]):
+        st.error("Email not configured. Set EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASS in .env")
+        return False
+
+    msg = MIMEMultipart()
+    msg["From"] = formataddr(("Preprint Bot", user))
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    try:
+        with smtplib.SMTP(host, port) as server:
+            server.starttls()
+            server.login(user, password)
+            server.send_message(msg)
+        return True
+    except Exception as ex:
+        st.error(f"Email send failed: {ex}")
+        return False
 
 
 # Category utilities
@@ -478,7 +619,13 @@ def _login(email: str, password: str) -> bool:
             st.error("Account not found.")
             return False
         stored = row[0]["password_hash"] or ""
-        if stored == password:
+        ok = _verify_password(password, stored)
+        if ok:
+            set_user_session(row[0]["email"])
+            return True
+        # if stored looked like plaintext, accept once and re-hash
+        if stored and not stored.startswith("pbkdf2$") and stored == password:
+            e(db, "UPDATE users SET password_hash=? WHERE id=?", (_hash_password(password), row[0]["id"]))
             set_user_session(row[0]["email"])
             return True
         st.error("Incorrect password.")
@@ -496,7 +643,7 @@ def _create_account(email: str, password: str, confirm: str) -> bool:
         if exists:
             st.error("An account with this email already exists.")
             return False
-        e(db, "INSERT INTO users(email, password_hash) VALUES (?,?)", (email.strip(), password))
+        e(db, "INSERT INTO users(email, password_hash) VALUES (?,?)", (email.strip(), _hash_password(password)))
     set_user_session(email.strip())
     st.success("Account created.")
     return True
@@ -519,7 +666,8 @@ def auth_bar():
                 logout()
 
     if not user:
-        if st.session_state["auth_mode"] == "login":
+        mode = st.session_state["auth_mode"]
+        if mode == "login":
             with st.container(border=True):
                 st.subheader("Sign in")
                 with st.form("login_form", enter_to_submit=True):
@@ -538,7 +686,13 @@ def auth_bar():
                 if to_signup:
                     st.session_state["auth_mode"] = "signup"
                     st.rerun()
-
+                #forgot pass button
+                c_forgot, _ = st.columns([1, 3])
+                with c_forgot:
+                    if st.button("Forgot password?"):
+                        st.session_state["auth_mode"] = "forgot"
+                        st.rerun()
+                
                 # quick demo admin
                 demo_col, _ = st.columns([1, 3])
                 with demo_col:
@@ -547,7 +701,7 @@ def auth_bar():
                         if _login(DEMO_ADMIN_EMAIL, "demoadmin"):
                             st.rerun()
 
-        else:
+        elif mode == "signup":
             with st.container(border=True):
                 st.subheader("Create account")
                 with st.form("signup_form", enter_to_submit=True):
@@ -568,13 +722,62 @@ def auth_bar():
                     st.session_state["auth_mode"] = "login"
                     st.rerun()
 
+        elif mode == "forgot":
+            with st.container(border=True):
+                st.subheader("Forgot password")
+                st.caption("Enter your account email; we’ll generate a one-time reset token (valid 1 hour).")
+                with st.form("forgot_form", enter_to_submit=True):
+                    email_f = st.text_input("Email", key="forgot_email", placeholder="you@example.com")
+                    send_btn = st.form_submit_button("Send reset token", use_container_width=True)
+                if send_btn:
+                    ok = _create_reset_token(email_f)
+                    if ok:
+                        st.success("If that email exists, we’ve sent a reset link.")
+                    else:
+                        st.error("Please enter a valid email.")
+        
+                c1, c2 = st.columns([1,1])
+                with c1:
+                    if st.button("I have a token"):
+                        st.session_state["auth_mode"] = "reset"
+                        st.rerun()
+                with c2:
+                    if st.button("Back to login"):
+                        st.session_state["auth_mode"] = "login"
+                        st.rerun()
+
+        elif mode == "reset":
+            with st.container(border=True):
+                st.subheader("Reset password")
+                with st.form("reset_form", enter_to_submit=True):
+                    token = st.text_input("Reset token", placeholder="Paste the token")
+                    npw   = st.text_input("New password", type="password")
+                    cnpw  = st.text_input("Confirm password", type="password")
+                    okbtn = st.form_submit_button("Reset password", use_container_width=True)
+                if okbtn:
+                    if npw != cnpw:
+                        st.error("Passwords do not match.")
+                    else:
+                        if _reset_password_with_token(token, npw):
+                            st.success("Password updated. Please log in.")
+                            st.session_state["auth_mode"] = "login"
+                            st.rerun()
+                        else:
+                            st.error("Invalid or expired token.")
+                if st.button("Back to login"):
+                    st.session_state["auth_mode"] = "login"
+                    st.rerun()
+
+    
+
 def main():
     st.set_page_config(
         page_title="Preprint Bot",
         page_icon="PB",
         layout="wide",
-        initial_sidebar_state="collapsed",  # hide the sidebar by default
+        initial_sidebar_state="collapsed",
     )
+    run_migrations() 
     st.title("Preprint Bot")
     auth_bar()
 
