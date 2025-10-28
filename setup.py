@@ -25,6 +25,7 @@ setup(
         "faiss-cpu>=1.7.4",
         "scikit-learn>=1.5.0",
         "secure-smtplib>=0.1",
+        "httpx==0.27.0",
     ],
     extras_require={
         "dev": [
