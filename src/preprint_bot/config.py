@@ -36,3 +36,6 @@ DATA_DIR = "pdf_processes"
 
 # Create the data directory if it doesn't exist
 os.makedirs(DATA_DIR, exist_ok=True)
+
+# Get API base URL from env
+API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")

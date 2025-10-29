@@ -37,3 +37,4 @@ argparse; python_version < "3.2"
 
 # Optional for secure SMTP email sending
 secure-smtplib>=0.1
+httpx==0.27.0
