@@ -55,12 +55,106 @@ def e(db, sql: str, params: Sequence[Any] = ()):
 
 def run_migrations():
     with dbh() as db:
-        # users table should already exist; ensure password_hash column exists
-        cols = {r["name"] for r in q(db, "PRAGMA table_info(users)")}
-        if "password_hash" not in cols:
-            e(db, "ALTER TABLE users ADD COLUMN password_hash TEXT")
+        # users
+        e(db, """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT DEFAULT ''
+        )
+        """)
+        # make sure password_hash exists even on older DBs
+        cols_users = {r["name"] for r in q(db, "PRAGMA table_info(users)")}
+        if "password_hash" not in cols_users:
+            e(db, "ALTER TABLE users ADD COLUMN password_hash TEXT DEFAULT ''")
 
-        # password_resets table
+        # user_roles
+        e(db, """
+        CREATE TABLE IF NOT EXISTS user_roles (
+            user_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            UNIQUE(user_id, role),
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """)
+
+        # preferences
+        e(db, """
+        CREATE TABLE IF NOT EXISTS preferences (
+            user_id INTEGER PRIMARY KEY,
+            categories_json TEXT,
+            similarity REAL DEFAULT 0.8,
+            max_papers INTEGER DEFAULT 25,
+            updated_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """)
+
+        # papers
+        e(db, """
+        CREATE TABLE IF NOT EXISTS papers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            authors TEXT,
+            year INTEGER,
+            category TEXT,
+            categories TEXT,
+            keywords_json TEXT,
+            abstract TEXT,
+            source_url TEXT,
+            added_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+        # profiles
+        e(db, """
+        CREATE TABLE IF NOT EXISTS profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            frequency TEXT DEFAULT 'weekly',
+            threshold REAL DEFAULT 0.75,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """)
+
+        # profile_keywords
+        e(db, """
+        CREATE TABLE IF NOT EXISTS profile_keywords (
+            profile_id INTEGER NOT NULL,
+            keyword TEXT NOT NULL,
+            FOREIGN KEY(profile_id) REFERENCES profiles(id)
+        )
+        """)
+
+        # profile_papers
+        e(db, """
+        CREATE TABLE IF NOT EXISTS profile_papers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            profile_id INTEGER NOT NULL,
+            paper_id INTEGER NOT NULL,
+            UNIQUE(profile_id, paper_id),
+            FOREIGN KEY(profile_id) REFERENCES profiles(id),
+            FOREIGN KEY(paper_id) REFERENCES papers(id)
+        )
+        """)
+
+        # recommendations
+        e(db, """
+        CREATE TABLE IF NOT EXISTS recommendations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            paper_id INTEGER NOT NULL,
+            score REAL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(paper_id) REFERENCES papers(id)
+        )
+        """)
+
+        # password_resets
         e(db, """
         CREATE TABLE IF NOT EXISTS password_resets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,6 +166,15 @@ def run_migrations():
             FOREIGN KEY(user_id) REFERENCES users(id)
         )
         """)
+
+        # helpful indexes
+        e(db, "CREATE INDEX IF NOT EXISTS idx_users_email ON users(lower(email))")
+        e(db, "CREATE INDEX IF NOT EXISTS idx_profiles_user ON profiles(user_id)")
+        e(db, "CREATE INDEX IF NOT EXISTS idx_pref_user ON preferences(user_id)")
+        e(db, "CREATE INDEX IF NOT EXISTS idx_rec_user_created ON recommendations(user_id, created_at DESC)")
+        e(db, "CREATE INDEX IF NOT EXISTS idx_pp_profile ON profile_papers(profile_id)")
+        e(db, "CREATE INDEX IF NOT EXISTS idx_pp_paper ON profile_papers(paper_id)")
+
 
 
 # Password hashing (PBKDF2)
