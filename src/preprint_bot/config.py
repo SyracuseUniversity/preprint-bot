@@ -2,27 +2,22 @@
 Module to define global constants and create necessary directories
 for the arXiv preprint recommendation pipeline.
 
-This configuration includes:
-- Supported arXiv categories
-- Similarity thresholds for filtering relevant papers
-- Default embedding model
-- Directory setup for storing data outputs
+DATABASE VERSION: Stores metadata in PostgreSQL, files in local directories.
 """
 
 import os
+from pathlib import Path
 
-# List of arXiv subject categories to query. Add more categories this as needed.
+# List of arXiv subject categories to query
 ARXIV_CATEGORIES = [
-    # Astrophysics category from arXiv
     "cs.LG", 
 ]
 
 # Predefined similarity thresholds for filtering paper recommendations
-# These represent cosine similarity scores between embedding vectors
 SIMILARITY_THRESHOLDS = {
-    "low": 0.5,     # Broad match
-    "medium": 0.6,  # Balanced relevance
-    "high": 0.75   # Very high relevance
+    "low": 0.5,
+    "medium": 0.6,
+    "high": 0.75
 }
 
 # Maximum number of results to retrieve per query from arXiv
@@ -31,11 +26,25 @@ MAX_RESULTS = 50
 # Default SentenceTransformer model used for embedding abstracts and sections
 DEFAULT_MODEL_NAME = "all-MiniLM-L6-v2"
 
-# Root directory for saving intermediate and final outputs from the pipeline
-DATA_DIR = "pdf_processes"
+# Root directory for storing files (NOT metadata - that goes to DB)
+DATA_DIR = Path("hometutor_data")
 
-# Create the data directory if it doesn't exist
-os.makedirs(DATA_DIR, exist_ok=True)
+# Subdirectories for different file types
+PDF_DIR = DATA_DIR / "pdfs"
+PROCESSED_TEXT_DIR = DATA_DIR / "processed_texts"
+USER_PDF_DIR = DATA_DIR / "user_pdfs"
+USER_PROCESSED_DIR = DATA_DIR / "user_processed"
 
-# Get API base URL from env
+# Create all necessary directories
+for directory in [DATA_DIR, PDF_DIR, PROCESSED_TEXT_DIR, USER_PDF_DIR, USER_PROCESSED_DIR]:
+    directory.mkdir(parents=True, exist_ok=True)
+
+# API Configuration
 API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+
+# Default user for system operations (fetching arXiv papers)
+SYSTEM_USER_EMAIL = os.getenv("SYSTEM_USER_EMAIL", "system@hometutor.local")
+SYSTEM_USER_NAME = "HomeTutor System"
+
+# Corpus naming
+ARXIV_CORPUS_NAME = "arxiv_papers"

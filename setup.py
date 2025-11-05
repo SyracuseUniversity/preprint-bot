@@ -5,8 +5,8 @@ from setuptools import setup, find_packages
 
 setup(
     name="preprint_bot",
-    version="0.1.0",
-    description="A preprint recommendation bot",
+    version="0.2.0",
+    description="A preprint recommendation bot with database backend",
     author="Your Name",
     author_email="your.email@example.com",
     python_requires=">=3.10",
@@ -19,13 +19,14 @@ setup(
         "numpy>=1.26.0",
         "sentence-transformers>=2.6.0",
         "transformers==4.41.2",
-        "torch==2.5.1",  # CPU build by default
+        "torch==2.5.1",
         "nltk>=3.9",
         "spacy>=3.7.3",
         "faiss-cpu>=1.7.4",
         "scikit-learn>=1.5.0",
-        "secure-smtplib>=0.1",
-        "httpx==0.27.0",
+        "httpx>=0.27.0",
+        "asyncpg>=0.29.0",  # For async PostgreSQL
+        "sqlalchemy>=2.0.0",  # ORM support
     ],
     extras_require={
         "dev": [
@@ -33,17 +34,18 @@ setup(
             "wheel>=0.38.0",
             "twine>=4.0.0",
             "pytest>=8.0.0",
+            "pytest-asyncio>=0.23.0",  # For async tests
             "black>=24.0.0",
             "flake8>=7.0.0",
         ],
         "cuda": [
-            "torch==2.5.1+cu121",  # CUDA version of torch
+            "torch==2.5.1+cu121",
         ],
         "qdrant": [
             "qdrant-client>=1.12.1",
         ],
         "llama": [
-            "llama-cpp-python>=0.1.83",  # LLaMA C++ bindings
+            "llama-cpp-python>=0.1.83",
         ],
         "all": [
             "torch==2.5.1+cu121",
@@ -55,7 +57,6 @@ setup(
         "console_scripts": [
             "preprint_bot=preprint_bot.pipeline:main",
             "query_arxiv=preprint_bot.query_arxiv:main",
-            "send_email=preprint_bot.send_email:main",
         ],
     },
     include_package_data=True,
