@@ -176,14 +176,15 @@ class EmbeddingCreate(BaseModel):
 
 class EmbeddingUpdate(BaseModel):
     embedding: Optional[List[float]] = None
-
+    
 class EmbeddingResponse(BaseModel):
-    id: int
-    paper_id: int
-    section_id: Optional[int]
-    type: str
-    model_name: str
-    created_at: datetime
+       id: int
+       paper_id: int
+       section_id: Optional[int]
+       embedding: List[float]  # Add this
+       type: str
+       model_name: str
+       created_at: datetime
 
 # RecommendationRun Schemas
 class RecommendationRunCreate(BaseModel):

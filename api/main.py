@@ -7,6 +7,7 @@ from routes import (
     recommendations, profile_recommendations, email_logs
 )
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
