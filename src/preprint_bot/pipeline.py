@@ -1,47 +1,6 @@
 from __future__ import annotations # This has to stay at the top most position
 #!/usr/bin/env python3
 """
-End-to-End arXiv Preprint Recommender
-
-This single script stitches together all the separate building blocks you already wrote—fetching, PDF download, GROBID parsing, summarisation, embedding and similarity matching—into one coherent command-line pipeline.
-
-Main stages
------------
-Fetch the most recent pre-prints for a chosen arXiv category (via the helper in query_arxiv.py).
-
-Download their PDFs and store them on disk (re-uses download_arxiv_pdfs.py).
-
-Parse every PDF through GROBID and save a plain-text _output.txt for each (grobid_parser.py).
-
-Summarise each parsed paper with a transformer model (functions from summarization_script.py).
-
-Embed abstracts and section chunks for both the user’s uploaded papers and the fresh arXiv papers (embed_papers.py).
-
-Match user vs arXiv papers with a hybrid FAISS search and rank them (similarity_matcher.py).
-
-Report the recommendations – title, link, transformer summary (or abstract fallback) and similarity score.
-
-Usage
------
-preprint_bot --category cs.LG --threshold medium --model all-MiniLM-L6-v2
-
-Skipping expensive steps:
-Add the below in your command line to skip downloading, parsing, summarising or embedding steps:
---skip_download	- Skips downloading arXiv PDFs
---skip_parse - Skips parsing PDFs through GROBID
---skip_summarize - Skips summarizing parsed texts
---skip_embed - Skips generating embeddings for all papers
-
-Prerequisites
--------------
-• GROBID running locally on http://localhost:8070
-• transformers, sentence-transformers, faiss, nltk, etc. installed
-• Rename summarization-script.py to summarization_script.py so it can be imported as a Python module
-"""
-
-
-#!/usr/bin/env python3
-"""
 Database-integrated arXiv Preprint Recommender Pipeline
 """
 import argparse
@@ -193,6 +152,45 @@ async def store_sections(api_client: APIClient, corpus_id: int):
                 print(f"✗ Failed to store section for paper {paper['id']}: {e}")
 
 
+async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, mode: str = "abstract"):
+    """Generate and store summaries for papers in a corpus"""
+    print(f"\n▶ Generating summaries using {type(summarizer).__name__}...")
+    
+    papers = await api_client.get_papers_by_corpus(corpus_id)
+    
+    if not papers:
+        print("  No papers found to summarize")
+        return
+    
+    summarized_count = 0
+    for paper in papers:
+        if not paper.get('abstract'):
+            print(f"  ⊙ Skipping {paper.get('arxiv_id', paper['id'])} - no abstract")
+            continue
+        
+        try:
+            summary_text = summarizer.summarize(
+                paper['abstract'], 
+                max_length=150, 
+                mode=mode
+            )
+            
+            await api_client.create_summary(
+                paper_id=paper['id'],
+                mode=mode,
+                summary_text=summary_text,
+                summarizer=type(summarizer).__name__
+            )
+            
+            summarized_count += 1
+            print(f"  ✓ {paper['title'][:60]}...")
+            
+        except Exception as e:
+            print(f"  ✗ Failed: {paper.get('arxiv_id', paper['id'])}: {e}")
+    
+    print(f"\n✓ Generated {summarized_count} summaries")
+
+
 async def run_corpus_mode(args):
     """Corpus mode: fetch and process arXiv papers"""
     api_client = APIClient()
@@ -205,6 +203,13 @@ async def run_corpus_mode(args):
             skip_download=args.skip_download,
             skip_parse=args.skip_parse
         )
+
+        # ADD THIS DEBUG BLOCK
+        print(f"\nDEBUG: Checking corpus {corpus_id}")
+        test_papers = await api_client.get_papers_by_corpus(corpus_id)
+        print(f"DEBUG: API returned {len(test_papers)} papers")
+        if test_papers:
+            print(f"DEBUG: First paper: {test_papers[0]}")
         
         # Embed papers
         if not args.skip_embed:
@@ -215,6 +220,21 @@ async def run_corpus_mode(args):
                 model_name=args.model,
                 store_sections=True
             )
+        
+        # Summarize papers
+        if not args.skip_summarize:
+            if args.summarizer == "llama":
+                if not Path(args.llm_model).exists():
+                    print(f"✗ Error: LLM model not found at {args.llm_model}")
+                    print("  Please provide a valid path to a .gguf model file")
+                    sys.exit(1)
+                print(f"  Using LLaMA model: {args.llm_model}")
+                summarizer = LlamaSummarizer(model_path=args.llm_model)
+            else:
+                print(f"  Using Transformer model: google/pegasus-xsum")
+                summarizer = TransformerSummarizer()
+            
+            await summarize_papers(api_client, corpus_id, summarizer, mode="abstract")
         
         print(f"\n✓ Corpus mode complete. Corpus ID: {corpus_id}")
         
@@ -268,6 +288,18 @@ async def run_user_mode(args):
                 store_sections=True
             )
         
+        # Summarize user papers
+        if not args.skip_summarize:
+            if args.summarizer == "llama":
+                if not Path(args.llm_model).exists():
+                    print(f"✗ Error: LLM model not found at {args.llm_model}")
+                    sys.exit(1)
+                summarizer = LlamaSummarizer(model_path=args.llm_model)
+            else:
+                summarizer = TransformerSummarizer()
+            
+            await summarize_papers(api_client, user_corpus['id'], summarizer, mode="abstract")
+        
         # Get arXiv corpus
         system_user = await api_client.get_user_by_email(SYSTEM_USER_EMAIL)
         arxiv_corpus = await api_client.get_corpus_by_name(system_user['id'], ARXIV_CORPUS_NAME)
@@ -284,7 +316,8 @@ async def run_user_mode(args):
             arxiv_corpus_id=arxiv_corpus['id'],
             threshold=args.threshold,
             method=args.method,
-            model_name=args.model
+            model_name=args.model,
+            use_sections=args.use_sections  # ADD THIS
         )
         
         print(f"\n✓ User mode complete. Check recommendations in database.")
@@ -334,13 +367,17 @@ def main():
     parser.add_argument("--category", default="cs.LG")
     parser.add_argument("--threshold", default="medium", choices=["low", "medium", "high"])
     parser.add_argument("--model", default=DEFAULT_MODEL_NAME)
-    parser.add_argument("--method", default="cosine", choices=["faiss", "cosine", "qdrant"])
+    parser.add_argument("--method", default="faiss", choices=["faiss", "cosine", "qdrant"])
     parser.add_argument("--skip-download", action="store_true")
     parser.add_argument("--skip-parse", action="store_true")
     parser.add_argument("--skip-embed", action="store_true")
+    parser.add_argument("--skip-summarize", action="store_true")
+    parser.add_argument("--summarizer", default="transformer", choices=["transformer", "llama"])
+    parser.add_argument("--llm-model", default="models/llama-model.gguf", help="Path to .gguf model file")
     parser.add_argument("--user-folder", help="Path to user PDFs")
     parser.add_argument("--user-email", help="User email (required in user mode)")
     parser.add_argument("--user-name", help="User name")
+    parser.add_argument("--use-sections", action="store_true", help="Use section embeddings for matching (compares full papers)")
     
     args = parser.parse_args()
     

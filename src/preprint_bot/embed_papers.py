@@ -132,7 +132,16 @@ async def embed_and_store_papers(
     papers = await api_client.get_papers_by_corpus(corpus_id)
     
     # Create mapping of arxiv_id to paper
-    paper_map = {p["arxiv_id"]: p for p in papers}
+    # IMPORTANT: Handle both with and without version suffix
+    paper_map = {}
+    for p in papers:
+        arxiv_id = p["arxiv_id"]
+        # Store with full ID
+        paper_map[arxiv_id] = p
+        # Also store without version suffix (e.g., "2511.13418v1" -> "2511.13418")
+        if 'v' in arxiv_id:
+            base_id = arxiv_id.rsplit('v', 1)[0]  # Split from the right, take first part
+            paper_map[base_id] = p
     
     # Embed abstracts
     print(f"▶ Embedding abstracts from {processed_folder}...")
@@ -141,13 +150,22 @@ async def embed_and_store_papers(
     # Store abstract embeddings
     stored_count = 0
     for i, filename in enumerate(filenames):
-        arxiv_id = filename.replace("_output.txt", "")
+        # Strip _output.txt to get arxiv_id (with version)
+        arxiv_id_with_version = filename.replace("_output.txt", "")
         
-        if arxiv_id not in paper_map:
-            print(f"⚠ Warning: No database entry for {arxiv_id}, skipping")
+        # Try to find paper - first with full ID, then without version
+        paper = paper_map.get(arxiv_id_with_version)
+        if not paper:
+            # Try without version suffix
+            arxiv_id_base = arxiv_id_with_version.rsplit('v', 1)[0] if 'v' in arxiv_id_with_version else arxiv_id_with_version
+            paper = paper_map.get(arxiv_id_base)
+            arxiv_id = arxiv_id_base
+        else:
+            arxiv_id = arxiv_id_with_version
+        
+        if not paper:
+            print(f"⚠ Warning: No database entry for {arxiv_id_with_version}, skipping")
             continue
-        
-        paper = paper_map[arxiv_id]
         
         try:
             await api_client.create_embedding(
@@ -170,12 +188,20 @@ async def embed_and_store_papers(
         
         section_count = 0
         for filename, embs in section_embeddings.items():
-            arxiv_id = filename.replace("_output.txt", "")
+            # Strip _output.txt to get arxiv_id (with version)
+            arxiv_id_with_version = filename.replace("_output.txt", "")
             
-            if arxiv_id not in paper_map:
+            # Try to find paper - first with full ID, then without version
+            paper = paper_map.get(arxiv_id_with_version)
+            if not paper:
+                arxiv_id_base = arxiv_id_with_version.rsplit('v', 1)[0] if 'v' in arxiv_id_with_version else arxiv_id_with_version
+                paper = paper_map.get(arxiv_id_base)
+                arxiv_id = arxiv_id_base
+            else:
+                arxiv_id = arxiv_id_with_version
+            
+            if not paper:
                 continue
-            
-            paper = paper_map[arxiv_id]
             
             # Get sections for this paper
             sections = await api_client.get_sections_by_paper(paper["id"])

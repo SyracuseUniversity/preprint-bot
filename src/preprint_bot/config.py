@@ -27,7 +27,7 @@ MAX_RESULTS = 50
 DEFAULT_MODEL_NAME = "all-MiniLM-L6-v2"
 
 # Root directory for storing files (NOT metadata - that goes to DB)
-DATA_DIR = Path("hometutor_data")
+DATA_DIR = Path("pdf_data")
 
 # Subdirectories for different file types
 PDF_DIR = DATA_DIR / "pdfs"
@@ -43,8 +43,8 @@ for directory in [DATA_DIR, PDF_DIR, PROCESSED_TEXT_DIR, USER_PDF_DIR, USER_PROC
 API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 
 # Default user for system operations (fetching arXiv papers)
-SYSTEM_USER_EMAIL = os.getenv("SYSTEM_USER_EMAIL", "system@hometutor.local")
-SYSTEM_USER_NAME = "HomeTutor System"
+SYSTEM_USER_EMAIL = os.getenv("SYSTEM_USER_EMAIL", "abcd@syr.edu")
+SYSTEM_USER_NAME = "Preprint Bot"
 
 # Corpus naming
 ARXIV_CORPUS_NAME = "arxiv_papers"

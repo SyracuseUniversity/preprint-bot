@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
-from schemas import EmbeddingCreate, EmbeddingUpdate, EmbeddingResponse
+from schemas import EmbeddingCreate, EmbeddingUpdate, EmbeddingResponse, VectorSearchRequest
 from database import get_db_pool
 
 router = APIRouter(prefix="/embeddings", tags=["embeddings"])
@@ -19,8 +19,6 @@ async def create_embedding(embedding: EmbeddingCreate):
                 """
                 INSERT INTO embeddings (paper_id, section_id, embedding, type, model_name)
                 VALUES ($1, $2, $3::vector, $4, $5)
-                ON CONFLICT (paper_id, section_id, type, model_name) 
-                DO UPDATE SET embedding = EXCLUDED.embedding
                 RETURNING id, paper_id, section_id, type, model_name, created_at
                 """,
                 embedding.paper_id,
@@ -29,7 +27,10 @@ async def create_embedding(embedding: EmbeddingCreate):
                 embedding.type.value,
                 embedding.model_name
             )
-            return dict(row)
+            result = dict(row)
+            # Add embedding back to result for response
+            result['embedding'] = embedding.embedding
+            return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -49,8 +50,6 @@ async def batch_create_embeddings(embeddings: List[EmbeddingCreate]):
                         """
                         INSERT INTO embeddings (paper_id, section_id, embedding, type, model_name)
                         VALUES ($1, $2, $3::vector, $4, $5)
-                        ON CONFLICT (paper_id, section_id, type, model_name) 
-                        DO UPDATE SET embedding = EXCLUDED.embedding
                         RETURNING id, paper_id, section_id, type, model_name, created_at
                         """,
                         emb.paper_id,
@@ -59,7 +58,9 @@ async def batch_create_embeddings(embeddings: List[EmbeddingCreate]):
                         emb.type.value,
                         emb.model_name
                     )
-                    results.append(dict(row))
+                    result = dict(row)
+                    result['embedding'] = emb.embedding
+                    results.append(result)
                 except Exception as e:
                     print(f"Failed to insert embedding: {e}")
     
@@ -141,6 +142,47 @@ async def get_embedding(embedding_id: int):
         result['embedding'] = parse_vector(emb_text)
         return result
 
+
+@router.post("/search/similar")
+async def search_similar_embeddings(request: VectorSearchRequest):
+    """Search for similar papers using vector similarity"""
+    pool = await get_db_pool()
+    
+    # Convert embedding to pgvector format
+    embedding_str = f"[{','.join(map(str, request.embedding))}]"
+    
+    # Build query with optional corpus filter
+    if request.corpus_id is not None:
+        query = """
+            SELECT 
+                p.id, p.arxiv_id, p.title, p.abstract,
+                1 - (e.embedding <=> $1::vector) as similarity
+            FROM embeddings e
+            JOIN papers p ON e.paper_id = p.id
+            WHERE e.type = 'abstract'
+            AND p.corpus_id = $2
+            AND 1 - (e.embedding <=> $1::vector) >= $3
+            ORDER BY e.embedding <=> $1::vector
+            LIMIT $4
+        """
+        params = [embedding_str, request.corpus_id, request.threshold, request.limit]
+    else:
+        query = """
+            SELECT 
+                p.id, p.arxiv_id, p.title, p.abstract,
+                1 - (e.embedding <=> $1::vector) as similarity
+            FROM embeddings e
+            JOIN papers p ON e.paper_id = p.id
+            WHERE e.type = 'abstract'
+            AND 1 - (e.embedding <=> $1::vector) >= $2
+            ORDER BY e.embedding <=> $1::vector
+            LIMIT $3
+        """
+        params = [embedding_str, request.threshold, request.limit]
+    
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(query, *params)
+        return [dict(row) for row in rows]
 
 @router.delete("/{embedding_id}", status_code=204)
 async def delete_embedding(embedding_id: int):

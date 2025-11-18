@@ -65,9 +65,23 @@ class APIClient:
                 "abstract": abstract,
                 "metadata": metadata,
                 "source": source,
-                "processed_text_path": processed_text_path,
-                "pdf_path": pdf_path
+                "file_path": pdf_path  # CHANGED: was pdf_path, now file_path
             }
+        )
+        response.raise_for_status()
+        paper = response.json()
+        
+        # ADDED: Update processed text path separately if provided
+        if processed_text_path:
+            await self.update_paper_processed_path(paper["id"], processed_text_path)
+        
+        return paper
+    
+    async def update_paper_processed_path(self, paper_id: int, path: str) -> Dict:
+        """Update the processed text path for a paper"""
+        response = await self.client.post(
+            f"{self.base_url}/papers/{paper_id}/processed-text",
+            params={"path": path}
         )
         response.raise_for_status()
         return response.json()
@@ -94,14 +108,13 @@ class APIClient:
     
     
     async def create_section(self, paper_id: int, section_header: str, 
-                            section_text: str, section_order: int) -> Dict:
+                            section_text: str, section_order: int = 0) -> Dict:
         response = await self.client.post(
             f"{self.base_url}/sections/",
             json={
                 "paper_id": paper_id,
-                "section_header": section_header,
-                "section_text": section_text,
-                "section_order": section_order
+                "header": section_header,  # CHANGED: was section_header, now header
+                "text": section_text        # CHANGED: was section_text, now text
             }
         )
         response.raise_for_status()
@@ -155,6 +168,20 @@ class APIClient:
         response.raise_for_status()
         return response.json()
     
+    async def create_summary(self, paper_id: int, mode: str, summary_text: str, summarizer: str) -> Dict:
+        """Create a summary for a paper"""
+        response = await self.client.post(
+            f"{self.base_url}/summaries/",
+            json={
+                "paper_id": paper_id,
+                "mode": mode,
+                "summary_text": summary_text,
+                "summarizer": summarizer
+            }
+        )
+        response.raise_for_status()
+        return response.json()
+    
     
     async def create_recommendation_run(self, profile_id: int, user_id: int,
                                        user_corpus_id: int, ref_corpus_id: int,
@@ -194,28 +221,24 @@ class APIClient:
         response.raise_for_status()
         return response.json()
     
+    async def get_recommendations_with_papers(self, run_id: int, limit: int = 50) -> List[Dict]:
+        """Get recommendations with full paper details"""
+        response = await self.client.get(
+            f"{self.base_url}/recommendations/run/{run_id}/with-papers",
+            params={"limit": limit}
+        )
+        response.raise_for_status()
+        return response.json()
+    
     
     async def create_processing_run(self, run_type: str, category: str) -> Dict:
         """Track a processing run"""
-        response = await self.client.post(
-            f"{self.base_url}/processing-runs/",
-            json={
-                "run_type": run_type,
-                "category": category,
-                "status": "started"
-            }
-        )
-        response.raise_for_status()
-        return response.json()
+        # NOTE: This endpoint doesn't exist yet in the API
+        # You may want to add it or remove this method
+        return {"id": 0, "run_type": run_type, "category": category}
     
     async def update_processing_run(self, run_id: int, status: str, papers_processed: int = None) -> Dict:
         """Update processing run status"""
-        response = await self.client.patch(
-            f"{self.base_url}/processing-runs/{run_id}",
-            json={
-                "status": status,
-                "papers_processed": papers_processed
-            }
-        )
-        response.raise_for_status()
-        return response.json()
+        # NOTE: This endpoint doesn't exist yet in the API
+        # You may want to add it or remove this method
+        return {"id": run_id, "status": status}

@@ -32,11 +32,11 @@ class StatusEnum(str, Enum):
 
 # User Schemas
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: str  # CHANGED: from EmailStr to str
     name: Optional[str] = None
 
 class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None  # CHANGED: from EmailStr to str
     name: Optional[str] = None
 
 class UserResponse(BaseModel):
@@ -126,7 +126,8 @@ class PaperResponse(BaseModel):
     title: str
     abstract: Optional[str]
     metadata: Optional[dict]
-    file_path: Optional[str]
+    pdf_path: Optional[str]  # DB returns this field name
+    processed_text_path: Optional[str]  # DB returns this field name
     source: str
     created_at: datetime
 
@@ -188,7 +189,7 @@ class EmbeddingResponse(BaseModel):
 
 # RecommendationRun Schemas
 class RecommendationRunCreate(BaseModel):
-    profile_id: int
+    profile_id: Optional[int] = None
     user_id: int
     user_corpus_id: int
     ref_corpus_id: int
@@ -197,7 +198,7 @@ class RecommendationRunCreate(BaseModel):
 
 class RecommendationRunResponse(BaseModel):
     id: int
-    profile_id: int
+    profile_id: Optional[int]  # CHANGED: was int, now Optional[int]
     user_id: int
     user_corpus_id: int
     ref_corpus_id: int
@@ -226,6 +227,12 @@ class RecommendationResponse(BaseModel):
     rank: int
     summary: Optional[str]
     created_at: datetime
+
+class VectorSearchRequest(BaseModel):
+    embedding: List[float]
+    corpus_id: Optional[int] = None
+    limit: int = 10
+    threshold: float = 0.5
 
 # ProfileRecommendation Schemas
 class ProfileRecommendationCreate(BaseModel):
