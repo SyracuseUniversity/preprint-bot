@@ -163,7 +163,7 @@ def compute_cosine_similarity(user_matrix: np.ndarray, arxiv_matrix: np.ndarray)
 
 
 def compute_faiss_similarity(user_matrix: np.ndarray, arxiv_matrix: np.ndarray) -> np.ndarray:
-    """Compute similarity using FAISS."""
+    """Compute similarity using FAISS. """
     faiss.normalize_L2(user_matrix)
     faiss.normalize_L2(arxiv_matrix)
     dim = arxiv_matrix.shape[1]
