@@ -20,16 +20,16 @@ except ImportError:
 async def lifespan(app: FastAPI):
     """Manage application lifecycle"""
     # Startup
-    print("🚀 Starting Preprint Bot API...")
+    print("Starting Preprint Bot API...")
     await get_db_pool()
-    print("✓ Database connection pool created")
+    print("Database connection pool created")
     
     yield
     
     # Shutdown
-    print("🛑 Shutting down Preprint Bot API...")
+    print("Shutting down Preprint Bot API...")
     await close_db_pool()
-    print("✓ Database connections closed")
+    print("Database connections closed")
 
 
 # Create FastAPI app
