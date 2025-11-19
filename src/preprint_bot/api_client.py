@@ -107,19 +107,19 @@ class APIClient:
         return response.json()
     
     
-    async def create_section(self, paper_id: int, section_header: str, 
-                            section_text: str, section_order: int = 0) -> Dict:
+    async def create_section(self, paper_id: int, header: str, text: str) -> Dict:
+        """Create a section for a paper"""
         response = await self.client.post(
             f"{self.base_url}/sections/",
             json={
                 "paper_id": paper_id,
-                "header": section_header,  # CHANGED: was section_header, now header
-                "text": section_text        # CHANGED: was section_text, now text
+                "header": header,  # Changed from section_header
+                "text": text       # Changed from section_text
             }
         )
         response.raise_for_status()
         return response.json()
-    
+        
     async def get_sections_by_paper(self, paper_id: int) -> List[Dict]:
         """Get all sections for a paper"""
         response = await self.client.get(f"{self.base_url}/sections/?paper_id={paper_id}")

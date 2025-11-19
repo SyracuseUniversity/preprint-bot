@@ -112,15 +112,32 @@ async def fetch_and_store_arxiv(
 
 async def store_sections(api_client: APIClient, corpus_id: int):
     """Extract and store sections from processed text files"""
+    print(f"▶ Extracting sections from papers in corpus {corpus_id}...")
     papers = await api_client.get_papers_by_corpus(corpus_id)
     
+    if not papers:
+        print("  No papers found in corpus")
+        return
+    
+    sections_stored = 0
     for paper in papers:
-        processed_file = Path(paper.get('processed_text_path', ''))
+        # Handle both pdf_path and processed_text_path
+        processed_path = paper.get('processed_text_path')
+        if not processed_path:
+            print(f"  ⚠ No processed text path for paper {paper['id']}")
+            continue
+            
+        processed_file = Path(processed_path)
         if not processed_file.exists():
+            print(f"  ⚠ File not found: {processed_file}")
             continue
         
-        with open(processed_file, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
+        try:
+            with open(processed_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        except Exception as e:
+            print(f"  ✗ Failed to read {processed_file}: {e}")
+            continue
         
         sections = []
         current_header = None
@@ -141,6 +158,7 @@ async def store_sections(api_client: APIClient, corpus_id: int):
             sections.append((current_header, ' '.join(current_text)))
         
         # Store sections
+        paper_sections = 0
         for header, text in sections:
             try:
                 await api_client.create_section(
@@ -148,8 +166,15 @@ async def store_sections(api_client: APIClient, corpus_id: int):
                     header=header,
                     text=text
                 )
+                paper_sections += 1
+                sections_stored += 1
             except Exception as e:
-                print(f"✗ Failed to store section for paper {paper['id']}: {e}")
+                print(f"  ✗ Failed to store section '{header}' for paper {paper['id']}: {e}")
+        
+        if paper_sections > 0:
+            print(f"  ✓ Stored {paper_sections} sections for: {paper['title'][:50]}...")
+    
+    print(f"✓ Stored {sections_stored} total sections")
 
 
 async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, mode: str = "abstract"):
@@ -261,6 +286,7 @@ async def run_user_mode(args):
             name=f"{user['email']}_papers",
             description="User uploaded papers"
         )
+        print(f"✓ Using user corpus: {user_corpus['name']} (ID: {user_corpus['id']})")
         
         # Process user PDFs
         user_pdf_folder = Path(args.user_folder or USER_PDF_DIR)
@@ -271,34 +297,29 @@ async def run_user_mode(args):
         user_processed = USER_PROCESSED_DIR / user['email']
         user_processed.mkdir(parents=True, exist_ok=True)
         
-        # Parse PDFs
+        # Parse PDFs with GROBID
         if not args.skip_parse:
+            print(f"\n▶ Parsing user PDFs with GROBID...")
             grobid_process_folder(user_pdf_folder, user_processed)
         
         # Store user papers in database
+        print(f"\n▶ Storing user papers in database...")
         await store_user_papers(api_client, user_corpus['id'], user_pdf_folder, user_processed)
         
-        # Embed user papers
+        # Store sections for user papers
+        print(f"\n▶ Storing sections for user papers...")
+        await store_sections(api_client, user_corpus['id'])
+        
+        # Embed user papers (abstract + sections)
         if not args.skip_embed:
+            print(f"\n▶ Generating embeddings for user papers...")
             await embed_and_store_papers(
                 api_client,
                 corpus_id=user_corpus['id'],
                 processed_folder=str(user_processed),
                 model_name=args.model,
-                store_sections=True
+                store_sections=True  # Embed sections too!
             )
-        
-        # Summarize user papers
-        if not args.skip_summarize:
-            if args.summarizer == "llama":
-                if not Path(args.llm_model).exists():
-                    print(f"✗ Error: LLM model not found at {args.llm_model}")
-                    sys.exit(1)
-                summarizer = LlamaSummarizer(model_path=args.llm_model)
-            else:
-                summarizer = TransformerSummarizer()
-            
-            await summarize_papers(api_client, user_corpus['id'], summarizer, mode="abstract")
         
         # Get arXiv corpus
         system_user = await api_client.get_user_by_email(SYSTEM_USER_EMAIL)
@@ -308,7 +329,9 @@ async def run_user_mode(args):
             print("Error: arXiv corpus not found. Run --mode corpus first.")
             sys.exit(1)
         
-        # Run similarity matching
+        print(f"✓ Using arXiv corpus: {arxiv_corpus['name']} (ID: {arxiv_corpus['id']})")
+        
+        # Run similarity matching with sections
         await run_similarity_matching(
             api_client,
             user_id=user['id'],
@@ -317,14 +340,13 @@ async def run_user_mode(args):
             threshold=args.threshold,
             method=args.method,
             model_name=args.model,
-            use_sections=args.use_sections  # ADD THIS
+            use_sections=args.use_sections
         )
         
         print(f"\n✓ User mode complete. Check recommendations in database.")
         
     finally:
         await api_client.close()
-
 
 async def store_user_papers(api_client: APIClient, corpus_id: int, pdf_folder: Path, processed_folder: Path):
     """Store user papers in database"""

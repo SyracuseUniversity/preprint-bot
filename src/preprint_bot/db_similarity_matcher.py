@@ -90,6 +90,29 @@ async def run_similarity_matching(
             max_similarity = max(max_similarity, similarity)
         
         paper_scores[arxiv_paper_id] = max_similarity
+
+        # After computing similarities, before filtering
+        print(f"\n📊 Similarity Score Distribution:")
+        all_scores = list(paper_scores.values())
+        if all_scores:
+            print(f"   Max: {max(all_scores):.3f}")
+            print(f"   Min: {min(all_scores):.3f}")
+            print(f"   Mean: {sum(all_scores)/len(all_scores):.3f}")
+            print(f"   Median: {sorted(all_scores)[len(all_scores)//2]:.3f}")
+        
+        # Show how many papers at each threshold
+        for t_name, t_val in [("low", 0.5), ("medium", 0.6), ("high", 0.75)]:
+            count = sum(1 for s in all_scores if s >= t_val)
+            print(f"   Above {t_name} ({t_val}): {count} papers")
+        
+        print(f"\n🏆 Top 10 Matches (regardless of threshold):")
+        sorted_all = sorted(paper_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+        for rank, (paper_id, score) in enumerate(sorted_all, 1):
+            try:
+                paper = await api_client.get_paper_by_id(paper_id)
+                print(f"  {rank}. [{score:.3f}] {paper['title'][:60]}...")
+            except:
+                pass
     
     # Filter by threshold
     filtered_papers = {pid: score for pid, score in paper_scores.items() if score >= threshold_value}

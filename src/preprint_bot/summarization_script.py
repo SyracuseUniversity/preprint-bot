@@ -119,20 +119,13 @@ class LlamaSummarizer:
             tokens = tokens[:1800]
             text = self.llm.detokenize(tokens).decode("utf-8", errors="ignore")
 
-        if mode == "abstract":
-            prompt_text = (
-                "You are an expert academic summarizer. "
-                "Summarize the following research paper abstract into at most 3 concise sentences. "
-                "Keep it clear, academic, and to the point:\n\n"
-                f"{text}\n\nSummary:"
-            )
-        else:
-            prompt_text = (
-                "You are an expert academic summarizer. "
-                "Read the following full research paper text and summarize it clearly in at most 3 concise sentences. "
-                "Focus on key methods, results, and conclusions, and keep it to the point:\n\n"
-                f"{text}\n\nSummary:"
-            )
+        # Always use abstract summarization prompt
+        prompt_text = (
+            "You are an expert academic summarizer. "
+            "Summarize the following research paper abstract into at most 3 concise sentences. "
+            "Keep it clear, academic, and to the point:\n\n"
+            f"{text}\n\nSummary:"
+        )
 
         result = self.llm(prompt_text, max_tokens=max_length, temperature=0.3, top_p=0.9, echo=False)
         if isinstance(result, dict):
