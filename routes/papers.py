@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
-from typing import List
+from fastapi import APIRouter, HTTPException, Query
+from typing import List, Optional
 from schemas import PaperCreate, PaperUpdate, PaperResponse
 from database import get_db_pool
 import json
@@ -13,13 +13,17 @@ async def create_paper(paper: PaperCreate):
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO papers (corpus_id, arxiv_id, title, abstract, metadata, file_path, source)
+                INSERT INTO papers (corpus_id, arxiv_id, title, abstract, metadata, pdf_path, source)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
-                RETURNING id, corpus_id, arxiv_id, title, abstract, metadata, file_path, source, created_at
+                RETURNING id, corpus_id, arxiv_id, title, abstract, metadata, pdf_path, processed_text_path, source, created_at
                 """,
-                paper.corpus_id, paper.arxiv_id, paper.title, paper.abstract,
+                paper.corpus_id, 
+                paper.arxiv_id, 
+                paper.title, 
+                paper.abstract,
                 json.dumps(paper.metadata) if paper.metadata else None,
-                paper.file_path, paper.source.value
+                paper.file_path,  # Schema field is file_path
+                paper.source.value
             )
             result = dict(row)
             if result['metadata']:
@@ -28,13 +32,49 @@ async def create_paper(paper: PaperCreate):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/", response_model=List[PaperResponse])
-async def get_papers():
+@router.post("/{paper_id}/processed-text", response_model=PaperResponse)
+async def update_processed_text_path(paper_id: int, path: str = Query(...)):
+    """Update the processed text path for a paper"""
     pool = await get_db_pool()
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT id, corpus_id, arxiv_id, title, abstract, metadata, file_path, source, created_at FROM papers"
+        row = await conn.fetchrow(
+            """
+            UPDATE papers 
+            SET processed_text_path = $1 
+            WHERE id = $2
+            RETURNING id, corpus_id, arxiv_id, title, abstract, metadata, pdf_path, processed_text_path, source, created_at
+            """,
+            path, paper_id
         )
+        if not row:
+            raise HTTPException(status_code=404, detail="Paper not found")
+        result = dict(row)
+        if result['metadata']:
+            result['metadata'] = json.loads(result['metadata'])
+        return result
+
+@router.get("/", response_model=List[PaperResponse])
+async def get_papers(corpus_id: Optional[int] = Query(None)):
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        if corpus_id is not None:
+            rows = await conn.fetch(
+                """
+                SELECT id, corpus_id, arxiv_id, title, abstract, metadata, pdf_path, 
+                       processed_text_path, source, created_at 
+                FROM papers 
+                WHERE corpus_id = $1
+                """,
+                corpus_id
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT id, corpus_id, arxiv_id, title, abstract, metadata, pdf_path, 
+                       processed_text_path, source, created_at 
+                FROM papers
+                """
+            )
         results = []
         for row in rows:
             result = dict(row)
@@ -48,7 +88,11 @@ async def get_paper(paper_id: int):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT id, corpus_id, arxiv_id, title, abstract, metadata, file_path, source, created_at FROM papers WHERE id = $1",
+            """
+            SELECT id, corpus_id, arxiv_id, title, abstract, metadata, pdf_path, 
+                   processed_text_path, source, created_at 
+            FROM papers WHERE id = $1
+            """,
             paper_id
         )
         if not row:
@@ -81,8 +125,8 @@ async def update_paper(paper_id: int, paper: PaperUpdate):
         updates.append(f"metadata = ${idx}")
         values.append(json.dumps(paper.metadata))
         idx += 1
-    if paper.file_path is not None:
-        updates.append(f"file_path = ${idx}")
+    if paper.file_path is not None:  # Schema field is file_path
+        updates.append(f"pdf_path = ${idx}")
         values.append(paper.file_path)
         idx += 1
     if paper.source is not None:
@@ -96,7 +140,7 @@ async def update_paper(paper_id: int, paper: PaperUpdate):
     values.append(paper_id)
     query = f"""UPDATE papers SET {', '.join(updates)} 
                 WHERE id = ${idx} 
-                RETURNING id, corpus_id, arxiv_id, title, abstract, metadata, file_path, source, created_at"""
+                RETURNING id, corpus_id, arxiv_id, title, abstract, metadata, pdf_path, processed_text_path, source, created_at"""
     
     async with pool.acquire() as conn:
         row = await conn.fetchrow(query, *values)
@@ -114,4 +158,3 @@ async def delete_paper(paper_id: int):
         result = await conn.execute("DELETE FROM papers WHERE id = $1", paper_id)
         if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Paper not found")
-

@@ -190,3 +190,5 @@ main/arxiv_pipeline_data/arxiv_cs_papers.json
 main/
 parsed_arxiv_outputs
 models
+config.py
+pdf_data
