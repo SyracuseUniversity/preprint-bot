@@ -26,10 +26,11 @@ async def run_similarity_matching(
     
     threshold_value = SIMILARITY_THRESHOLDS.get(threshold, 0.6)
     
-    print(f"\n▶ Running similarity matching...")
+    print(f"\nSimilarity Matching Configuration:")
     print(f"  Method: {method}")
     print(f"  Threshold: {threshold} ({threshold_value})")
-    print(f"  Using: {'Section embeddings' if use_sections else 'Abstract embeddings'}")
+    print(f"  Using: {'Section embeddings' if use_sections else 'Abstract embeddings only'}")
+    print(f"  Top-K: {top_k}")
     
     # Create recommendation run
     run = await api_client.create_recommendation_run(
@@ -41,94 +42,95 @@ async def run_similarity_matching(
         method=f"{method}_{'sections' if use_sections else 'abstract'}"
     )
     run_id = run["id"]
-    print(f"✓ Created recommendation run {run_id}")
+    print(f"\nCreated recommendation run ID: {run_id}")
     
+    # Fetch embeddings
     if use_sections:
-        # Get ALL embeddings (both abstract and section)
-        print("▶ Fetching user paper embeddings (abstract + sections)...")
+        print("\nFetching embeddings (abstract + sections)...")
         user_embeddings = await api_client.get_embeddings_by_corpus(user_corpus_id)
-        
-        print("▶ Fetching arXiv paper embeddings (abstract + sections)...")
         arxiv_embeddings = await api_client.get_embeddings_by_corpus(arxiv_corpus_id)
     else:
-        # Just abstracts
-        print("▶ Fetching user paper embeddings (abstract only)...")
+        print("\nFetching embeddings (abstract only)...")
         user_embeddings = await api_client.get_embeddings_by_corpus(user_corpus_id, type="abstract")
-        
-        print("▶ Fetching arXiv paper embeddings (abstract only)...")
         arxiv_embeddings = await api_client.get_embeddings_by_corpus(arxiv_corpus_id, type="abstract")
     
     if not user_embeddings:
-        print("✗ No user embeddings found. Run embedding step first.")
-        return
-    
-    print(f"✓ Found {len(user_embeddings)} user embeddings")
+        print("Error: No user embeddings found. Run embedding step first.")
+        return None
     
     if not arxiv_embeddings:
-        print("✗ No arXiv embeddings found. Run corpus mode first.")
-        return
+        print("Error: No arXiv embeddings found. Run corpus mode first.")
+        return None
     
-    print(f"✓ Found {len(arxiv_embeddings)} arXiv embeddings")
+    print(f"  User embeddings: {len(user_embeddings)}")
+    print(f"  arXiv embeddings: {len(arxiv_embeddings)}")
     
     # Group embeddings by paper
     user_papers = group_embeddings_by_paper(user_embeddings)
     arxiv_papers = group_embeddings_by_paper(arxiv_embeddings)
     
-    print(f"✓ Grouped into {len(user_papers)} user papers and {len(arxiv_papers)} arXiv papers")
+    print(f"  User papers: {len(user_papers)}")
+    print(f"  arXiv papers: {len(arxiv_papers)}")
     
     # Compute similarities
-    print(f"▶ Computing paper-to-paper similarities...")
+    print(f"\nComputing paper-to-paper similarities...")
     
     paper_scores = {}
     
-    for arxiv_paper_id, arxiv_embs in arxiv_papers.items():
+    for i, (arxiv_paper_id, arxiv_embs) in enumerate(arxiv_papers.items()):
+        if (i + 1) % 100 == 0:
+            print(f"  Processed {i + 1}/{len(arxiv_papers)} arXiv papers...")
+        
         max_similarity = 0.0
         
-        # Compare this arXiv paper against ALL user papers
         for user_paper_id, user_embs in user_papers.items():
             similarity = compute_paper_similarity(user_embs, arxiv_embs, method)
             max_similarity = max(max_similarity, similarity)
         
         paper_scores[arxiv_paper_id] = max_similarity
-
-        # After computing similarities, before filtering
-        print(f"\n📊 Similarity Score Distribution:")
-        all_scores = list(paper_scores.values())
-        if all_scores:
-            print(f"   Max: {max(all_scores):.3f}")
-            print(f"   Min: {min(all_scores):.3f}")
-            print(f"   Mean: {sum(all_scores)/len(all_scores):.3f}")
-            print(f"   Median: {sorted(all_scores)[len(all_scores)//2]:.3f}")
+    
+    # Show score distribution
+    print(f"\nSimilarity Score Distribution:")
+    all_scores = list(paper_scores.values())
+    if all_scores:
+        print(f"  Max: {max(all_scores):.3f}")
+        print(f"  Min: {min(all_scores):.3f}")
+        print(f"  Mean: {sum(all_scores)/len(all_scores):.3f}")
+        print(f"  Median: {sorted(all_scores)[len(all_scores)//2]:.3f}")
         
-        # Show how many papers at each threshold
         for t_name, t_val in [("low", 0.5), ("medium", 0.6), ("high", 0.75)]:
             count = sum(1 for s in all_scores if s >= t_val)
-            print(f"   Above {t_name} ({t_val}): {count} papers")
-        
-        print(f"\n🏆 Top 10 Matches (regardless of threshold):")
-        sorted_all = sorted(paper_scores.items(), key=lambda x: x[1], reverse=True)[:10]
-        for rank, (paper_id, score) in enumerate(sorted_all, 1):
-            try:
-                paper = await api_client.get_paper_by_id(paper_id)
-                print(f"  {rank}. [{score:.3f}] {paper['title'][:60]}...")
-            except:
-                pass
+            print(f"  Above {t_name} ({t_val}): {count} papers")
+    
+    # Show top matches regardless of threshold
+    print(f"\nTop 10 Matches (regardless of threshold):")
+    sorted_all = sorted(paper_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+    for rank, (paper_id, score) in enumerate(sorted_all, 1):
+        try:
+            paper = await api_client.get_paper_by_id(paper_id)
+            if paper:
+                print(f"  {rank}. [{score:.3f}] {paper['title'][:70]}...")
+        except:
+            pass
     
     # Filter by threshold
     filtered_papers = {pid: score for pid, score in paper_scores.items() if score >= threshold_value}
     
-    print(f"✓ Found {len(filtered_papers)} papers above threshold")
+    print(f"\nPapers above threshold ({threshold_value}): {len(filtered_papers)}")
     
     # Sort and take top-k
     sorted_papers = sorted(filtered_papers.items(), key=lambda x: x[1], reverse=True)[:top_k]
     
-    print(f"✓ Storing top {len(sorted_papers)} recommendations...")
+    print(f"Storing top {len(sorted_papers)} recommendations...")
     
     # Store recommendations
     stored_count = 0
     for rank, (paper_id, score) in enumerate(sorted_papers, 1):
         try:
             paper = await api_client.get_paper_by_id(paper_id)
+            
+            if not paper:
+                continue
             
             await api_client.create_recommendation(
                 run_id=run_id,
@@ -139,13 +141,13 @@ async def run_similarity_matching(
             )
             stored_count += 1
             
-            print(f"  {rank}. {paper['title'][:60]}... (score: {score:.3f})")
+            if rank <= 10:
+                print(f"  {rank}. [{score:.3f}] {paper['title'][:70]}...")
             
         except Exception as e:
-            print(f"✗ Failed to store recommendation for paper {paper_id}: {e}")
+            print(f"  Failed to store recommendation for paper {paper_id}: {e}")
     
-    print(f"\n✓ Stored {stored_count} recommendations")
-    print(f"✓ Recommendation run ID: {run_id}")
+    print(f"\nStored {stored_count} recommendations")
     
     return run_id
 
@@ -174,19 +176,18 @@ def compute_paper_similarity(user_embs, arxiv_embs, method="cosine"):
     else:
         similarities = compute_cosine_similarity(user_matrix, arxiv_matrix)
     
-    # Return maximum similarity across all pairs
     return float(np.max(similarities))
 
 
 def compute_cosine_similarity(user_matrix: np.ndarray, arxiv_matrix: np.ndarray) -> np.ndarray:
     """Compute cosine similarity between user and arXiv embeddings."""
-    user_norm = user_matrix / np.linalg.norm(user_matrix, axis=1, keepdims=True)
-    arxiv_norm = arxiv_matrix / np.linalg.norm(arxiv_matrix, axis=1, keepdims=True)
+    user_norm = user_matrix / (np.linalg.norm(user_matrix, axis=1, keepdims=True) + 1e-8)
+    arxiv_norm = arxiv_matrix / (np.linalg.norm(arxiv_matrix, axis=1, keepdims=True) + 1e-8)
     return cosine_similarity(user_norm, arxiv_norm)
 
 
 def compute_faiss_similarity(user_matrix: np.ndarray, arxiv_matrix: np.ndarray) -> np.ndarray:
-    """Compute similarity using FAISS. """
+    """Compute similarity using FAISS."""
     faiss.normalize_L2(user_matrix)
     faiss.normalize_L2(arxiv_matrix)
     dim = arxiv_matrix.shape[1]

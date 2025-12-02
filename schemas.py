@@ -32,11 +32,11 @@ class StatusEnum(str, Enum):
 
 # User Schemas
 class UserCreate(BaseModel):
-    email: str  # CHANGED: from EmailStr to str
+    email: str
     name: Optional[str] = None
 
 class UserUpdate(BaseModel):
-    email: Optional[str] = None  # CHANGED: from EmailStr to str
+    email: Optional[str] = None
     name: Optional[str] = None
 
 class UserResponse(BaseModel):
@@ -108,7 +108,7 @@ class PaperCreate(BaseModel):
     title: str
     abstract: Optional[str] = None
     metadata: Optional[dict] = None
-    file_path: Optional[str] = None
+    pdf_path: Optional[str] = None
     source: SourceEnum
 
 class PaperUpdate(BaseModel):
@@ -116,7 +116,7 @@ class PaperUpdate(BaseModel):
     title: Optional[str] = None
     abstract: Optional[str] = None
     metadata: Optional[dict] = None
-    file_path: Optional[str] = None
+    pdf_path: Optional[str] = None
     source: Optional[SourceEnum] = None
 
 class PaperResponse(BaseModel):
@@ -126,8 +126,8 @@ class PaperResponse(BaseModel):
     title: str
     abstract: Optional[str]
     metadata: Optional[dict]
-    pdf_path: Optional[str]  # DB returns this field name
-    processed_text_path: Optional[str]  # DB returns this field name
+    pdf_path: Optional[str]
+    processed_text_path: Optional[str]
     source: str
     created_at: datetime
 
@@ -179,13 +179,13 @@ class EmbeddingUpdate(BaseModel):
     embedding: Optional[List[float]] = None
     
 class EmbeddingResponse(BaseModel):
-       id: int
-       paper_id: int
-       section_id: Optional[int]
-       embedding: List[float]  # Add this
-       type: str
-       model_name: str
-       created_at: datetime
+    id: int
+    paper_id: int
+    section_id: Optional[int]
+    embedding: List[float]
+    type: str
+    model_name: str
+    created_at: datetime
 
 # RecommendationRun Schemas
 class RecommendationRunCreate(BaseModel):
@@ -198,7 +198,7 @@ class RecommendationRunCreate(BaseModel):
 
 class RecommendationRunResponse(BaseModel):
     id: int
-    profile_id: Optional[int]  # CHANGED: was int, now Optional[int]
+    profile_id: Optional[int]
     user_id: int
     user_corpus_id: int
     ref_corpus_id: int

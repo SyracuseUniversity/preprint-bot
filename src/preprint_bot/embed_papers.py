@@ -10,7 +10,19 @@ from typing import List, Tuple, Dict
 
 def load_model(model_name: str) -> SentenceTransformer:
     """Load a SentenceTransformer model given its name."""
+    print(f"Loading model: {model_name}")
     return SentenceTransformer(model_name)
+
+
+def normalize_arxiv_id(arxiv_id: str) -> str:
+    """
+    Normalize arXiv ID by removing version suffix.
+    Examples: '2511.13418v1' -> '2511.13418'
+              '2511.13418' -> '2511.13418'
+    """
+    if 'v' in arxiv_id:
+        return arxiv_id.rsplit('v', 1)[0]
+    return arxiv_id
 
 
 def embed_abstracts(processed_folder: str, model: SentenceTransformer):
@@ -18,7 +30,7 @@ def embed_abstracts(processed_folder: str, model: SentenceTransformer):
     Embed the concatenated title and abstract from each processed text file.
 
     Args:
-        processed_folder: Path to folder containing `*_output.txt` files
+        processed_folder: Path to folder containing *_output.txt files
         model: Preloaded SentenceTransformer model
 
     Returns:
@@ -35,14 +47,11 @@ def embed_abstracts(processed_folder: str, model: SentenceTransformer):
             print(f"Skipping malformed file: {file.name}")
             continue
 
-        # Extract title and abstract (handle markdown headers from GROBID)
-        title_line = lines[0].strip()
-        abstract_line = lines[1].strip()
+        # First line is title, second is abstract
+        title = lines[0].strip()
+        abstract = lines[1].strip()
         
-        # Remove markdown headers if present
-        title = title_line.replace("# ", "").replace("Title: ", "").strip()
-        abstract = abstract_line.replace("## Abstract", "").replace("Abstract: ", "").strip()
-        
+        # Combine title and abstract
         text = f"{title}. {abstract}"
         texts.append(text)
         filenames.append(file.name)
@@ -51,20 +60,21 @@ def embed_abstracts(processed_folder: str, model: SentenceTransformer):
         raise ValueError(f"No abstracts found in {processed_folder}")
 
     # Encode with normalization
-    embeddings = model.encode(texts, normalize_embeddings=True)
+    print(f"Encoding {len(texts)} abstracts...")
+    embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=True)
     return texts, np.array(embeddings, dtype="float32"), model, filenames
 
 
-def embed_sections(processed_folder: str, model: SentenceTransformer) -> Dict[str, np.ndarray]:
+def embed_sections(processed_folder: str, model: SentenceTransformer) -> Dict[str, List[np.ndarray]]:
     """
     Embed each section from parsed text files.
 
     Args:
-        processed_folder: Path to folder containing `*_output.txt` files
+        processed_folder: Path to folder containing *_output.txt files
         model: Preloaded SentenceTransformer model
 
     Returns:
-        Dictionary mapping filename to array of section embeddings
+        Dictionary mapping filename to list of section embeddings
     """
     paper_sections = {}
     processed_path = Path(processed_folder)
@@ -75,7 +85,7 @@ def embed_sections(processed_folder: str, model: SentenceTransformer) -> Dict[st
 
         sections = []
         current_header = None
-        current_text = ""
+        current_text = []
 
         # Skip first 2 lines (title and abstract)
         for line in lines[2:]:
@@ -84,25 +94,26 @@ def embed_sections(processed_folder: str, model: SentenceTransformer) -> Dict[st
             # Detect section headers (markdown style: ### Header)
             if line.startswith("### "):
                 if current_header and current_text:
-                    sections.append((current_header, current_text.strip()))
+                    text = ' '.join(current_text).strip()
+                    if len(text.split()) > 20:  # Only substantial sections
+                        sections.append((current_header, text))
                 current_header = line[4:].strip()
-                current_text = ""
+                current_text = []
             elif line:
-                current_text += " " + line
+                current_text.append(line)
 
         # Add last section
         if current_header and current_text:
-            sections.append((current_header, current_text.strip()))
+            text = ' '.join(current_text).strip()
+            if len(text.split()) > 20:
+                sections.append((current_header, text))
 
-        # Embed sections with sufficient content
-        chunk_embeddings = []
-        for header, text in sections:
-            if len(text.split()) > 20:  # Only embed substantial sections
-                emb = model.encode(text, normalize_embeddings=True)
-                chunk_embeddings.append(emb)
-
-        if chunk_embeddings:
-            paper_sections[file.name] = np.array(chunk_embeddings, dtype="float32")
+        # Embed sections
+        if sections:
+            section_texts = [text for _, text in sections]
+            embeddings = model.encode(section_texts, normalize_embeddings=True)
+            paper_sections[file.name] = [emb for emb in embeddings]
+            print(f"Embedded {len(sections)} sections from {file.name}")
 
     return paper_sections
 
@@ -124,47 +135,54 @@ async def embed_and_store_papers(
         model_name: Name of SentenceTransformer model
         store_sections: Whether to also embed and store sections
     """
-    print(f"▶ Loading model: {model_name}")
+    print(f"\nEmbedding papers from corpus {corpus_id}")
+    print(f"Model: {model_name}")
+    print(f"Processed folder: {processed_folder}")
+    
+    # Load model
     model = load_model(model_name)
     
     # Get papers from this corpus
-    print(f"▶ Fetching papers from corpus {corpus_id}...")
+    print(f"\nFetching papers from database...")
     papers = await api_client.get_papers_by_corpus(corpus_id)
+    print(f"Found {len(papers)} papers in database")
     
-    # Create mapping of arxiv_id to paper
-    # IMPORTANT: Handle both with and without version suffix
+    if not papers:
+        print("No papers to embed!")
+        return
+    
+    # Create mapping of normalized arxiv_id to paper
     paper_map = {}
     for p in papers:
         arxiv_id = p["arxiv_id"]
-        # Store with full ID
+        normalized_id = normalize_arxiv_id(arxiv_id)
+        paper_map[normalized_id] = p
+        # Also store with full ID for exact matches
         paper_map[arxiv_id] = p
-        # Also store without version suffix (e.g., "2511.13418v1" -> "2511.13418")
-        if 'v' in arxiv_id:
-            base_id = arxiv_id.rsplit('v', 1)[0]  # Split from the right, take first part
-            paper_map[base_id] = p
     
     # Embed abstracts
-    print(f"▶ Embedding abstracts from {processed_folder}...")
-    texts, embeddings, _, filenames = embed_abstracts(processed_folder, model)
+    print(f"\nEmbedding abstracts...")
+    try:
+        texts, embeddings, _, filenames = embed_abstracts(processed_folder, model)
+    except ValueError as e:
+        print(f"Error: {e}")
+        return
     
     # Store abstract embeddings
     stored_count = 0
+    skipped_count = 0
+    
     for i, filename in enumerate(filenames):
-        # Strip _output.txt to get arxiv_id (with version)
+        # Extract arxiv_id from filename (remove _output.txt)
         arxiv_id_with_version = filename.replace("_output.txt", "")
+        arxiv_id_normalized = normalize_arxiv_id(arxiv_id_with_version)
         
-        # Try to find paper - first with full ID, then without version
-        paper = paper_map.get(arxiv_id_with_version)
-        if not paper:
-            # Try without version suffix
-            arxiv_id_base = arxiv_id_with_version.rsplit('v', 1)[0] if 'v' in arxiv_id_with_version else arxiv_id_with_version
-            paper = paper_map.get(arxiv_id_base)
-            arxiv_id = arxiv_id_base
-        else:
-            arxiv_id = arxiv_id_with_version
+        # Try to find paper
+        paper = paper_map.get(arxiv_id_normalized)
         
         if not paper:
-            print(f"⚠ Warning: No database entry for {arxiv_id_with_version}, skipping")
+            print(f"  Warning: No database entry for {arxiv_id_with_version}, skipping")
+            skipped_count += 1
             continue
         
         try:
@@ -175,36 +193,36 @@ async def embed_and_store_papers(
                 model_name=model_name
             )
             stored_count += 1
-            print(f"Stored abstract embedding for {arxiv_id}")
+            if stored_count % 10 == 0:
+                print(f"  Stored {stored_count} abstract embeddings...")
         except Exception as e:
-            print(f"✗ Failed to store embedding for {arxiv_id}: {e}")
+            print(f"  Failed to store embedding for {arxiv_id_normalized}: {e}")
     
-    print(f"Stored {stored_count} abstract embeddings")
+    print(f"\nStored {stored_count} abstract embeddings")
+    if skipped_count > 0:
+        print(f"Skipped {skipped_count} files (not in database)")
     
     # Embed and store sections if requested
     if store_sections:
-        print(f"\n▶ Embedding sections...")
+        print(f"\nEmbedding sections...")
         section_embeddings = embed_sections(processed_folder, model)
         
         section_count = 0
         for filename, embs in section_embeddings.items():
-            # Strip _output.txt to get arxiv_id (with version)
             arxiv_id_with_version = filename.replace("_output.txt", "")
+            arxiv_id_normalized = normalize_arxiv_id(arxiv_id_with_version)
             
-            # Try to find paper - first with full ID, then without version
-            paper = paper_map.get(arxiv_id_with_version)
-            if not paper:
-                arxiv_id_base = arxiv_id_with_version.rsplit('v', 1)[0] if 'v' in arxiv_id_with_version else arxiv_id_with_version
-                paper = paper_map.get(arxiv_id_base)
-                arxiv_id = arxiv_id_base
-            else:
-                arxiv_id = arxiv_id_with_version
+            paper = paper_map.get(arxiv_id_normalized)
             
             if not paper:
                 continue
             
             # Get sections for this paper
             sections = await api_client.get_sections_by_paper(paper["id"])
+            
+            if not sections:
+                print(f"  Warning: No sections found for paper {paper['id']}")
+                continue
             
             # Store embeddings for each section
             for i, emb in enumerate(embs):
@@ -219,10 +237,14 @@ async def embed_and_store_papers(
                         )
                         section_count += 1
                     except Exception as e:
-                        print(f"✗ Failed to store section embedding: {e}")
+                        print(f"  Failed to store section embedding: {e}")
             
-            print(f"Stored {min(len(embs), len(sections))} section embeddings for {arxiv_id}")
+            print(f"  Stored {min(len(embs), len(sections))} section embeddings for {arxiv_id_normalized}")
         
-        print(f"Stored {section_count} total section embeddings")
+        print(f"\nStored {section_count} total section embeddings")
     
-    print(f"\nEmbedding complete for {len(filenames)} papers")
+    print(f"\nEmbedding complete!")
+    print(f"  Total papers processed: {len(filenames)}")
+    print(f"  Abstract embeddings: {stored_count}")
+    if store_sections:
+        print(f"  Section embeddings: {section_count}")

@@ -17,11 +17,19 @@ async def create_section(section: SectionCreate):
                 """
                 INSERT INTO sections (paper_id, section_header, section_text, section_order)
                 VALUES ($1, $2, $3, $4)
-                RETURNING id, paper_id, section_header as header, section_text as text, created_at
+                RETURNING id, paper_id, section_header, section_text, section_order, created_at
                 """,
                 section.paper_id, section.header, section.text, 0
             )
-            return dict(row)
+            result = dict(row)
+            # Map database fields to response fields
+            return {
+                "id": result["id"],
+                "paper_id": result["paper_id"],
+                "header": result["section_header"],
+                "text": result["section_text"],
+                "created_at": result["created_at"]
+            }
     except Exception as e:
         if "foreign key" in str(e).lower():
             raise HTTPException(status_code=400, detail="Invalid paper_id")
@@ -35,7 +43,7 @@ async def list_sections(paper_id: Optional[int] = Query(None)):
     
     if paper_id is not None:
         query = """
-            SELECT id, paper_id, section_header as header, section_text as text, created_at 
+            SELECT id, paper_id, section_header, section_text, section_order, created_at 
             FROM sections 
             WHERE paper_id = $1 
             ORDER BY section_order, id
@@ -43,7 +51,7 @@ async def list_sections(paper_id: Optional[int] = Query(None)):
         params = [paper_id]
     else:
         query = """
-            SELECT id, paper_id, section_header as header, section_text as text, created_at 
+            SELECT id, paper_id, section_header, section_text, section_order, created_at 
             FROM sections 
             ORDER BY paper_id, section_order, id
         """
@@ -51,7 +59,17 @@ async def list_sections(paper_id: Optional[int] = Query(None)):
     
     async with pool.acquire() as conn:
         rows = await conn.fetch(query, *params)
-        return [dict(row) for row in rows]
+        results = []
+        for row in rows:
+            result = dict(row)
+            results.append({
+                "id": result["id"],
+                "paper_id": result["paper_id"],
+                "header": result["section_header"],
+                "text": result["section_text"],
+                "created_at": result["created_at"]
+            })
+        return results
 
 
 @router.get("/{section_id}", response_model=SectionResponse)
@@ -61,12 +79,19 @@ async def get_section(section_id: int):
     
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT id, paper_id, section_header as header, section_text as text, created_at FROM sections WHERE id = $1",
+            "SELECT id, paper_id, section_header, section_text, section_order, created_at FROM sections WHERE id = $1",
             section_id
         )
         if not row:
             raise HTTPException(status_code=404, detail="Section not found")
-        return dict(row)
+        result = dict(row)
+        return {
+            "id": result["id"],
+            "paper_id": result["paper_id"],
+            "header": result["section_header"],
+            "text": result["section_text"],
+            "created_at": result["created_at"]
+        }
 
 
 @router.patch("/{section_id}", response_model=SectionResponse)
@@ -97,14 +122,21 @@ async def update_section(section_id: int, section: SectionUpdate):
         UPDATE sections
         SET {', '.join(update_fields)}
         WHERE id = ${param_num}
-        RETURNING id, paper_id, section_header as header, section_text as text, created_at
+        RETURNING id, paper_id, section_header, section_text, section_order, created_at
     """
     
     async with pool.acquire() as conn:
         row = await conn.fetchrow(query, *values)
         if not row:
             raise HTTPException(status_code=404, detail="Section not found")
-        return dict(row)
+        result = dict(row)
+        return {
+            "id": result["id"],
+            "paper_id": result["paper_id"],
+            "header": result["section_header"],
+            "text": result["section_text"],
+            "created_at": result["created_at"]
+        }
 
 
 @router.delete("/{section_id}", status_code=204)

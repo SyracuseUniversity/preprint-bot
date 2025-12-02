@@ -5,7 +5,8 @@ from database import get_db_pool, close_db_pool
 
 # Import route modules
 from routes import users, papers, corpora, sections, embeddings
-from routes.recommendations import router as recommendation_runs_router, recommendations_router
+# from routes.recommendations import router as recommendation_runs_router, recommendations_router
+import routes.recommendations as recommendations
 
 # Optional route imports
 try:
@@ -53,12 +54,13 @@ app.add_middleware(
 
 # Include core routers
 app.include_router(users.router)
-app.include_router(corpora.router)
 app.include_router(papers.router)
+app.include_router(corpora.router)
 app.include_router(sections.router)
 app.include_router(embeddings.router)
-app.include_router(recommendation_runs_router)
-app.include_router(recommendations_router)
+app.include_router(recommendations.router)
+app.include_router(recommendations.recommendations_router)  # This one!
+app.include_router(summaries.router)
 
 # Include optional routers if available
 if HAS_OPTIONAL_ROUTES:

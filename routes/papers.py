@@ -22,7 +22,7 @@ async def create_paper(paper: PaperCreate):
                 paper.title, 
                 paper.abstract,
                 json.dumps(paper.metadata) if paper.metadata else None,
-                paper.file_path,  # Schema field is file_path
+                paper.pdf_path,
                 paper.source.value
             )
             result = dict(row)
@@ -125,9 +125,9 @@ async def update_paper(paper_id: int, paper: PaperUpdate):
         updates.append(f"metadata = ${idx}")
         values.append(json.dumps(paper.metadata))
         idx += 1
-    if paper.file_path is not None:  # Schema field is file_path
+    if paper.pdf_path is not None:
         updates.append(f"pdf_path = ${idx}")
-        values.append(paper.file_path)
+        values.append(paper.pdf_path)
         idx += 1
     if paper.source is not None:
         updates.append(f"source = ${idx}")

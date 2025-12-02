@@ -2,7 +2,6 @@ import os
 import requests
 from lxml import etree
 from pathlib import Path
-from urllib.parse import urlparse   # kept in case you add URL support later
 
 # Optional spaCy sentence tokenizer
 try:
@@ -17,17 +16,17 @@ NS = {"tei": "http://www.tei-c.org/ns/1.0"}
 
 def spacy_tokenize(text: str):
     """
-    Tokenize *text* into sentences with spaCy if available, else split on blank lines.
+    Tokenize text into sentences with spaCy if available, else split on blank lines.
     """
     if NLP:
         return [sent.text.strip() for sent in NLP(text).sents]
     return [s.strip() for s in text.split("\n\n") if s.strip()]
 
 
-# Unified extractor
 def extract_grobid_sections(src):
     """
     Extract structured metadata, sections and references from a PDF.
+    Returns dict with title, abstract, authors, sections, etc.
     """
     # 1. Load bytes 
     if isinstance(src, (bytes, bytearray)):
@@ -37,61 +36,85 @@ def extract_grobid_sections(src):
             pdf_bytes = fp.read()
 
     # 2. Call GROBID 
-    resp = requests.post(
-        GROBID_URL,
-        files={"input": ("file.pdf", pdf_bytes)},
-        data={"consolidateHeader": "1"},
-        timeout=30,
-    )
-    resp.raise_for_status()
+    try:
+        resp = requests.post(
+            GROBID_URL,
+            files={"input": ("file.pdf", pdf_bytes)},
+            data={"consolidateHeader": "1"},
+            timeout=60,
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"GROBID error: {e}")
+        raise
+    
     root = etree.fromstring(resp.content)
 
-    # 3. Convenience 
+    # 3. Convenience helper
     def _txt(el, path):
         found = el.find(path, NS)
         if found is not None:
             return " ".join(found.itertext()).strip()
         return ""
 
-    # --- 4. Metadata --
+    # 4. Extract metadata
     title = _txt(root, ".//tei:titleStmt/tei:title")
     abstract = _txt(root, ".//tei:profileDesc/tei:abstract")
-    authors = [
-        " ".join(
-            filter(
-                None,
-                [
-                    auth.findtext("tei:forename", namespaces=NS),
-                    auth.findtext("tei:surname", namespaces=NS),
-                ],
-            )
-        ).strip()
-        for auth in root.findall(".//tei:sourceDesc//tei:author", NS)
-    ]
-    affiliations = [
-        aff.text.strip()
-        for aff in root.findall(".//tei:sourceDesc//tei:affiliation", NS)
-        if aff is not None and aff.text
-    ]
+    
+    authors = []
+    for auth in root.findall(".//tei:sourceDesc//tei:author", NS):
+        forename = auth.findtext("tei:persName/tei:forename", namespaces=NS, default="")
+        surname = auth.findtext("tei:persName/tei:surname", namespaces=NS, default="")
+        full_name = f"{forename} {surname}".strip()
+        if full_name:
+            authors.append(full_name)
+    
+    affiliations = []
+    for aff in root.findall(".//tei:sourceDesc//tei:affiliation", NS):
+        aff_text = " ".join(aff.itertext()).strip()
+        if aff_text:
+            affiliations.append(aff_text)
+    
     publication_date = _txt(root, ".//tei:sourceDesc//tei:date")
 
-    # 5. Sections 
+    # 5. Extract sections from body
     sections = []
+    exclude_headers = ['acknowledgement', 'acknowledgements', 'reference', 'references', 
+                      'bibliography', 'appendix', 'supplementary']
+    
     for div in root.findall(".//tei:body//tei:div", NS):
-        head = _txt(div, "tei:head") or "Untitled Section"
-        paras = [p.text.strip() for p in div.findall("tei:p", NS) if p.text]
+        head_elem = div.find("tei:head", NS)
+        head = ""
+        if head_elem is not None:
+            head = "".join(head_elem.itertext()).strip()
+        
+        if not head:
+            head = "Untitled Section"
+        
+        # Skip excluded sections
+        if any(excl in head.lower() for excl in exclude_headers):
+            continue
+        
+        # Get all paragraph text
+        paras = []
+        for p in div.findall(".//tei:p", NS):
+            p_text = "".join(p.itertext()).strip()
+            if p_text:
+                paras.append(p_text)
+        
         if paras:
-            sections.append((head, "\n".join(paras)))
+            section_text = "\n\n".join(paras)
+            sections.append({"header": head, "text": section_text})
 
-    # 6. References 
+    # 6. Extract references
     references = []
     for ref in root.findall(".//tei:listBibl//tei:biblStruct", NS):
         ref_title = _txt(ref, ".//tei:title")
-        ref_authors = [
-            p.text
-            for p in ref.findall(".//tei:author//tei:surname", NS)
-            if p is not None and p.text
-        ]
+        ref_authors = []
+        for surname in ref.findall(".//tei:author//tei:surname", NS):
+            if surname.text:
+                ref_authors.append(surname.text.strip())
+        
         if ref_title or ref_authors:
             references.append({"title": ref_title, "authors": ref_authors})
 
@@ -99,50 +122,46 @@ def extract_grobid_sections(src):
         "title": title,
         "abstract": abstract,
         "authors": authors,
-        "affiliations": affiliations,
-        "publication_date": publication_date,
+        "pub_date": publication_date,
         "sections": sections,
-        "references": references,
     }
 
 
-# Back-compat alias: any existing imports keep working
+# Back-compat alias
 extract_grobid_sections_from_bytes = extract_grobid_sections
 
 
-#Batch processor
-def process_folder(folder_path: str | Path, output_folder: str | Path):
+def process_folder(folder_path, output_folder):
     """
-    Run GROBID extraction on every PDF inside *folder_path* and write “*_output.txt”
-    files to *output_folder*.
-
-    Skips files that error but continues processing the rest.
+    Run GROBID extraction on every PDF inside folder_path and write
+    *_output.txt files to output_folder.
     """
     folder_path = Path(folder_path)
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    pdf_paths = list(folder_path.rglob("*.pdf"))
+    pdf_paths = list(folder_path.glob("*.pdf"))
     print(f"Found {len(pdf_paths)} PDFs in {folder_path}")
 
     for pdf in pdf_paths:
         try:
-            info = extract_grobid_sections(pdf)        # ← unified call
+            print(f"Processing {pdf.name}...")
+            info = extract_grobid_sections(pdf)
             out_file = output_folder / f"{pdf.stem}_output.txt"
 
             with out_file.open("w", encoding="utf-8") as fh:
-                fh.write(f"# {info['title']}\n\n")
-                fh.write(f"## Abstract\n{info['abstract']}\n\n")
-                fh.write(f"## Authors\n{', '.join(info['authors'])}\n\n")
-                fh.write(f"## Affiliations\n{', '.join(info['affiliations'])}\n\n")
-
-                for sec_title, sec_text in info["sections"]:
-                    fh.write(f"### {sec_title}\n{sec_text}\n\n")
-
-                if info["references"]:
-                    fh.write("## References\n")
-                    for ref in info["references"]:
-                        fh.write(f"- {ref['title']} ({', '.join(ref['authors'])})\n")
+                # Write title
+                fh.write(f"{info['title']}\n\n")
+                
+                # Write abstract
+                fh.write(f"{info['abstract']}\n\n")
+                
+                # Write sections with markdown headers
+                for sec in info["sections"]:
+                    fh.write(f"### {sec['header']}\n")
+                    fh.write(f"{sec['text']}\n\n")
+            
+            print(f"  Saved to {out_file.name}")
 
         except Exception as exc:
-            print(f"[WARN] Failed to process {pdf.name}: {exc}")
+            print(f"  Failed to process {pdf.name}: {exc}")

@@ -23,12 +23,56 @@ class APIClient:
         users = response.json()
         return next((u for u in users if u["email"] == email), None)
     
+    async def get_user_by_id(self, user_id: int) -> Optional[Dict]:
+        try:
+            response = await self.client.get(f"{self.base_url}/users/{user_id}")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+    
     async def get_or_create_user(self, email: str, name: Optional[str] = None) -> Dict:
-        """Get existing user or create new one"""
         user = await self.get_user_by_email(email)
         if user:
             return user
         return await self.create_user(email, name)
+    
+    
+    async def create_profile(self, user_id: int, name: str, keywords: List[str],
+                           email_notify: bool = True, frequency: str = "weekly",
+                           threshold: str = "medium", top_x: int = 10) -> Dict:
+        response = await self.client.post(
+            f"{self.base_url}/profiles/",
+            json={
+                "user_id": user_id,
+                "name": name,
+                "keywords": keywords,
+                "email_notify": email_notify,
+                "frequency": frequency,
+                "threshold": threshold,
+                "top_x": top_x
+            }
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    async def get_profile_by_name(self, user_id: int, name: str) -> Optional[Dict]:
+        response = await self.client.get(f"{self.base_url}/profiles/")
+        profiles = response.json()
+        return next((p for p in profiles if p["user_id"] == user_id and p["name"] == name), None)
+    
+    async def get_profiles_by_user(self, user_id: int) -> List[Dict]:
+        response = await self.client.get(f"{self.base_url}/profiles/")
+        profiles = response.json()
+        return [p for p in profiles if p["user_id"] == user_id]
+    
+    async def get_or_create_profile(self, user_id: int, name: str, keywords: List[str]) -> Dict:
+        profile = await self.get_profile_by_name(user_id, name)
+        if profile:
+            return profile
+        return await self.create_profile(user_id, name, keywords)
     
     
     async def create_corpus(self, user_id: int, name: str, description: str = None) -> Dict:
@@ -40,45 +84,54 @@ class APIClient:
         return response.json()
     
     async def get_corpus_by_name(self, user_id: int, name: str) -> Optional[Dict]:
-        """Get corpus by user_id and name"""
         response = await self.client.get(f"{self.base_url}/corpora/")
         corpora = response.json()
         return next((c for c in corpora if c["user_id"] == user_id and c["name"] == name), None)
     
     async def get_or_create_corpus(self, user_id: int, name: str, description: str = None) -> Dict:
-        """Get existing corpus or create new one"""
         corpus = await self.get_corpus_by_name(user_id, name)
         if corpus:
             return corpus
         return await self.create_corpus(user_id, name, description)
     
+    async def link_profile_corpus(self, profile_id: int, corpus_id: int):
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/profile-corpora/",
+                json={"profile_id": profile_id, "corpus_id": corpus_id}
+            )
+            return response.status_code == 201
+        except Exception:
+            return False
+    
     
     async def create_paper(self, corpus_id: int, arxiv_id: str, title: str, 
                           abstract: str, metadata: Dict, source: str = "arxiv",
                           processed_text_path: str = None, pdf_path: str = None) -> Dict:
+        paper_data = {
+            "corpus_id": corpus_id,
+            "arxiv_id": arxiv_id,
+            "title": title,
+            "abstract": abstract,
+            "metadata": metadata,
+            "source": source,
+            "pdf_path": pdf_path
+        }
+        
         response = await self.client.post(
             f"{self.base_url}/papers/",
-            json={
-                "corpus_id": corpus_id,
-                "arxiv_id": arxiv_id,
-                "title": title,
-                "abstract": abstract,
-                "metadata": metadata,
-                "source": source,
-                "file_path": pdf_path  # CHANGED: was pdf_path, now file_path
-            }
+            json=paper_data
         )
         response.raise_for_status()
         paper = response.json()
         
-        # ADDED: Update processed text path separately if provided
         if processed_text_path:
             await self.update_paper_processed_path(paper["id"], processed_text_path)
+            paper["processed_text_path"] = processed_text_path
         
         return paper
     
     async def update_paper_processed_path(self, paper_id: int, path: str) -> Dict:
-        """Update the processed text path for a paper"""
         response = await self.client.post(
             f"{self.base_url}/papers/{paper_id}/processed-text",
             params={"path": path}
@@ -87,41 +140,39 @@ class APIClient:
         return response.json()
     
     async def get_paper_by_arxiv_id(self, arxiv_id: str) -> Optional[Dict]:
-        """Get paper by arxiv_id"""
         response = await self.client.get(f"{self.base_url}/papers/")
         papers = response.json()
         return next((p for p in papers if p.get("arxiv_id") == arxiv_id), None)
     
     async def get_paper_by_id(self, paper_id: int) -> Optional[Dict]:
-        """Get paper by ID"""
-        response = await self.client.get(f"{self.base_url}/papers/{paper_id}")
-        if response.status_code == 404:
-            return None
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = await self.client.get(f"{self.base_url}/papers/{paper_id}")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
     
     async def get_papers_by_corpus(self, corpus_id: int) -> List[Dict]:
-        """Get all papers in a corpus"""
         response = await self.client.get(f"{self.base_url}/papers/?corpus_id={corpus_id}")
         response.raise_for_status()
         return response.json()
     
     
     async def create_section(self, paper_id: int, header: str, text: str) -> Dict:
-        """Create a section for a paper"""
         response = await self.client.post(
             f"{self.base_url}/sections/",
             json={
                 "paper_id": paper_id,
-                "header": header,  # Changed from section_header
-                "text": text       # Changed from section_text
+                "header": header,
+                "text": text
             }
         )
         response.raise_for_status()
         return response.json()
         
     async def get_sections_by_paper(self, paper_id: int) -> List[Dict]:
-        """Get all sections for a paper"""
         response = await self.client.get(f"{self.base_url}/sections/?paper_id={paper_id}")
         response.raise_for_status()
         return response.json()
@@ -142,16 +193,18 @@ class APIClient:
         response.raise_for_status()
         return response.json()
     
-    async def get_embeddings_by_corpus(self, corpus_id: int, type: str = "abstract") -> List[Dict]:
-        """Get all embeddings for papers in a corpus"""
+    async def get_embeddings_by_corpus(self, corpus_id: int, type: str = None) -> List[Dict]:
+        params = {"corpus_id": corpus_id}
+        if type:
+            params["type"] = type
         response = await self.client.get(
-            f"{self.base_url}/embeddings/?corpus_id={corpus_id}&type={type}"
+            f"{self.base_url}/embeddings/",
+            params=params
         )
         response.raise_for_status()
         return response.json()
     
     async def get_embeddings_by_paper(self, paper_id: int, type: str = None) -> List[Dict]:
-        """Get embeddings for a specific paper"""
         params = {"paper_id": paper_id}
         if type:
             params["type"] = type
@@ -160,7 +213,6 @@ class APIClient:
         return response.json()
     
     async def batch_create_embeddings(self, embeddings: List[Dict]) -> List[Dict]:
-        """Batch create multiple embeddings"""
         response = await self.client.post(
             f"{self.base_url}/embeddings/batch",
             json=embeddings
@@ -169,7 +221,6 @@ class APIClient:
         return response.json()
     
     async def create_summary(self, paper_id: int, mode: str, summary_text: str, summarizer: str) -> Dict:
-        """Create a summary for a paper"""
         response = await self.client.post(
             f"{self.base_url}/summaries/",
             json={
@@ -216,29 +267,14 @@ class APIClient:
         return response.json()
     
     async def get_recommendations_by_run(self, run_id: int) -> List[Dict]:
-        """Get all recommendations for a run"""
         response = await self.client.get(f"{self.base_url}/recommendations/?run_id={run_id}")
         response.raise_for_status()
         return response.json()
     
     async def get_recommendations_with_papers(self, run_id: int, limit: int = 50) -> List[Dict]:
-        """Get recommendations with full paper details"""
         response = await self.client.get(
             f"{self.base_url}/recommendations/run/{run_id}/with-papers",
             params={"limit": limit}
         )
         response.raise_for_status()
         return response.json()
-    
-    
-    async def create_processing_run(self, run_type: str, category: str) -> Dict:
-        """Track a processing run"""
-        # NOTE: This endpoint doesn't exist yet in the API
-        # You may want to add it or remove this method
-        return {"id": 0, "run_type": run_type, "category": category}
-    
-    async def update_processing_run(self, run_id: int, status: str, papers_processed: int = None) -> Dict:
-        """Update processing run status"""
-        # NOTE: This endpoint doesn't exist yet in the API
-        # You may want to add it or remove this method
-        return {"id": run_id, "status": status}
