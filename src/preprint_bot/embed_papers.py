@@ -3,6 +3,8 @@ Module for embedding arXiv paper content using Sentence Transformers.
 Database-integrated version - stores embeddings via API.
 """
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+import os
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from pathlib import Path
@@ -11,7 +13,11 @@ from typing import List, Tuple, Dict
 def load_model(model_name: str) -> SentenceTransformer:
     """Load a SentenceTransformer model given its name."""
     print(f"Loading model: {model_name}")
-    return SentenceTransformer(model_name)
+    model = SentenceTransformer(model_name)
+    # Force CPU usage to avoid CUDA kernel issues with new GPUs
+    model = model.to('cpu')
+    print(f"Model moved to CPU")
+    return model
 
 
 def normalize_arxiv_id(arxiv_id: str) -> str:

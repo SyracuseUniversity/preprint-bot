@@ -1,4 +1,6 @@
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '' 
+import os
 import re
 from pathlib import Path
 from nltk.tokenize import sent_tokenize
@@ -7,6 +9,7 @@ from transformers import pipeline
 import torch
 from llama_cpp import Llama
 import json
+from tqdm import tqdm
 
 # NLTK setup
 try:
@@ -103,14 +106,27 @@ class TransformerSummarizer:
         return "No valid chunks to summarize."
 
 
-# LLaMA summarizer
+# LLaMA summarizer with explicit GPU support
 class LlamaSummarizer:
     def __init__(self, model_path: str):
+        # Check if CUDA is available
+        use_gpu = torch.cuda.is_available()
+        
+        if use_gpu:
+            # Use GPU: offload all layers to GPU
+            n_gpu_layers = -1  # -1 means offload all layers
+            print(f"LLaMA summarizer using GPU (offloading all layers)")
+        else:
+            # Use CPU only
+            n_gpu_layers = 0
+            print(f"LLaMA summarizer using CPU only")
+        
         self.llm = Llama(
             model_path=str(model_path),
             n_ctx=2048,
-            n_threads=4,
-            n_gpu_layers=20
+            n_threads=8,
+            n_gpu_layers=n_gpu_layers,
+            verbose=True
         )
 
     def summarize(self, text: str, max_length: int = 200, mode: str = "abstract") -> str:
@@ -121,10 +137,14 @@ class LlamaSummarizer:
 
         # Always use abstract summarization prompt
         prompt_text = (
-            "You are an expert academic summarizer. "
-            "Summarize the following research paper abstract into at most 3 concise sentences. "
-            "Keep it clear, academic, and to the point:\n\n"
-            f"{text}\n\nSummary:"
+            "Task: Write a 3-sentence summary of this research abstract.\n"
+            "Rules:\n"
+            "- Exactly 3 sentences\n"
+            "- Focus on main contribution and results\n"
+            "- No meta-commentary, word counts, or extra text\n"
+            "- Stop after the third sentence\n\n"
+            f"Abstract:\n{text}\n\n"
+            "Summary:\n"
         )
 
         result = self.llm(prompt_text, max_tokens=max_length, temperature=0.3, top_p=0.9, echo=False)
@@ -175,9 +195,23 @@ def process_folder(input_folder, output_folder, summarizer, max_length=180):
     output_path.mkdir(parents=True, exist_ok=True)
     input_path = Path(input_folder)
 
-    for input_file in input_path.glob("*.txt"):
+    # Get list of files
+    txt_files = list(input_path.glob("*.txt"))
+    
+    print(f"\nProcessing {len(txt_files)} files...")
+    
+    # Process with progress bar
+    for input_file in tqdm(txt_files, desc="Summarizing papers", unit="paper"):
         output_file = output_path / f"{input_file.stem}_summary.txt"
-        process_file(input_file, output_file, summarizer, max_length=max_length)
+        try:
+            with open(input_file, "r", encoding="utf-8") as f:
+                txt = f.read()
+            sections = extract_sections_from_txt_markdown(txt)
+            summary = summarize_sections_single_paragraph(sections, summarizer, max_length=max_length)
+            with open(output_file, "w", encoding="utf-8") as f:
+                f.write(summary)
+        except Exception as e:
+            tqdm.write(f"Error processing {input_file.name}: {e}")
 
 
 # Metadata processing
@@ -185,20 +219,28 @@ def process_metadata(metadata_path, output_path, summarizer, max_length=120, mod
     with open(metadata_path, "r", encoding="utf-8") as f:
         papers = json.load(f)
 
+    print(f"\nGenerating summaries for {len(papers)} papers...")
     updated_papers = []
-    for paper in papers:
+    
+    for paper in tqdm(papers, desc="Summarizing abstracts", unit="paper"):
         original_summary = paper.get("summary", "")
+        paper_title = paper.get("title", "Unknown")[:60]
+        
         if not original_summary.strip():
             paper["llm_summary"] = "No summary available."
+            tqdm.write(f"Skipped (no abstract): {paper_title}...")
         else:
             try:
                 concise_summary = summarizer.summarize(original_summary, max_length=max_length, mode=mode)
                 paper["llm_summary"] = concise_summary
+                tqdm.write(f"Summarized: {paper_title}...")
             except Exception as e:
                 paper["llm_summary"] = f"Error summarizing: {e}"
+                tqdm.write(f"Error: {paper_title}... - {e}")
+        
         updated_papers.append(paper)
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(updated_papers, f, indent=2, ensure_ascii=False)
 
-    print(f"Updated metadata with LLM summaries saved to {output_path} (mode={mode})")
+    print(f"\nUpdated metadata with LLM summaries saved to {output_path} (mode={mode})")

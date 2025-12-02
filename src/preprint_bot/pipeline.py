@@ -332,7 +332,7 @@ def main():
     parser.add_argument("--skip-summarize", action="store_true")
     parser.add_argument("--skip-recommendations", action="store_true")
     parser.add_argument("--summarizer", default="transformer", choices=["transformer", "llama"])
-    parser.add_argument("--llm-model", default="models/Llama-3.1-8B-Instruct-BF16.gguf")
+    parser.add_argument("--llm-model", default="models/Llama-3.1-8B-Instruct-IQ4_XS.gguf")
     parser.add_argument("--uid", help="Process specific UID only (e.g., UID001)")
     parser.add_argument("--use-sections", action="store_true")
     

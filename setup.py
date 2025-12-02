@@ -33,7 +33,7 @@ setup(
         "numpy>=1.26.0,<2.0.0",
         "sentence-transformers>=2.6.0",
         "transformers>=4.41.0,<5.0.0",
-        "torch>=2.5.0,<2.6.0",
+        "torch>=2.5.0",
         "nltk>=3.9",
         "spacy>=3.7.0",
         
