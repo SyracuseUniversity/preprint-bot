@@ -122,7 +122,7 @@ def get_yesterday_entries(rate_limit: float = 3.0, per_category: int = 10):
     return all_entries
 
 
-def get_arxiv_entries(category: str, max_results: int = 50):
+def get_arxiv_entries(category: str, max_results: int = 20):
     """
     Fetch the most recent arXiv entries for a given category (e.g., 'cs.LG').
     """

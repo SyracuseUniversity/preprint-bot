@@ -32,11 +32,11 @@ class StatusEnum(str, Enum):
 
 # User Schemas
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: str
     name: Optional[str] = None
 
 class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None
     name: Optional[str] = None
 
 class UserResponse(BaseModel):
@@ -108,7 +108,7 @@ class PaperCreate(BaseModel):
     title: str
     abstract: Optional[str] = None
     metadata: Optional[dict] = None
-    file_path: Optional[str] = None
+    pdf_path: Optional[str] = None
     source: SourceEnum
 
 class PaperUpdate(BaseModel):
@@ -116,7 +116,7 @@ class PaperUpdate(BaseModel):
     title: Optional[str] = None
     abstract: Optional[str] = None
     metadata: Optional[dict] = None
-    file_path: Optional[str] = None
+    pdf_path: Optional[str] = None
     source: Optional[SourceEnum] = None
 
 class PaperResponse(BaseModel):
@@ -126,7 +126,8 @@ class PaperResponse(BaseModel):
     title: str
     abstract: Optional[str]
     metadata: Optional[dict]
-    file_path: Optional[str]
+    pdf_path: Optional[str]
+    processed_text_path: Optional[str]
     source: str
     created_at: datetime
 
@@ -176,18 +177,19 @@ class EmbeddingCreate(BaseModel):
 
 class EmbeddingUpdate(BaseModel):
     embedding: Optional[List[float]] = None
-
+    
 class EmbeddingResponse(BaseModel):
     id: int
     paper_id: int
     section_id: Optional[int]
+    embedding: List[float]
     type: str
     model_name: str
     created_at: datetime
 
 # RecommendationRun Schemas
 class RecommendationRunCreate(BaseModel):
-    profile_id: int
+    profile_id: Optional[int] = None
     user_id: int
     user_corpus_id: int
     ref_corpus_id: int
@@ -196,7 +198,7 @@ class RecommendationRunCreate(BaseModel):
 
 class RecommendationRunResponse(BaseModel):
     id: int
-    profile_id: int
+    profile_id: Optional[int]
     user_id: int
     user_corpus_id: int
     ref_corpus_id: int
@@ -225,6 +227,12 @@ class RecommendationResponse(BaseModel):
     rank: int
     summary: Optional[str]
     created_at: datetime
+
+class VectorSearchRequest(BaseModel):
+    embedding: List[float]
+    corpus_id: Optional[int] = None
+    limit: int = 10
+    threshold: float = 0.5
 
 # ProfileRecommendation Schemas
 class ProfileRecommendationCreate(BaseModel):

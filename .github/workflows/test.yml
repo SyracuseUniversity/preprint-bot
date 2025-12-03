@@ -14,25 +14,40 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          python-version: '3.11'
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          # Force NumPy <2.0 to avoid breaking changes
+          # Clean any cached packages
+          pip cache purge || true
+          # Uninstall any existing conflicting packages
+          pip uninstall -y spacy pydantic pydantic-core pydantic-settings || true
+          # Install in correct order to avoid conflicts
           pip install "numpy<2.0"
-          # Install all dependencies (torch CPU wheel will come from PyTorch index)
+          pip install "pydantic>=2.5.3,<3.0.0"
+          pip install "spacy>=3.8.0"
+          # Install remaining requirements
           pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-          pip install -e .
-          pip install llama-cpp-python
+          # Install package without reinstalling dependencies
+          pip install -e . --no-deps
+          # Download NLTK data (needed for tests)
           python -m nltk.downloader punkt punkt_tab
+
+      - name: Download spaCy model
+        run: |
           python -m spacy download en_core_web_sm
+
+      - name: Verify installation
+        run: |
+          python --version
+          python -c "import spacy; print(f'✓ spaCy: {spacy.__version__}')"
+          python -c "import pydantic; print(f'✓ Pydantic: {pydantic.__version__}')"
+          python -c "from preprint_bot import config; print('✓ Package imports successfully')"
 
       - name: Run tests
         run: |
-          pip install pytest
-          pytest tests/
+          pytest tests/ -v --tb=short

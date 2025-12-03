@@ -1,3 +1,4 @@
+# requirements.txt
 # arXiv Preprint Bot – Python dependencies
 # Compatible with Python 3.12, Torch + CUDA 12.1
 
@@ -9,18 +10,19 @@ feedparser>=6.0.11
 lxml>=5.3.0
 
 # Core numerical stack
-numpy>=1.26.0
+numpy>=1.26.0,<2.0.0
 
 # NLP & embeddings
 sentence-transformers>=2.6.0
 transformers==4.41.2
-# Pin torch to the latest available CUDA 12.1 build (no 2.6.0 yet)
-torch==2.5.1 #+cu121 --index-url https://download.pytorch.org/whl/cu121
+# Pin torch to the latest available CUDA 12.1 build
+torch==2.5.1  # Add +cu121 manually: pip install torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121
 
 # Tokenization & classical NLP
 nltk>=3.9
-spacy>=3.7.3
-# After install, run:  python -m spacy download en_core_web_sm
+# CRITICAL: Use spaCy 3.8+ which is compatible with Pydantic v2
+spacy>=3.8.0
+# After install, run: python -m spacy download en_core_web_sm
 
 # Similarity search
 faiss-cpu>=1.7.4
@@ -32,9 +34,39 @@ setuptools>=65.0.0
 wheel>=0.38.0
 twine>=4.0.0
 
-# Optional but recommended for CLI argument parsing
-argparse; python_version < "3.2"
-
-# Optional for secure SMTP email sending
+# Optional: SMTP email sending
 secure-smtplib>=0.1
+
+# FastAPI and ASGI Server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
 httpx==0.27.0
+
+# Database
+asyncpg==0.29.0
+psycopg2-binary>=2.9.9
+
+# Data Validation and Settings - FIXED VERSIONS
+pydantic>=2.5.3,<3.0.0
+pydantic-settings>=2.1.0
+email-validator>=2.0.0
+
+# Environment Variables
+python-dotenv>=1.0.0
+
+# LLM (optional)
+llama-cpp-python>=0.1.83
+
+# Development and Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.3
+pytest-cov>=4.1.0
+
+# Code Quality
+black>=23.12.1
+flake8>=7.0.0
+mypy>=1.8.0
+isort>=5.13.0
+
+# Production Server
+gunicorn>=21.2.0

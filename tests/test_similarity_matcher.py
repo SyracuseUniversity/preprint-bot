@@ -1,177 +1,151 @@
+"""Unit tests for similarity computation"""
 import pytest
 import numpy as np
+
+from pathlib import Path
 import tempfile
-import json
-from unittest.mock import patch, MagicMock
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent / "src" / "preprint_bot"))
 
-# Import your functions
-from preprint_bot.similarity_matcher import hybrid_similarity_pipeline
-from preprint_bot.config import SIMILARITY_THRESHOLDS, DATA_DIR
-
-# ----------------------
-# Fixtures
-# ----------------------
-@pytest.fixture
-def fake_arxiv_papers():
-    return [
-        {
-            "arxiv_url": "https://arxiv.org/abs/1234.5678v1",
-            "title": "Paper 1",
-            "summary": "Summary 1",
-            "published": "2024-01-01"
-        },
-        {
-            "arxiv_url": "https://arxiv.org/abs/2345.6789v1",
-            "title": "Paper 2",
-            "summary": "Summary 2",
-            "published": "2024-02-01"
-        }
-    ]
-
-
-@pytest.fixture
-def user_files():
-    return ["user1.txt", "user2.txt"]
-
-
-@pytest.fixture
-def deterministic_embeddings():
-    # deterministic "fake embeddings" for reproducible tests
-    user_embs = {
-        "user1.txt": np.array([[1, 0, 0], [0, 1, 0]], dtype="float32"),
-        "user2.txt": np.array([[0, 0, 1], [1, 1, 0]], dtype="float32")
-    }
-    arxiv_embs = {
-        "1234.5678v1_output.txt": np.array([[1, 0, 0], [0, 1, 0]], dtype="float32"),
-        "2345.6789v1_output.txt": np.array([[0, 0, 1], [1, 1, 0]], dtype="float32")
-    }
-    return user_embs, arxiv_embs
+class TestGrouping:
+    def test_group_embeddings_by_paper(self):
+        """Test grouping embeddings by paper_id"""
+        from preprint_bot.db_similarity_matcher import group_embeddings_by_paper
+        
+        embeddings = [
+            {'paper_id': 1, 'embedding': [0.1, 0.2]},
+            {'paper_id': 1, 'embedding': [0.3, 0.4]},
+            {'paper_id': 2, 'embedding': [0.5, 0.6]},
+        ]
+        
+        result = group_embeddings_by_paper(embeddings)
+        
+        assert len(result) == 2
+        assert len(result[1]) == 2
+        assert len(result[2]) == 1
+    
+    def test_group_embeddings_empty_list(self):
+        """Test grouping with empty list"""
+        from preprint_bot.db_similarity_matcher import group_embeddings_by_paper
+        
+        result = group_embeddings_by_paper([])
+        assert result == {}
+    
+    def test_group_embeddings_single_paper(self):
+        """Test grouping with single paper"""
+        from preprint_bot.db_similarity_matcher import group_embeddings_by_paper
+        
+        embeddings = [
+            {'paper_id': 1, 'embedding': [0.1, 0.2]},
+            {'paper_id': 1, 'embedding': [0.3, 0.4]},
+            {'paper_id': 1, 'embedding': [0.5, 0.6]},
+        ]
+        
+        result = group_embeddings_by_paper(embeddings)
+        
+        assert len(result) == 1
+        assert len(result[1]) == 3
 
 
-# ----------------------
-# Tests
-# ----------------------
-def test_hybrid_pipeline_faiss_deterministic():
-    np.random.seed(0)  # deterministic embeddings
-    user_embs = [np.array([1.0, 0.0], dtype="float32")]
-    arxiv_embs = [np.array([1.0, 0.0], dtype="float32")]
-
-    user_sections = {"file1": user_embs}
-    arxiv_sections = {"paper1_output.txt": arxiv_embs}
-    all_papers = [{"arxiv_url": "https://arxiv.org/abs/paper1", "title": "Paper 1",
-                   "summary": "Summary", "published": "2024"}]
-    user_files = ["file1"]
-
-    matches = hybrid_similarity_pipeline(user_embs, arxiv_embs, user_sections,
-                                         arxiv_sections, all_papers, user_files,
-                                         method="faiss", threshold_label="low")
-    assert len(matches) == 1
-    assert matches[0]["score"] == pytest.approx(1.0)
-
-
-def test_hybrid_pipeline_cosine_deterministic(tmp_path, fake_arxiv_papers, user_files, deterministic_embeddings):
-    user_embs, arxiv_embs = deterministic_embeddings
-
-    with patch("preprint_bot.config.DATA_DIR", tmp_path):
-        results = hybrid_similarity_pipeline(
-            user_abs_embs=user_embs,
-            arxiv_abs_embs=arxiv_embs,
-            user_sections_dict=user_embs,
-            arxiv_sections_dict=arxiv_embs,
-            all_cs_papers=fake_arxiv_papers,
-            user_files=user_files,
-            method="cosine",
-            threshold_label="low"
-        )
-
-        assert len(results) > 0
-        # Cosine similarity of identical vectors = 1.0
-        scores = [r["score"] for r in results]
-        assert any(s == pytest.approx(1.0, 0.01) for s in scores)
-
-
-@patch("preprint_bot.similarity_matcher.QdrantClient")
-def test_hybrid_pipeline_qdrant_deterministic(mock_client, tmp_path, fake_arxiv_papers, user_files, deterministic_embeddings):
-    user_embs, arxiv_embs = deterministic_embeddings
-    mock_instance = MagicMock()
-    mock_client.return_value = mock_instance
-
-    # Simulate deterministic search results
-    def mock_search(collection_name, query_vector, limit):
-        # Return score 0.95 if vector matches our "deterministic" user vector
-        if query_vector in [[1,0,0],[0,1,0],[0,0,1],[1,1,0]]:
-            hit = MagicMock()
-            hit.score = 0.95
-            return [hit]
-        return []
-
-    mock_instance.search.side_effect = mock_search
-
-    with patch("preprint_bot.config.DATA_DIR", tmp_path):
-        results = hybrid_similarity_pipeline(
-            user_abs_embs=user_embs,
-            arxiv_abs_embs=arxiv_embs,
-            user_sections_dict=user_embs,
-            arxiv_sections_dict=arxiv_embs,
-            all_cs_papers=fake_arxiv_papers,
-            user_files=user_files,
-            method="qdrant",
-            threshold_label="low"
-        )
-
-        assert results
-        for r in results:
-            assert r["score"] == pytest.approx(0.95, 0.01)
-        mock_instance.recreate_collection.assert_called()
-        mock_instance.upsert.assert_called()
+class TestCosineSimilarity:
+    def test_compute_cosine_similarity_identical(self):
+        """Test cosine similarity with identical vectors"""
+        from preprint_bot.db_similarity_matcher import compute_cosine_similarity
+        
+        user_matrix = np.array([[1.0, 0.0, 0.0]], dtype=np.float32)
+        arxiv_matrix = np.array([[1.0, 0.0, 0.0]], dtype=np.float32)
+        
+        similarity = compute_cosine_similarity(user_matrix, arxiv_matrix)
+        
+        # Should be very close to 1.0
+        assert abs(similarity[0, 0] - 1.0) < 1e-5
+    
+    def test_compute_cosine_similarity_orthogonal(self):
+        """Test cosine similarity with orthogonal vectors"""
+        from preprint_bot.db_similarity_matcher import compute_cosine_similarity
+        
+        user_matrix = np.array([[1.0, 0.0]], dtype=np.float32)
+        arxiv_matrix = np.array([[0.0, 1.0]], dtype=np.float32)
+        
+        similarity = compute_cosine_similarity(user_matrix, arxiv_matrix)
+        
+        # Should be very close to 0.0
+        assert abs(similarity[0, 0]) < 1e-5
+    
+    def test_compute_cosine_similarity_opposite(self):
+        """Test cosine similarity with opposite vectors"""
+        from preprint_bot.db_similarity_matcher import compute_cosine_similarity
+        
+        user_matrix = np.array([[1.0, 0.0]], dtype=np.float32)
+        arxiv_matrix = np.array([[-1.0, 0.0]], dtype=np.float32)
+        
+        similarity = compute_cosine_similarity(user_matrix, arxiv_matrix)
+        
+        # Should be close to -1.0
+        assert abs(similarity[0, 0] - (-1.0)) < 1e-5
+    
+    def test_compute_cosine_similarity_multiple_vectors(self):
+        """Test cosine similarity with multiple vectors"""
+        from preprint_bot.db_similarity_matcher import compute_cosine_similarity
+        
+        user_matrix = np.array([
+            [1.0, 0.0],
+            [0.0, 1.0]
+        ], dtype=np.float32)
+        
+        arxiv_matrix = np.array([
+            [1.0, 0.0],
+            [0.0, 1.0]
+        ], dtype=np.float32)
+        
+        similarity = compute_cosine_similarity(user_matrix, arxiv_matrix)
+        
+        assert similarity.shape == (2, 2)
+        # Diagonal should be 1.0
+        assert abs(similarity[0, 0] - 1.0) < 1e-5
+        assert abs(similarity[1, 1] - 1.0) < 1e-5
 
 
-def test_threshold_filtering(tmp_path, fake_arxiv_papers, user_files, deterministic_embeddings):
-    user_embs, arxiv_embs = deterministic_embeddings
+class TestPaperSimilarity:
+    def test_compute_paper_similarity_returns_max(self):
+        """Test that paper similarity returns maximum across embeddings"""
+        from preprint_bot.db_similarity_matcher import compute_paper_similarity
+        
+        user_embs = [[1.0, 0.0], [0.0, 1.0]]
+        arxiv_embs = [[1.0, 0.0], [0.5, 0.5]]
+        
+        similarity = compute_paper_similarity(user_embs, arxiv_embs, method="cosine")
+        
+        # Maximum similarity should be 1.0 (first embedding pair)
+        assert similarity >= 0.99
+    
+    def test_compute_paper_similarity_single_embeddings(self):
+        """Test similarity with single embedding per paper"""
+        from preprint_bot.db_similarity_matcher import compute_paper_similarity
+        
+        user_embs = [[1.0, 0.0]]
+        arxiv_embs = [[0.0, 1.0]]
+        
+        similarity = compute_paper_similarity(user_embs, arxiv_embs, method="cosine")
+        
+        # Should be near 0 for orthogonal vectors
+        assert abs(similarity) < 0.1
+    
+    def test_compute_paper_similarity_many_embeddings(self):
+        """Test with many embeddings per paper"""
+        from preprint_bot.db_similarity_matcher import compute_paper_similarity
+        
+        # Create 10 random embeddings per paper
+        np.random.seed(42)
+        user_embs = np.random.randn(10, 5).tolist()
+        arxiv_embs = np.random.randn(10, 5).tolist()
+        
+        similarity = compute_paper_similarity(user_embs, arxiv_embs, method="cosine")
+        
+        # Should return a single float value
+        assert isinstance(similarity, float)
+        assert -1.0 <= similarity <= 1.0
 
-    user_embs = [np.array([0.0, 0.0], dtype="float32")]
-    arxiv_embs = [np.array([1.0, 1.0], dtype="float32")]
 
-    user_sections = {"file1": user_embs}
-    arxiv_sections = {"paper1_output.txt": arxiv_embs}
-    all_papers = [{"arxiv_url": "https://arxiv.org/abs/paper1", "title": "Paper 1",
-                   "summary": "Summary", "published": "2024"}]
-    user_files = ["file1"]
-
-    matches = hybrid_similarity_pipeline(user_embs, arxiv_embs, user_sections,
-                                         arxiv_sections, all_papers, user_files,
-                                         method="faiss", threshold_label="high")
-    assert matches == []  # score below high threshold
-
-
-def test_unknown_method_raises(tmp_path, fake_arxiv_papers, user_files, deterministic_embeddings):
-    user_embs, arxiv_embs = deterministic_embeddings
-
-    with patch("preprint_bot.config.DATA_DIR", tmp_path):
-        with pytest.raises(ValueError):
-            hybrid_similarity_pipeline(
-                user_abs_embs=user_embs,
-                arxiv_abs_embs=arxiv_embs,
-                user_sections_dict=user_embs,
-                arxiv_sections_dict=arxiv_embs,
-                all_cs_papers=fake_arxiv_papers,
-                user_files=user_files,
-                method="invalid_method",
-            )
-
-
-def test_empty_chunks_returns_empty(tmp_path, fake_arxiv_papers, user_files):
-    user_embs = {f: np.array([], dtype="float32") for f in user_files}
-    arxiv_embs = {f"{p['arxiv_url'].split('/')[-1]}_output.txt": np.array([], dtype="float32") for p in fake_arxiv_papers}
-
-    with patch("preprint_bot.config.DATA_DIR", tmp_path):
-        results = hybrid_similarity_pipeline(
-            user_abs_embs=user_embs,
-            arxiv_abs_embs=arxiv_embs,
-            user_sections_dict=user_embs,
-            arxiv_sections_dict=arxiv_embs,
-            all_cs_papers=fake_arxiv_papers,
-            user_files=user_files,
-            method="cosine",
-        )
-        assert results == []
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
