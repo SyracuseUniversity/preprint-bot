@@ -1,7 +1,7 @@
+# setup.py
 from setuptools import setup, find_packages
 import os
 
-# Read README for long description
 def read_readme():
     readme_path = os.path.join(os.path.dirname(__file__), 'README.md')
     if os.path.exists(readme_path):
@@ -22,7 +22,7 @@ setup(
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     
-    # Core dependencies (always installed)
+    # Core dependencies with pinned versions
     install_requires=[
         # arXiv and PDF processing
         "requests>=2.31.0",
@@ -35,7 +35,7 @@ setup(
         "transformers>=4.41.0,<5.0.0",
         "torch>=2.5.0",
         "nltk>=3.9",
-        "spacy>=3.7.0",
+        "spacy>=3.7.0,<3.8.0",  # Pin spaCy version
         
         # Similarity Search
         "faiss-cpu>=1.7.4",
@@ -50,8 +50,8 @@ setup(
         "asyncpg>=0.29.0",
         "psycopg2-binary>=2.9.9",
         
-        # Data Validation and Settings
-        "pydantic>=2.5.0",
+        # Data Validation and Settings - IMPORTANT FIX
+        "pydantic>=2.5.0,<3.0.0",  # Use Pydantic v2
         "pydantic-settings>=2.1.0",
         "email-validator>=2.0.0",
         
@@ -73,7 +73,7 @@ setup(
             "isort>=5.13.0",
         ],
         
-        # GPU support (install torch with CUDA separately)
+        # GPU support
         "cuda": [
             "faiss-gpu>=1.7.4",
         ],
@@ -114,22 +114,9 @@ setup(
             "mkdocs>=1.5.3",
             "mkdocs-material>=9.5.0",
         ],
-        
-        # All optional features
-        "all": [
-            "faiss-gpu>=1.7.4",
-            "qdrant-client>=1.12.1",
-            "llama-cpp-python>=0.1.83",
-            "gunicorn>=21.2.0",
-            "redis>=5.0.0",
-            "celery>=5.3.0",
-            "prometheus-client>=0.19.0",
-            "sentry-sdk>=1.40.0",
-            "torch==2.5.1+cu121",
-        ],
     },
     
-    # Console scripts (command-line tools)
+    # Console scripts
     entry_points={
         "console_scripts": [
             "preprint_bot=preprint_bot.pipeline:main",
