@@ -14,10 +14,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'  # Changed from 3.12 to 3.11
+          python-version: '3.11'
 
       - name: Install Python dependencies
         run: |
@@ -34,9 +34,7 @@ jobs:
           pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
           # Install package without reinstalling dependencies
           pip install -e . --no-deps
-          # Install optional test dependencies
-          pip install llama-cpp-python
-          # Download NLTK data
+          # Download NLTK data (needed for tests)
           python -m nltk.downloader punkt punkt_tab
 
       - name: Download spaCy model
@@ -45,8 +43,7 @@ jobs:
 
       - name: Verify installation
         run: |
-          echo "Verifying package versions..."
-          python -c "import sys; print(f'Python: {sys.version}')"
+          python --version
           python -c "import spacy; print(f'✓ spaCy: {spacy.__version__}')"
           python -c "import pydantic; print(f'✓ Pydantic: {pydantic.__version__}')"
           python -c "from preprint_bot import config; print('✓ Package imports successfully')"
