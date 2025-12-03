@@ -17,35 +17,40 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          python-version: '3.11'  # Changed from 3.12 to 3.11
 
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          # Force NumPy <2.0 to avoid breaking changes
+          # Clean any cached packages
+          pip cache purge || true
+          # Uninstall any existing conflicting packages
+          pip uninstall -y spacy pydantic pydantic-core pydantic-settings || true
+          # Install in correct order to avoid conflicts
           pip install "numpy<2.0"
-          # CRITICAL FIX: Install compatible spaCy version BEFORE requirements.txt
-          pip install "spacy>=3.8.0"
           pip install "pydantic>=2.5.3,<3.0.0"
-          # Install all dependencies (torch CPU wheel will come from PyTorch index)
+          pip install "spacy>=3.8.0"
+          # Install remaining requirements
           pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-          pip install -e .
+          # Install package without reinstalling dependencies
+          pip install -e . --no-deps
+          # Install optional test dependencies
+          pip install llama-cpp-python
           # Download NLTK data
           python -m nltk.downloader punkt punkt_tab
-          # Download spaCy model
+
+      - name: Download spaCy model
+        run: |
           python -m spacy download en_core_web_sm
 
       - name: Verify installation
         run: |
-          python -c "import spacy; import pydantic; print(f'spaCy: {spacy.__version__}, Pydantic: {pydantic.__version__}')"
+          echo "Verifying package versions..."
+          python -c "import sys; print(f'Python: {sys.version}')"
+          python -c "import spacy; print(f'✓ spaCy: {spacy.__version__}')"
+          python -c "import pydantic; print(f'✓ Pydantic: {pydantic.__version__}')"
+          python -c "from preprint_bot import config; print('✓ Package imports successfully')"
 
       - name: Run tests
         run: |
           pytest tests/ -v --tb=short
-
-      - name: Upload coverage (optional)
-        if: success()
-        run: |
-          pip install pytest-cov
-          pytest tests/ --cov=src/preprint_bot --cov-report=xml --cov-report=term
