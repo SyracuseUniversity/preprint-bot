@@ -1,4 +1,3 @@
-# setup.py
 from setuptools import setup, find_packages
 import os
 
@@ -22,7 +21,7 @@ setup(
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     
-    # Core dependencies with pinned versions
+    # Core dependencies
     install_requires=[
         # arXiv and PDF processing
         "requests>=2.31.0",
@@ -35,7 +34,7 @@ setup(
         "transformers>=4.41.0,<5.0.0",
         "torch>=2.5.0",
         "nltk>=3.9",
-        "spacy>=3.7.0,<3.8.0",  # Pin spaCy version
+        "spacy>=3.8.0",  # CRITICAL: Changed from >=3.7.0 to >=3.8.0
         
         # Similarity Search
         "faiss-cpu>=1.7.4",
@@ -50,8 +49,8 @@ setup(
         "asyncpg>=0.29.0",
         "psycopg2-binary>=2.9.9",
         
-        # Data Validation and Settings - IMPORTANT FIX
-        "pydantic>=2.5.0,<3.0.0",  # Use Pydantic v2
+        # Data Validation and Settings
+        "pydantic>=2.5.0,<3.0.0",
         "pydantic-settings>=2.1.0",
         "email-validator>=2.0.0",
         
@@ -95,24 +94,12 @@ setup(
             "celery>=5.3.0",
         ],
         
-        # Monitoring and logging
-        "monitoring": [
-            "prometheus-client>=0.19.0",
-            "sentry-sdk>=1.40.0",
-        ],
-        
         # Testing
         "test": [
             "pytest>=8.0.0",
             "pytest-asyncio>=0.23.0",
             "pytest-cov>=4.1.0",
             "faker>=22.0.0",
-        ],
-        
-        # Documentation
-        "docs": [
-            "mkdocs>=1.5.3",
-            "mkdocs-material>=9.5.0",
         ],
     },
     
@@ -123,33 +110,15 @@ setup(
         ],
     },
     
-    # Include non-Python files
     include_package_data=True,
     
-    # Project metadata
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",
-        "Intended Audience :: Developers",
-        "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
-        "Operating System :: OS Independent",
-        "Topic :: Scientific/Engineering :: Artificial Intelligence",
-        "Framework :: FastAPI",
-    ],
-    
-    keywords=[
-        "arxiv",
-        "preprint",
-        "recommendation",
-        "machine-learning",
-        "nlp",
-        "fastapi",
-        "postgresql",
-        "vector-search",
     ],
     
     zip_safe=False,
