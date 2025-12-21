@@ -7,6 +7,8 @@ DATABASE VERSION: Stores metadata in PostgreSQL, files in local directories.
 
 import os
 from pathlib import Path
+from pydantic_settings import BaseSettings
+from functools import lru_cache
 
 # List of arXiv subject categories to query
 ARXIV_CATEGORIES = [
@@ -21,7 +23,7 @@ SIMILARITY_THRESHOLDS = {
 }
 
 # Maximum number of results to retrieve per query from arXiv
-MAX_RESULTS = 20
+MAX_RESULTS = 30
 
 # Default SentenceTransformer model used for embedding abstracts and sections
 DEFAULT_MODEL_NAME = "all-MiniLM-L6-v2"
@@ -50,6 +52,27 @@ SYSTEM_USER_NAME = "Preprint Bot"
 
 # Corpus naming
 ARXIV_CORPUS_NAME = "arxiv_papers"
+
+
+# Database Settings class
+class Settings(BaseSettings):
+    DATABASE_HOST: str = "localhost"
+    DATABASE_PORT: int = 5432
+    DATABASE_NAME: str = "preprint_bot"
+    DATABASE_USER: str = "postgres"
+    DATABASE_PASSWORD: str = "ggwpfax"
+
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+
+@lru_cache()
+def get_settings():
+    return Settings()
+
+
+settings = get_settings()
 
 
 def get_user_profile_structure(base_dir=USER_PDF_DIR):

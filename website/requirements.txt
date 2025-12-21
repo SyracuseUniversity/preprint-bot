@@ -1,0 +1,17 @@
+# website/requirements.txt (verify these are present)
+streamlit==1.50.0
+fastapi==0.119.0
+uvicorn==0.37.0
+st-ant-tree
+
+# Auth / parsing / http
+bcrypt==4.2.0
+python-multipart==0.0.12
+pydantic==2.9.2
+requests==2.32.3
+orjson==3.10.7
+pydantic[email]==2.9.2
+python-dotenv>=1.0.1
+
+# Add this if not present:
+httpx>=0.27.0

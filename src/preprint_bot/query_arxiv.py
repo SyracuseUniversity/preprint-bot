@@ -6,13 +6,14 @@ import argparse
 import json
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
+from typing import List
 
 from .extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
 from .config import MAX_RESULTS as CONFIG_MAX_RESULTS, DATA_DIR
 
-# Output directory
-SAVE_DIR = os.path.join(os.getcwd(), "pdf_processes")
-os.makedirs(SAVE_DIR, exist_ok=True)
+# # Output directory
+# SAVE_DIR = os.path.join(os.getcwd(), "pdf_processes")
+# os.makedirs(SAVE_DIR, exist_ok=True)
 
 # Default MAX_RESULTS (can be overridden by CLI or config)
 MAX_RESULTS = CONFIG_MAX_RESULTS if CONFIG_MAX_RESULTS else 500  # increase, since we want *all*
@@ -149,6 +150,134 @@ def get_arxiv_pdf_bytes(arxiv_url):
     response.raise_for_status()
     return response.content, arxiv_id
 
+# query_arxiv.py - Add this function
+
+def get_arxiv_entries_multi_category(
+    categories: List[str], 
+    max_results_per_category: int = 20,
+    rate_limit: float = 3.0
+):
+    """
+    Fetch arXiv entries from multiple categories.
+    
+    Args:
+        categories: List of arXiv categories (e.g., ['cs.LG', 'cs.CV'])
+        max_results_per_category: Max papers per category
+        rate_limit: Seconds to wait between API calls
+    
+    Returns:
+        list: Combined list of all entries (duplicates removed)
+    """
+    all_entries = []
+    seen_ids = set()
+    
+    print(f"\nFetching from {len(categories)} categories...")
+    print(f"Max results per category: {max_results_per_category}")
+    print(f"Rate limit: {rate_limit}s between requests\n")
+    
+    for i, category in enumerate(categories, 1):
+        print(f"[{i}/{len(categories)}] Fetching from {category}...")
+        
+        try:
+            # Fetch entries for this category
+            entries = get_arxiv_entries(
+                category=category, 
+                max_results=max_results_per_category
+            )
+            
+            # Deduplicate based on arXiv ID
+            new_entries = 0
+            for entry in entries:
+                arxiv_id = entry.id.split('/')[-1]
+                if arxiv_id not in seen_ids:
+                    seen_ids.add(arxiv_id)
+                    all_entries.append(entry)
+                    new_entries += 1
+            
+            print(f"  Retrieved: {len(entries)} papers")
+            print(f"  New papers: {new_entries}")
+            print(f"  Total unique: {len(all_entries)}\n")
+            
+            # Rate limiting between categories
+            if i < len(categories):
+                time.sleep(rate_limit)
+                
+        except Exception as e:
+            print(f"  Error fetching {category}: {e}\n")
+            continue
+    
+    print(f"{'='*60}")
+    print(f"Total papers fetched: {len(all_entries)}")
+    print(f"Duplicates removed: {len(seen_ids) - len(all_entries) if len(seen_ids) > len(all_entries) else 0}")
+    print(f"{'='*60}\n")
+    
+    return all_entries
+
+
+def get_arxiv_entries_combined_query(
+    categories: List[str],
+    max_results: int = 100,
+    days_back: int = 7
+):
+    """
+    Fetch papers from multiple categories using a single combined query.
+    More efficient than separate queries but less control over per-category limits.
+    
+    Args:
+        categories: List of arXiv categories
+        max_results: Total max results across all categories
+        days_back: Fetch papers from last N days
+    
+    Returns:
+        list: Combined entries
+    """
+    from datetime import datetime, timedelta
+    
+    # Build combined query: (cat:cs.LG OR cat:cs.CV OR cat:cs.CL)
+    cat_queries = [f"cat:{cat}" for cat in categories]
+    combined_query = f"({' OR '.join(cat_queries)})"
+    
+    # Add date filter
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days_back)
+    
+    date_query = f"submittedDate:[{start_date.strftime('%Y%m%d')}* TO {end_date.strftime('%Y%m%d')}*]"
+    full_query = f"{combined_query} AND {date_query}"
+    
+    print(f"\nCombined query for categories: {', '.join(categories)}")
+    print(f"Date range: Last {days_back} days")
+    print(f"Max results: {max_results}\n")
+    
+    url = (
+        "http://export.arxiv.org/api/query?"
+        f"search_query={full_query}"
+        f"&start=0&max_results={max_results}"
+        "&sortBy=submittedDate&sortOrder=descending"
+    )
+    
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        feed = feedparser.parse(resp.text)
+        entries = feed.entries
+        
+        # Group by category for reporting
+        category_counts = {}
+        for entry in entries:
+            for tag in entry.get('tags', []):
+                cat = tag.get('term', '')
+                if cat in categories:
+                    category_counts[cat] = category_counts.get(cat, 0) + 1
+        
+        print(f"Retrieved {len(entries)} papers:")
+        for cat in sorted(category_counts.keys()):
+            print(f"  {cat}: {category_counts[cat]} papers")
+        
+        return entries
+        
+    except Exception as e:
+        print(f"Error in combined query: {e}")
+        return []
 
 def process_entry(entry, delay):
     """

@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
+from typing import Union, List
 
 from .config import (
     DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS,
@@ -18,18 +19,38 @@ from .api_client import APIClient
 from .download_arxiv_pdfs import download_arxiv_pdfs
 from .embed_papers import embed_and_store_papers
 from .extract_grobid import process_folder as grobid_process_folder
-from .query_arxiv import get_arxiv_entries, get_yesterday_entries
+from .query_arxiv import (
+    get_arxiv_entries, 
+    get_yesterday_entries,
+    get_arxiv_entries_multi_category,
+    get_arxiv_entries_combined_query
+)
 from .summarization_script import TransformerSummarizer, LlamaSummarizer
 from .user_mode_processor import process_user_profiles, run_user_recommendations
 
 
 async def fetch_and_store_arxiv(
     api_client: APIClient,
-    category: str,
+    categories: Union[str, List[str]],
+    max_results_per_category: int = 20,
     skip_download: bool = False,
-    skip_parse: bool = False
+    skip_parse: bool = False,
+    combined_query: bool = False
 ):
-    """Fetch arXiv papers and store in database"""
+    """
+    Fetch arXiv papers from one or multiple categories and store in database.
+    
+    Args:
+        api_client: API client instance
+        categories: Single category string, list of categories, or "all"
+        max_results_per_category: Max papers per category
+        skip_download: Skip PDF download step
+        skip_parse: Skip GROBID parsing step
+        combined_query: Use single combined query instead of separate queries
+    
+    Returns:
+        int: Corpus ID containing the fetched papers
+    """
     
     user = await api_client.get_or_create_user(SYSTEM_USER_EMAIL, SYSTEM_USER_NAME)
     print(f"Using system user: {user['email']}")
@@ -41,13 +62,38 @@ async def fetch_and_store_arxiv(
     )
     print(f"Using corpus: {corpus['name']} (ID: {corpus['id']})")
     
-    if category == "all":
+    # Handle different input types
+    if categories == "all":
         print(f"\nFetching ALL preprints from yesterday...")
         entries = get_yesterday_entries(rate_limit=3.0)
-    else:
-        print(f"\nFetching {MAX_RESULTS} papers from {category}...")
-        entries = get_arxiv_entries(category=category, max_results=MAX_RESULTS)
     
+    elif isinstance(categories, list):
+        if combined_query:
+            print(f"\nFetching from {len(categories)} categories (combined query)...")
+            entries = get_arxiv_entries_combined_query(
+                categories=categories,
+                max_results=max_results_per_category * len(categories),
+                days_back=7
+            )
+        else:
+            print(f"\nFetching from {len(categories)} categories (separate queries)...")
+            entries = get_arxiv_entries_multi_category(
+                categories=categories,
+                max_results_per_category=max_results_per_category,
+                rate_limit=3.0
+            )
+    
+    else:
+        # Single category
+        print(f"\nFetching from {categories}...")
+        entries = get_arxiv_entries(
+            category=categories, 
+            max_results=max_results_per_category
+        )
+    
+    print(f"Fetched {len(entries)} papers")
+    
+    # Convert to papers data
     papers_data = []
     for entry in entries:
         arxiv_id = entry.id.split("/")[-1]
@@ -58,12 +104,12 @@ async def fetch_and_store_arxiv(
             "metadata": {
                 "published": getattr(entry, "published", ""),
                 "arxiv_url": entry.id,
-                "authors": [a.name for a in getattr(entry, "authors", [])]
+                "authors": [a.name for a in getattr(entry, "authors", [])],
+                "categories": [tag.term for tag in getattr(entry, "tags", [])]
             }
         })
     
-    print(f"Fetched {len(papers_data)} papers")
-    
+    # Store in database
     stored_count = 0
     for paper_data in papers_data:
         existing = await api_client.get_paper_by_arxiv_id(paper_data["arxiv_id"])
@@ -84,18 +130,20 @@ async def fetch_and_store_arxiv(
             stored_count += 1
         except Exception as e:
             print(f"Failed to store {paper_data['arxiv_id']}: {e}")
-            import traceback
-            traceback.print_exc()  # Add this line
     
     print(f"Stored {stored_count} new papers in database")
     
+    # Download PDFs
     if not skip_download:
         download_arxiv_pdfs(
             [{"arxiv_url": p["metadata"]["arxiv_url"]} for p in papers_data],
             output_folder=str(PDF_DIR),
-            delay_seconds=2
+            min_delay=5,
+            max_delay=15,
+            requests_per_hour=100
         )
     
+    # Parse PDFs with GROBID
     if not skip_parse:
         print("\nParsing PDFs with GROBID...")
         grobid_process_folder(PDF_DIR, PROCESSED_TEXT_DIR)
@@ -208,11 +256,20 @@ async def run_corpus_mode(args):
     api_client = APIClient()
     
     try:
+        # Handle single string or list
+        categories = args.category if isinstance(args.category, list) else [args.category]
+        
+        # Special case: if list has one element "all", use "all"
+        if len(categories) == 1 and categories[0] == "all":
+            categories = "all"
+        
         corpus_id = await fetch_and_store_arxiv(
             api_client,
-            category=args.category,
+            categories=categories,
+            max_results_per_category=args.max_per_category,
             skip_download=args.skip_download,
-            skip_parse=args.skip_parse
+            skip_parse=args.skip_parse,
+            combined_query=args.combined_query
         )
         
         if not args.skip_embed:
@@ -322,7 +379,26 @@ async def run_user_mode(args):
 def main():
     parser = argparse.ArgumentParser(description="Database-integrated Preprint Bot")
     parser.add_argument("--mode", choices=["corpus", "user"], required=True)
-    parser.add_argument("--category", default="cs.LG")
+    
+    # Now accepts multiple categories
+    parser.add_argument(
+        "--category", 
+        nargs='+',
+        default=["cs.LG"],
+        help="arXiv category or categories (e.g., cs.LG cs.CV cs.CL)"
+    )
+    parser.add_argument(
+        "--max-per-category",
+        type=int,
+        default=20,
+        help="Max papers per category"
+    )
+    parser.add_argument(
+        "--combined-query",
+        action="store_true",
+        help="Use single combined query instead of separate queries"
+    )
+    
     parser.add_argument("--threshold", default="medium", choices=["low", "medium", "high"])
     parser.add_argument("--model", default=DEFAULT_MODEL_NAME)
     parser.add_argument("--method", default="faiss", choices=["faiss", "cosine", "qdrant"])

@@ -5,85 +5,53 @@ sys.path.insert(0, 'src/preprint_bot')
 
 from api_client import APIClient
 
+# Remove the "uid" field - let the database generate IDs
 USERS_DATA = [
     {
-        "uid": "UID001",
         "email": "udayanfg@gmail.com",
         "name": "Alice Researcher",
         "profiles": [
             {
-                "pid": "PID001",
-                "name": "Deep Learning Theory",
+                "name": "1",  # This will be profile ID in directory structure
                 "keywords": ["deep learning", "neural networks", "theory", "optimization"],
-                "description": "Focus on theoretical foundations of deep learning",
-                "arxiv_queries": [
-                    "cat:cs.LG AND (ti:deep AND ti:learning AND ti:theory)",
-                    "cat:cs.LG AND (abs:neural AND abs:network AND abs:convergence)"
-                ]
+                "description": "Focus on theoretical foundations of deep learning"
             },
             {
-                "pid": "PID002",
-                "name": "Reinforcement Learning",
+                "name": "2",
                 "keywords": ["reinforcement learning", "policy gradient", "Q-learning", "exploration"],
-                "description": "Research in reinforcement learning algorithms",
-                "arxiv_queries": [
-                    "cat:cs.LG AND (ti:reinforcement AND ti:learning)",
-                    "cat:cs.LG AND (abs:policy AND abs:gradient)"
-                ]
+                "description": "Research in reinforcement learning algorithms"
             }
         ]
     },
     {
-        "uid": "UID002",
         "email": "ggwpfax@gmail.com",
         "name": "Bob Scientist",
         "profiles": [
             {
-                "pid": "PID003",
-                "name": "Computer Vision",
+                "name": "3",
                 "keywords": ["computer vision", "image recognition", "object detection", "segmentation"],
-                "description": "Computer vision and visual recognition systems",
-                "arxiv_queries": [
-                    "cat:cs.CV AND (ti:vision AND ti:transformer)",
-                    "cat:cs.CV AND (abs:object AND abs:detection)"
-                ]
+                "description": "Computer vision and visual recognition systems"
             },
             {
-                "pid": "PID004",
-                "name": "Natural Language Processing",
+                "name": "4",
                 "keywords": ["NLP", "language models", "transformers", "attention"],
-                "description": "Natural language understanding and generation",
-                "arxiv_queries": [
-                    "cat:cs.CL AND (ti:language AND ti:model)",
-                    "cat:cs.CL AND (abs:transformer AND abs:attention)"
-                ]
+                "description": "Natural language understanding and generation"
             }
         ]
     },
     {
-        "uid": "UID003",
         "email": "udayangaikwad9990@gmail.com",
         "name": "Carol PhD",
         "profiles": [
             {
-                "pid": "PID005",
-                "name": "Graph Neural Networks",
+                "name": "5",
                 "keywords": ["graph neural networks", "GNN", "graph learning", "message passing"],
-                "description": "Graph-structured data and neural networks",
-                "arxiv_queries": [
-                    "cat:cs.LG AND (ti:graph AND ti:neural)",
-                    "cat:cs.LG AND (abs:GNN AND abs:message AND abs:passing)"
-                ]
+                "description": "Graph-structured data and neural networks"
             },
             {
-                "pid": "PID006",
-                "name": "Optimization Methods",
+                "name": "6",
                 "keywords": ["optimization", "gradient descent", "Adam", "convergence"],
-                "description": "Optimization algorithms for machine learning",
-                "arxiv_queries": [
-                    "cat:cs.LG AND (ti:optimization)",
-                    "cat:cs.LG AND (abs:gradient AND abs:descent AND abs:convergence)"
-                ]
+                "description": "Optimization algorithms for machine learning"
             }
         ]
     }
@@ -95,20 +63,20 @@ async def populate_database():
     
     try:
         for user_data in USERS_DATA:
-            print(f"\nProcessing {user_data['uid']}: {user_data['name']}")
+            print(f"\nProcessing user: {user_data['name']}")
             
             user = await client.get_or_create_user(
                 email=user_data['email'],
                 name=user_data['name']
             )
-            print(f"  User ID: {user['id']}")
+            print(f"  User ID: {user['id']} ({user['email']})")
             
             for profile_data in user_data['profiles']:
-                print(f"  Creating profile: {profile_data['pid']} - {profile_data['name']}")
+                print(f"  Creating profile: {profile_data['name']}")
                 
                 profile = await client.create_profile(
                     user_id=user['id'],
-                    name=profile_data['pid'],
+                    name=profile_data['name'],  # Use simple numeric names like "1", "2", "3"
                     keywords=profile_data['keywords'],
                     email_notify=True,
                     frequency="weekly",
@@ -116,8 +84,16 @@ async def populate_database():
                     top_x=10
                 )
                 print(f"    Profile ID: {profile['id']}")
+                print(f"    Directory: pdf_data/user_pdfs/{user['id']}/{profile['id']}/")
         
-        print("\nAll users and profiles created")
+        print("\n" + "="*60)
+        print("All users and profiles created successfully!")
+        print("="*60)
+        print("\nDirectory structure for PDFs:")
+        print("pdf_data/user_pdfs/")
+        print("  ├── <user_id>/")
+        print("  │   └── <profile_id>/")
+        print("  │       └── your_papers.pdf")
         
     finally:
         await client.close()
