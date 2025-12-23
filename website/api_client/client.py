@@ -226,3 +226,56 @@ class WebAPIClient:
     async def get_paper_summaries(self, paper_id: int) -> List[Dict]:
         """Get all summaries for a paper"""
         return await self._request("GET", f"/summaries/paper/{paper_id}")
+
+
+    # ==================== UPLOAD ENDPOINTS ====================
+    
+    async def upload_paper(
+        self,
+        user_id: int,
+        profile_id: int,
+        file_path: str
+    ) -> Dict:
+        """Upload a single paper PDF"""
+        with open(file_path, 'rb') as f:
+            files = {'file': (Path(file_path).name, f, 'application/pdf')}
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                url = f"{self.base_url}/uploads/paper/{user_id}/{profile_id}"
+                response = await client.post(url, files=files)
+                response.raise_for_status()
+                return response.json()
+    
+    async def upload_paper_bytes(
+        self,
+        user_id: int,
+        profile_id: int,
+        filename: str,
+        file_bytes: bytes
+    ) -> Dict:
+        """Upload a paper from bytes"""
+        files = {'file': (filename, file_bytes, 'application/pdf')}
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            url = f"{self.base_url}/uploads/paper/{user_id}/{profile_id}"
+            response = await client.post(url, files=files)
+            response.raise_for_status()
+            return response.json()
+    
+    async def list_uploaded_papers(self, user_id: int, profile_id: int) -> Dict:
+        """List uploaded papers for a profile"""
+        return await self._request("GET", f"/uploads/papers/{user_id}/{profile_id}")
+    
+    async def delete_uploaded_paper(
+        self,
+        user_id: int,
+        profile_id: int,
+        filename: str
+    ) -> Dict:
+        """Delete an uploaded paper"""
+        return await self._request(
+            "DELETE",
+            f"/uploads/paper/{user_id}/{profile_id}/{filename}"
+        )
+    
+    async def trigger_processing(self, user_id: int, profile_id: int) -> Dict:
+        """Trigger processing of uploaded papers"""
+        return await self._request("POST", f"/uploads/process/{user_id}/{profile_id}")

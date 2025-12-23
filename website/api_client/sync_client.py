@@ -109,3 +109,21 @@ class SyncWebAPIClient:
     # Summaries
     def get_paper_summaries(self, paper_id: int) -> List[Dict]:
         return self._run_async(self._client.get_paper_summaries(paper_id))
+
+      # Uploads
+    def upload_paper_bytes(self, user_id: int, profile_id: int, 
+                          filename: str, file_bytes: bytes) -> Dict:
+        return self._run_async(
+            self._client.upload_paper_bytes(user_id, profile_id, filename, file_bytes)
+        )
+    
+    def list_uploaded_papers(self, user_id: int, profile_id: int) -> Dict:
+        return self._run_async(self._client.list_uploaded_papers(user_id, profile_id))
+    
+    def delete_uploaded_paper(self, user_id: int, profile_id: int, filename: str) -> Dict:
+        return self._run_async(
+            self._client.delete_uploaded_paper(user_id, profile_id, filename)
+        )
+    
+    def trigger_processing(self, user_id: int, profile_id: int) -> Dict:
+        return self._run_async(self._client.trigger_processing(user_id, profile_id))

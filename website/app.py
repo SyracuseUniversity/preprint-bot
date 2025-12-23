@@ -323,7 +323,7 @@ def dashboard_page(user: Dict):
         st.error(f"Error loading dashboard: {str(e)}")
 
 def profiles_page(user: Dict):
-    """Profiles management page"""
+    """Profiles management page with integrated paper upload"""
     st.markdown("### Profiles")
     
     api = get_api_client()
@@ -350,13 +350,132 @@ def profiles_page(user: Dict):
                             keywords_display += f" (+{len(profile['keywords']) - 3} more)"
                         col3.write(f"**Keywords:** {keywords_display}")
                         
+                        st.divider()
+                        
+                        # ============ PAPER UPLOAD SECTION ============
+                        st.markdown("#### 📄 Papers")
+                        
+                        # Show uploaded papers
+                        try:
+                            papers_data = api.list_uploaded_papers(user['user_id'], profile['id'])
+                            papers = papers_data.get('papers', [])
+                            
+                            if papers:
+                                st.write(f"**{len(papers)} paper(s) uploaded**")
+                                
+                                # Show papers in expandable section
+                                with st.expander("View Papers", expanded=False):
+                                    for paper in papers:
+                                        paper_col1, paper_col2, paper_col3 = st.columns([3, 1, 1])
+                                        
+                                        with paper_col1:
+                                            st.write(f"📄 {paper['filename']}")
+                                        with paper_col2:
+                                            st.caption(f"{paper['size_mb']} MB")
+                                        with paper_col3:
+                                            if st.button("🗑️", key=f"del_{profile['id']}_{paper['filename']}", 
+                                                        help="Delete this paper"):
+                                                try:
+                                                    api.delete_uploaded_paper(
+                                                        user['user_id'],
+                                                        profile['id'],
+                                                        paper['filename']
+                                                    )
+                                                    st.success(f"Deleted {paper['filename']}")
+                                                    st.rerun()
+                                                except Exception as e:
+                                                    st.error(f"Delete failed: {str(e)}")
+                            else:
+                                st.caption("No papers uploaded yet")
+                            
+                            # Upload new papers
+                            with st.expander("📤 Upload Papers", expanded=False):
+                                uploaded_files = st.file_uploader(
+                                    "Choose PDF files",
+                                    type=['pdf'],
+                                    accept_multiple_files=True,
+                                    key=f"upload_{profile['id']}",
+                                    help="Upload one or more PDF papers for this profile"
+                                )
+                                
+                                if uploaded_files:
+                                    if st.button("Upload Files", key=f"upload_btn_{profile['id']}", type="primary"):
+                                        progress_bar = st.progress(0)
+                                        status_text = st.empty()
+                                        
+                                        uploaded_count = 0
+                                        total_files = len(uploaded_files)
+                                        
+                                        for i, uploaded_file in enumerate(uploaded_files):
+                                            try:
+                                                status_text.text(f"Uploading {uploaded_file.name}...")
+                                                
+                                                # Read file bytes
+                                                file_bytes = uploaded_file.read()
+                                                
+                                                # Upload to backend
+                                                result = api.upload_paper_bytes(
+                                                    user['user_id'],
+                                                    profile['id'],
+                                                    uploaded_file.name,
+                                                    file_bytes
+                                                )
+                                                
+                                                uploaded_count += 1
+                                                progress_bar.progress((i + 1) / total_files)
+                                                
+                                            except Exception as e:
+                                                st.error(f"Failed to upload {uploaded_file.name}: {str(e)}")
+                                        
+                                        status_text.text("")
+                                        progress_bar.empty()
+                                        
+                                        if uploaded_count > 0:
+                                            st.success(f"Successfully uploaded {uploaded_count} file(s)!")
+                                            st.rerun()
+                            
+                            # Process papers button
+                            if papers:
+                                with st.expander("⚙️ Process Papers", expanded=False):
+                                    st.info(
+                                        "Processing will:\n"
+                                        "- Extract text from PDFs using GROBID\n"
+                                        "- Generate embeddings\n"
+                                        "- Store papers in database\n"
+                                        "- Enable recommendations"
+                                    )
+                                    
+                                    if st.button("Process All Papers", 
+                                               key=f"process_{profile['id']}", 
+                                               type="primary"):
+                                        try:
+                                            with st.spinner("Starting processing..."):
+                                                result = api.trigger_processing(
+                                                    user['user_id'], 
+                                                    profile['id']
+                                                )
+                                            
+                                            st.success(
+                                                "✅ Processing started! Papers are being processed in the background. "
+                                                "This may take a few minutes. Check the Dashboard for results."
+                                            )
+                                            
+                                        except Exception as e:
+                                            st.error(f"Failed to start processing: {str(e)}")
+                        
+                        except Exception as e:
+                            st.error(f"Error managing papers: {str(e)}")
+                        
+                        st.divider()
+                        
+                        # ============ DELETE PROFILE SECTION ============
                         # Delete button with confirmation
                         confirm_key = f"confirm_delete_{profile['id']}"
                         if st.session_state.get(confirm_key):
-                            st.warning("Are you sure? This cannot be undone.")
+                            st.warning("⚠️ Are you sure? This will delete the profile and all uploaded papers. This cannot be undone.")
                             col_yes, col_no = st.columns(2)
                             with col_yes:
-                                if st.button("Yes, delete", key=f"yes_{profile['id']}"):
+                                if st.button("Yes, delete", key=f"yes_{profile['id']}", type="primary"):
                                     try:
                                         api.delete_profile(profile['id'])
                                         st.session_state.pop(confirm_key)
@@ -369,7 +488,7 @@ def profiles_page(user: Dict):
                                     st.session_state.pop(confirm_key)
                                     st.rerun()
                         else:
-                            if st.button("Delete Profile", key=f"del_{profile['id']}"):
+                            if st.button("🗑️ Delete Profile", key=f"del_{profile['id']}"):
                                 st.session_state[confirm_key] = True
                                 st.rerun()
         
@@ -411,7 +530,7 @@ def profiles_page(user: Dict):
                         frequency=frequency,
                         threshold=threshold
                     )
-                    st.success("Profile created successfully!")
+                    st.success("Profile created successfully! Go to 'List' view to upload papers.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error creating profile: {str(e)}")
@@ -542,7 +661,7 @@ def main():
         if st.button("Logout", use_container_width=True):
             logout()
     
-    # Main navigation
+# Main navigation
     tabs = st.tabs(["Dashboard", "Profiles", "Recommendations", "Settings"])
     
     with tabs[0]:
