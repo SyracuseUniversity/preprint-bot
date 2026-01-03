@@ -28,10 +28,28 @@ from .query_arxiv import (
 from .summarization_script import TransformerSummarizer, LlamaSummarizer
 from .user_mode_processor import process_user_profiles, run_user_recommendations
 
+async def get_all_profile_categories(api_client: APIClient) -> List[str]:
+    """Get unique categories from all user profiles"""
+    try:
+        response = await api_client.client.get(f"{api_client.base_url}/profiles/")
+        response.raise_for_status()
+        profiles = response.json()
+        
+        all_categories = set()
+        for profile in profiles:
+            categories = profile.get('categories', [])
+            all_categories.update(categories)
+        
+        categories_list = list(all_categories)
+        print(f"Found {len(categories_list)} unique categories from user profiles: {categories_list}")
+        return categories_list
+    except Exception as e:
+        print(f"Error fetching profile categories: {e}")
+        return []
 
 async def fetch_and_store_arxiv(
     api_client: APIClient,
-    categories: Union[str, List[str]],
+    categories: Union[str, List[str]] = None,
     max_results_per_category: int = 20,
     skip_download: bool = False,
     skip_parse: bool = False,
@@ -42,7 +60,7 @@ async def fetch_and_store_arxiv(
     
     Args:
         api_client: API client instance
-        categories: Single category string, list of categories, or "all"
+        categories: Single category string, list of categories, "all", or None (auto-fetch from profiles)
         max_results_per_category: Max papers per category
         skip_download: Skip PDF download step
         skip_parse: Skip GROBID parsing step
@@ -51,7 +69,14 @@ async def fetch_and_store_arxiv(
     Returns:
         int: Corpus ID containing the fetched papers
     """
-    
+    # If category is not explicitly provided, get from profiles
+    if categories is None or categories == "auto":
+        categories = await get_all_profile_categories(api_client)
+        if not categories:
+            print("No categories found in profiles. Please add categories to user profiles first.")
+            return None
+        print(f"Auto-detected categories from profiles: {categories}")
+
     user = await api_client.get_or_create_user(SYSTEM_USER_EMAIL, SYSTEM_USER_NAME)
     print(f"Using system user: {user['email']}")
     
@@ -84,14 +109,14 @@ async def fetch_and_store_arxiv(
             )
     
     else:
-        # Single category
+        # Single category string
         print(f"\nFetching from {categories}...")
         entries = get_arxiv_entries(
             category=categories, 
             max_results=max_results_per_category
         )
     
-    print(f"Fetched {len(entries)} papers")
+    print(f"Fetched {len(entries)} papers from categories: {categories if isinstance(categories, list) else [categories]}")
     
     # Convert to papers data
     papers_data = []
@@ -256,12 +281,17 @@ async def run_corpus_mode(args):
     api_client = APIClient()
     
     try:
-        # Handle single string or list
-        categories = args.category if isinstance(args.category, list) else [args.category]
-        
-        # Special case: if list has one element "all", use "all"
-        if len(categories) == 1 and categories[0] == "all":
-            categories = "all"
+        # Determine categories to fetch
+        if hasattr(args, 'category') and args.category:
+            # Handle single string or list
+            categories = args.category if isinstance(args.category, list) else [args.category]
+            
+            # Special case: if list has one element "all", use "all"
+            if len(categories) == 1 and categories[0] == "all":
+                categories = "all"
+        else:
+            # No category specified - auto-fetch from profiles
+            categories = None
         
         corpus_id = await fetch_and_store_arxiv(
             api_client,
@@ -271,6 +301,10 @@ async def run_corpus_mode(args):
             skip_parse=args.skip_parse,
             combined_query=args.combined_query
         )
+        
+        if not corpus_id:
+            print("Failed to fetch papers. Exiting.")
+            return
         
         if not args.skip_embed:
             await embed_and_store_papers(
@@ -296,7 +330,6 @@ async def run_corpus_mode(args):
         
     finally:
         await api_client.close()
-
 
 async def run_user_mode(args):
     """User mode: process user papers from UID/PID structure and run recommendations"""
@@ -380,12 +413,12 @@ def main():
     parser = argparse.ArgumentParser(description="Database-integrated Preprint Bot")
     parser.add_argument("--mode", choices=["corpus", "user"], required=True)
     
-    # Now accepts multiple categories
+    # Now accepts multiple categories, or none (will auto-fetch from profiles)
     parser.add_argument(
         "--category", 
-        nargs='+',
-        default=["cs.LG"],
-        help="arXiv category or categories (e.g., cs.LG cs.CV cs.CL)"
+        nargs='*',  # CHANGED from '+' to '*' to allow zero categories
+        default=None,  # CHANGED from ["cs.LG"] to None
+        help="arXiv category or categories (e.g., cs.LG cs.CV cs.CL). If not specified, will fetch from user profiles."
     )
     parser.add_argument(
         "--max-per-category",
@@ -413,6 +446,10 @@ def main():
     parser.add_argument("--use-sections", action="store_true")
     
     args = parser.parse_args()
+    
+    # Handle empty list case
+    if args.category is not None and len(args.category) == 0:
+        args.category = None
     
     if args.mode == "corpus":
         asyncio.run(run_corpus_mode(args))

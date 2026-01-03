@@ -1,281 +1,318 @@
 import httpx
-from typing import Optional, List, Dict, Any
-import os
-from dotenv import load_dotenv
-import asyncio
-
-load_dotenv()
+from typing import Optional, List, Dict
 
 class WebAPIClient:
-    """Client for communicating with the FastAPI backend"""
+    """Async API client for Preprint Bot backend"""
     
     def __init__(self, base_url: str = None):
-        self.base_url = base_url or os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
-        self.timeout = 30.0
+        self.base_url = base_url or "http://127.0.0.1:8000"
+        self.client = httpx.AsyncClient(timeout=60.0)
+        self.token = None
     
-    async def _request(self, method: str, endpoint: str, **kwargs):
-        """Make HTTP request to backend API"""
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            url = f"{self.base_url}{endpoint}"
-            response = await client.request(method, url, **kwargs)
-            response.raise_for_status()
-            return response.json()
+    async def close(self):
+        """Close the HTTP client"""
+        await self.client.aclose()
     
-    # ==================== AUTH ENDPOINTS ====================
+    def _get_headers(self) -> Dict[str, str]:
+        """Get headers with authentication token if available"""
+        headers = {"Content-Type": "application/json"}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        return headers
     
+    # Auth methods
     async def login(self, email: str, password: str) -> Dict:
-        """Login user and return user info"""
-        return await self._request("POST", "/auth/login", json={
-            "email": email,
-            "password": password
-        })
+        response = await self.client.post(
+            f"{self.base_url}/auth/login",
+            json={"email": email, "password": password}
+        )
+        response.raise_for_status()
+        data = response.json()
+        self.token = data.get('access_token')
+        return data
     
-    async def register(self, email: str, password: str, name: str = None) -> Dict:
-        """Register a new user"""
-        return await self._request("POST", "/auth/register", json={
-            "email": email,
-            "password": password,
-            "name": name
-        })
+    async def register(self, email: str, password: str, name: Optional[str] = None) -> Dict:
+        response = await self.client.post(
+            f"{self.base_url}/auth/register",
+            json={"email": email, "password": password, "name": name}
+        )
+        response.raise_for_status()
+        data = response.json()
+        self.token = data.get('access_token')
+        return data
     
     async def request_password_reset(self, email: str) -> Dict:
-        """Request a password reset token"""
-        return await self._request("POST", "/auth/request-reset", json={
-            "email": email
-        })
+        response = await self.client.post(
+            f"{self.base_url}/auth/request-reset",
+            json={"email": email}
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def reset_password(self, token: str, new_password: str) -> Dict:
-        """Reset password using token"""
-        return await self._request("POST", "/auth/reset-password", json={
-            "token": token,
-            "new_password": new_password
-        })
+        response = await self.client.post(
+            f"{self.base_url}/auth/reset-password",
+            json={"token": token, "new_password": new_password}
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def verify_session(self, user_id: int) -> Dict:
-        """Verify user session"""
-        return await self._request("GET", f"/auth/verify/{user_id}")
+        response = await self.client.get(
+            f"{self.base_url}/auth/verify/{user_id}",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
-    # ==================== USER ENDPOINTS ====================
-    
+    # User methods
     async def get_user(self, user_id: int) -> Dict:
-        """Get user by ID"""
-        return await self._request("GET", f"/users/{user_id}")
+        response = await self.client.get(
+            f"{self.base_url}/users/{user_id}",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def update_user(self, user_id: int, email: str = None, name: str = None) -> Dict:
-        """Update user information"""
         data = {}
         if email:
             data['email'] = email
         if name:
             data['name'] = name
-        return await self._request("PATCH", f"/users/{user_id}", json=data)
+        
+        response = await self.client.patch(
+            f"{self.base_url}/users/{user_id}",
+            json=data,
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def list_users(self) -> List[Dict]:
-        """List all users"""
-        return await self._request("GET", "/users/")
+        response = await self.client.get(
+            f"{self.base_url}/users/",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
-    # ==================== PROFILE ENDPOINTS ====================
-    
-    async def create_profile(
-        self, 
-        user_id: int, 
-        name: str, 
-        keywords: List[str],
-        frequency: str = "weekly", 
-        threshold: str = "medium",
-        top_x: int = 10
-    ) -> Dict:
-        """Create a new profile"""
-        return await self._request("POST", "/profiles/", json={
-            "user_id": user_id,
-            "name": name,
-            "keywords": keywords,
-            "email_notify": True,
-            "frequency": frequency,
-            "threshold": threshold,
-            "top_x": top_x
-        })
+    # Profile methods
+    async def create_profile(self, user_id: int, name: str, keywords: List[str],
+                           categories: List[str] = None,
+                           frequency: str = "weekly", threshold: str = "medium",
+                           top_x: int = 10) -> Dict:
+        response = await self.client.post(
+            f"{self.base_url}/profiles/",
+            json={
+                "user_id": user_id,
+                "name": name,
+                "keywords": keywords,
+                "categories": categories or [],
+                "email_notify": True,
+                "frequency": frequency,
+                "threshold": threshold,
+                "top_x": top_x
+            },
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def get_profile(self, profile_id: int) -> Dict:
-        """Get profile by ID"""
-        return await self._request("GET", f"/profiles/{profile_id}")
+        response = await self.client.get(
+            f"{self.base_url}/profiles/{profile_id}",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def list_profiles(self) -> List[Dict]:
-        """List all profiles"""
-        return await self._request("GET", "/profiles/")
+        response = await self.client.get(
+            f"{self.base_url}/profiles/",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def get_user_profiles(self, user_id: int) -> List[Dict]:
-        """Get all profiles for a user"""
-        all_profiles = await self.list_profiles()
-        return [p for p in all_profiles if p['user_id'] == user_id]
+        profiles = await self.list_profiles()
+        return [p for p in profiles if p['user_id'] == user_id]
     
-    async def update_profile(
-        self,
-        profile_id: int,
-        name: str = None,
-        keywords: List[str] = None,
-        frequency: str = None,
-        threshold: str = None,
-        top_x: int = None
-    ) -> Dict:
-        """Update a profile"""
-        data = {}
-        if name is not None:
-            data['name'] = name
-        if keywords is not None:
-            data['keywords'] = keywords
-        if frequency is not None:
-            data['frequency'] = frequency
-        if threshold is not None:
-            data['threshold'] = threshold
-        if top_x is not None:
-            data['top_x'] = top_x
-        
-        return await self._request("PUT", f"/profiles/{profile_id}", json=data)
+    async def update_profile(self, profile_id: int, **kwargs) -> Dict:
+        response = await self.client.put(
+            f"{self.base_url}/profiles/{profile_id}",
+            json=kwargs,
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def delete_profile(self, profile_id: int):
-        """Delete a profile"""
-        return await self._request("DELETE", f"/profiles/{profile_id}")
+        response = await self.client.delete(
+            f"{self.base_url}/profiles/{profile_id}",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
     
-    # ==================== CORPUS ENDPOINTS ====================
-    
+    # Corpus methods
     async def create_corpus(self, user_id: int, name: str, description: str = None) -> Dict:
-        """Create a new corpus"""
-        return await self._request("POST", "/corpora/", json={
-            "user_id": user_id,
-            "name": name,
-            "description": description
-        })
+        response = await self.client.post(
+            f"{self.base_url}/corpora/",
+            json={"user_id": user_id, "name": name, "description": description},
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def get_corpus(self, corpus_id: int) -> Dict:
-        """Get corpus by ID"""
-        return await self._request("GET", f"/corpora/{corpus_id}")
+        response = await self.client.get(
+            f"{self.base_url}/corpora/{corpus_id}",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def list_corpora(self) -> List[Dict]:
-        """List all corpora"""
-        return await self._request("GET", "/corpora/")
+        response = await self.client.get(
+            f"{self.base_url}/corpora/",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def get_user_corpora(self, user_id: int) -> List[Dict]:
-        """Get all corpora for a user"""
-        all_corpora = await self.list_corpora()
-        return [c for c in all_corpora if c['user_id'] == user_id]
+        corpora = await self.list_corpora()
+        return [c for c in corpora if c['user_id'] == user_id]
     
-    # ==================== PAPER ENDPOINTS ====================
-    
+    # Paper methods
     async def get_paper(self, paper_id: int) -> Dict:
-        """Get paper by ID"""
-        return await self._request("GET", f"/papers/{paper_id}")
+        response = await self.client.get(
+            f"{self.base_url}/papers/{paper_id}",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def list_papers(self, corpus_id: int = None) -> List[Dict]:
-        """List papers, optionally filtered by corpus"""
-        params = {}
-        if corpus_id:
-            params['corpus_id'] = corpus_id
-        return await self._request("GET", "/papers/", params=params)
+        params = {"corpus_id": corpus_id} if corpus_id else {}
+        response = await self.client.get(
+            f"{self.base_url}/papers/",
+            params=params,
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def get_corpus_papers(self, corpus_id: int) -> List[Dict]:
-        """Get all papers in a corpus"""
-        return await self.list_papers(corpus_id=corpus_id)
+        return await self.list_papers(corpus_id)
     
-    # ==================== RECOMMENDATION ENDPOINTS ====================
-    
+    # Recommendation methods
     async def get_recommendation_run(self, run_id: int) -> Dict:
-        """Get recommendation run details"""
-        return await self._request("GET", f"/recommendation-runs/{run_id}")
+        response = await self.client.get(
+            f"{self.base_url}/recommendation-runs/{run_id}",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def list_recommendation_runs(self) -> List[Dict]:
-        """List all recommendation runs"""
-        return await self._request("GET", "/recommendation-runs/")
+        response = await self.client.get(
+            f"{self.base_url}/recommendation-runs/",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def get_user_recommendation_runs(self, user_id: int) -> List[Dict]:
-        """Get all recommendation runs for a user"""
-        all_runs = await self.list_recommendation_runs()
-        return [r for r in all_runs if r['user_id'] == user_id]
+        runs = await self.list_recommendation_runs()
+        return [r for r in runs if r['user_id'] == user_id]
     
     async def get_recommendations_with_papers(self, run_id: int, limit: int = 50) -> List[Dict]:
-        """Get recommendations with full paper details"""
-        return await self._request(
-            "GET", 
-            f"/recommendations/run/{run_id}/with-papers",
-            params={"limit": limit}
+        response = await self.client.get(
+            f"{self.base_url}/recommendations/run/{run_id}/with-papers",
+            params={"limit": limit},
+            headers=self._get_headers()
         )
+        response.raise_for_status()
+        return response.json()
     
     async def get_user_recommendations(self, user_id: int, limit: int = 100) -> List[Dict]:
-        """Get all recommendations for a user across all runs"""
         runs = await self.get_user_recommendation_runs(user_id)
+        if not runs:
+            return []
         
-        all_recs = []
-        for run in runs[:10]:  # Get latest 10 runs
+        all_recommendations = []
+        for run in runs[:5]:  # Get recommendations from last 5 runs
             try:
-                recs = await self.get_recommendations_with_papers(run['id'], limit=limit)
-                # Add run info to each recommendation
-                for rec in recs:
-                    rec['run_id'] = run['id']
-                    rec['run_created_at'] = run['created_at']
-                all_recs.extend(recs)
-            except Exception as e:
-                print(f"Error fetching recommendations for run {run['id']}: {e}")
+                recs = await self.get_recommendations_with_papers(run['id'], limit)
+                all_recommendations.extend(recs)
+            except:
                 continue
         
-        # Sort by score descending
-        all_recs.sort(key=lambda x: x.get('score', 0), reverse=True)
-        return all_recs[:limit]
+        # Sort by score and return top N
+        all_recommendations.sort(key=lambda x: x.get('score', 0), reverse=True)
+        return all_recommendations[:limit]
     
-    # ==================== SUMMARY ENDPOINTS ====================
+    async def get_profile_recommendations(self, profile_id: int, limit: int = 100) -> List[Dict]:
+        """Get recommendations for a specific profile"""
+        response = await self.client.get(
+            f"{self.base_url}/recommendations/profile/{profile_id}",
+            params={"limit": limit},
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
+    # Summary methods
     async def get_paper_summaries(self, paper_id: int) -> List[Dict]:
-        """Get all summaries for a paper"""
-        return await self._request("GET", f"/summaries/paper/{paper_id}")
-
-
-    # ==================== UPLOAD ENDPOINTS ====================
+        response = await self.client.get(
+            f"{self.base_url}/summaries/paper/{paper_id}",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
-    async def upload_paper(
-        self,
-        user_id: int,
-        profile_id: int,
-        file_path: str
-    ) -> Dict:
-        """Upload a single paper PDF"""
-        with open(file_path, 'rb') as f:
-            files = {'file': (Path(file_path).name, f, 'application/pdf')}
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                url = f"{self.base_url}/uploads/paper/{user_id}/{profile_id}"
-                response = await client.post(url, files=files)
-                response.raise_for_status()
-                return response.json()
-    
-    async def upload_paper_bytes(
-        self,
-        user_id: int,
-        profile_id: int,
-        filename: str,
-        file_bytes: bytes
-    ) -> Dict:
-        """Upload a paper from bytes"""
-        files = {'file': (filename, file_bytes, 'application/pdf')}
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            url = f"{self.base_url}/uploads/paper/{user_id}/{profile_id}"
-            response = await client.post(url, files=files)
-            response.raise_for_status()
-            return response.json()
+    # Upload methods
+    async def upload_paper_bytes(self, user_id: int, profile_id: int,
+                                filename: str, file_bytes: bytes) -> Dict:
+        files = {"file": (filename, file_bytes, "application/pdf")}
+        response = await self.client.post(
+            f"{self.base_url}/uploads/paper/{user_id}/{profile_id}",
+            files=files,
+            headers={"Authorization": f"Bearer {self.token}"} if self.token else {}
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def list_uploaded_papers(self, user_id: int, profile_id: int) -> Dict:
-        """List uploaded papers for a profile"""
-        return await self._request("GET", f"/uploads/papers/{user_id}/{profile_id}")
-    
-    async def delete_uploaded_paper(
-        self,
-        user_id: int,
-        profile_id: int,
-        filename: str
-    ) -> Dict:
-        """Delete an uploaded paper"""
-        return await self._request(
-            "DELETE",
-            f"/uploads/paper/{user_id}/{profile_id}/{filename}"
+        response = await self.client.get(
+            f"{self.base_url}/uploads/papers/{user_id}/{profile_id}",
+            headers=self._get_headers()
         )
+        response.raise_for_status()
+        return response.json()
+    
+    async def delete_uploaded_paper(self, user_id: int, profile_id: int, filename: str) -> Dict:
+        response = await self.client.delete(
+            f"{self.base_url}/uploads/paper/{user_id}/{profile_id}/{filename}",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
     
     async def trigger_processing(self, user_id: int, profile_id: int) -> Dict:
-        """Trigger processing of uploaded papers"""
-        return await self._request("POST", f"/uploads/process/{user_id}/{profile_id}")
+        response = await self.client.post(
+            f"{self.base_url}/uploads/process/{user_id}/{profile_id}",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
+    
+    async def get_processing_progress(self, user_id: int, profile_id: int) -> Dict:
+        response = await self.client.get(
+            f"{self.base_url}/uploads/progress/{user_id}/{profile_id}",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()

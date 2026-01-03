@@ -139,3 +139,25 @@ async def delete_recommendation(rec_id: int):
         result = await conn.execute("DELETE FROM recommendations WHERE id = $1", rec_id)
         if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Recommendation not found")
+
+
+@recommendations_router.get("/profile/{profile_id}")
+async def get_recommendations_by_profile(profile_id: int, limit: int = Query(100)):
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT 
+                r.id, r.run_id, r.paper_id, r.score, r.rank, r.created_at,
+                p.arxiv_id, p.title, p.abstract, p.metadata
+            FROM recommendations r
+            JOIN recommendation_runs rr ON r.run_id = rr.id
+            JOIN papers p ON r.paper_id = p.id
+            WHERE rr.profile_id = $1
+            ORDER BY r.created_at DESC, r.rank
+            LIMIT $2
+            """,
+            profile_id, limit
+        )
+        
+        return [dict(row) for row in rows]

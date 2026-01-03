@@ -45,7 +45,7 @@ def build_email_html(papers):
     </head>
     <body>
     <div class="container">
-        <h1>📚 Recommended Papers for You</h1>
+        <h1> Recommended Papers for You</h1>
     """
 
     for paper in papers:

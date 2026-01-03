@@ -41,14 +41,16 @@ class APIClient:
     
     
     async def create_profile(self, user_id: int, name: str, keywords: List[str],
-                           email_notify: bool = True, frequency: str = "weekly",
-                           threshold: str = "medium", top_x: int = 10) -> Dict:
+                        categories: List[str] = None,  # ADD THIS PARAMETER
+                        email_notify: bool = True, frequency: str = "weekly",
+                        threshold: str = "medium", top_x: int = 10) -> Dict:
         response = await self.client.post(
             f"{self.base_url}/profiles/",
             json={
                 "user_id": user_id,
                 "name": name,
                 "keywords": keywords,
+                "categories": categories or [],  # ADD THIS LINE
                 "email_notify": email_notify,
                 "frequency": frequency,
                 "threshold": threshold,
@@ -68,11 +70,12 @@ class APIClient:
         profiles = response.json()
         return [p for p in profiles if p["user_id"] == user_id]
     
-    async def get_or_create_profile(self, user_id: int, name: str, keywords: List[str]) -> Dict:
+    async def get_or_create_profile(self, user_id: int, name: str, keywords: List[str], 
+                                categories: List[str] = None) -> Dict:  # ADD PARAMETER
         profile = await self.get_profile_by_name(user_id, name)
         if profile:
             return profile
-        return await self.create_profile(user_id, name, keywords)
+        return await self.create_profile(user_id, name, keywords, categories)  # ADD ARGUMENT
     
     
     async def create_corpus(self, user_id: int, name: str, description: str = None) -> Dict:
@@ -277,4 +280,4 @@ class APIClient:
             params={"limit": limit}
         )
         response.raise_for_status()
-        return response.json()
+        return response.json() 

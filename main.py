@@ -72,9 +72,9 @@ if HAS_OPTIONAL_ROUTES:
         app.include_router(summaries.router)
         app.include_router(profile_recommendations.router)
         app.include_router(email_logs.router)
-        print("✓ All route modules loaded")
+        print(" All route modules loaded")
     except Exception as e:
-        print(f"⚠ Warning loading optional routes: {e}")
+        print(f" Warning loading optional routes: {e}")
 
 
 @app.get("/")

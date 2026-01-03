@@ -4,9 +4,19 @@ from api_client.sync_client import SyncWebAPIClient
 from st_ant_tree import st_ant_tree
 import sys
 from pathlib import Path
-
+import time 
 # Add website directory to path
 sys.path.insert(0, str(Path(__file__).parent))
+
+def auto_refresh_during_processing(api, user_id, profile_id, interval=3):
+    """Auto-refresh page during processing"""
+    try:
+        progress = api.get_processing_progress(user_id, profile_id)
+        if progress and progress.get('status') == 'running':
+            time.sleep(interval)
+            st.rerun()
+    except:
+        pass
 
 # ==================== ARXIV CATEGORY TREE ====================
 
@@ -324,6 +334,25 @@ def dashboard_page(user: Dict):
 
 def profiles_page(user: Dict):
     """Profiles management page with integrated paper upload"""
+    api = get_api_client()
+    
+    # Check for any running processing tasks and auto-refresh
+    try:
+        profiles = api.get_user_profiles(user['user_id'])
+        for profile in profiles:
+            try:
+                progress = api.get_processing_progress(user['user_id'], profile['id'])
+                if progress and progress.get('status') == 'running':
+                    # Show a banner at the top
+                    st.info(f"Processing papers for profile '{profile['name']}'... Auto-refreshing every 3 seconds.")
+                    import time
+                    time.sleep(3)
+                    st.rerun()
+            except:
+                pass
+    except:
+        pass
+        
     st.markdown("### Profiles")
     
     api = get_api_client()
@@ -353,7 +382,7 @@ def profiles_page(user: Dict):
                         st.divider()
                         
                         # ============ PAPER UPLOAD SECTION ============
-                        st.markdown("#### 📄 Papers")
+                        st.markdown("####  Papers")
                         
                         # Show uploaded papers
                         try:
@@ -369,7 +398,7 @@ def profiles_page(user: Dict):
                                         paper_col1, paper_col2, paper_col3 = st.columns([3, 1, 1])
                                         
                                         with paper_col1:
-                                            st.write(f"📄 {paper['filename']}")
+                                            st.write(f" {paper['filename']}")
                                         with paper_col2:
                                             st.caption(f"{paper['size_mb']} MB")
                                         with paper_col3:
@@ -389,7 +418,7 @@ def profiles_page(user: Dict):
                                 st.caption("No papers uploaded yet")
                             
                             # Upload new papers
-                            with st.expander("📤 Upload Papers", expanded=False):
+                            with st.expander(" Upload Papers", expanded=False):
                                 uploaded_files = st.file_uploader(
                                     "Choose PDF files",
                                     type=['pdf'],
@@ -433,35 +462,6 @@ def profiles_page(user: Dict):
                                         if uploaded_count > 0:
                                             st.success(f"Successfully uploaded {uploaded_count} file(s)!")
                                             st.rerun()
-                            
-                            # Process papers button
-                            if papers:
-                                with st.expander("⚙️ Process Papers", expanded=False):
-                                    st.info(
-                                        "Processing will:\n"
-                                        "- Extract text from PDFs using GROBID\n"
-                                        "- Generate embeddings\n"
-                                        "- Store papers in database\n"
-                                        "- Enable recommendations"
-                                    )
-                                    
-                                    if st.button("Process All Papers", 
-                                               key=f"process_{profile['id']}", 
-                                               type="primary"):
-                                        try:
-                                            with st.spinner("Starting processing..."):
-                                                result = api.trigger_processing(
-                                                    user['user_id'], 
-                                                    profile['id']
-                                                )
-                                            
-                                            st.success(
-                                                "✅ Processing started! Papers are being processed in the background. "
-                                                "This may take a few minutes. Check the Dashboard for results."
-                                            )
-                                            
-                                        except Exception as e:
-                                            st.error(f"Failed to start processing: {str(e)}")
                         
                         except Exception as e:
                             st.error(f"Error managing papers: {str(e)}")
@@ -472,7 +472,7 @@ def profiles_page(user: Dict):
                         # Delete button with confirmation
                         confirm_key = f"confirm_delete_{profile['id']}"
                         if st.session_state.get(confirm_key):
-                            st.warning("⚠️ Are you sure? This will delete the profile and all uploaded papers. This cannot be undone.")
+                            st.warning(" Are you sure? This will delete the profile and all uploaded papers. This cannot be undone.")
                             col_yes, col_no = st.columns(2)
                             with col_yes:
                                 if st.button("Yes, delete", key=f"yes_{profile['id']}", type="primary"):
@@ -488,7 +488,7 @@ def profiles_page(user: Dict):
                                     st.session_state.pop(confirm_key)
                                     st.rerun()
                         else:
-                            if st.button("🗑️ Delete Profile", key=f"del_{profile['id']}"):
+                            if st.button(" Delete Profile", key=f"del_{profile['id']}"):
                                 st.session_state[confirm_key] = True
                                 st.rerun()
         
@@ -523,78 +523,159 @@ def profiles_page(user: Dict):
             else:
                 try:
                     kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
-                    api.create_profile(
+                    
+                    # Extract selected categories from tree - handle different formats
+                    categories_list = []
+                    if selected_cats:
+                        # Try different possible keys the tree component might use
+                        if isinstance(selected_cats, list):
+                            categories_list = selected_cats
+                        elif isinstance(selected_cats, dict):
+                            # Try common keys
+                            for key in ['checked', 'selected', 'value', 'checkedKeys']:
+                                if key in selected_cats:
+                                    val = selected_cats[key]
+                                    if isinstance(val, list):
+                                        categories_list = val
+                                    break
+                    
+                    # Filter out parent nodes (like "cs", "math", "stat") - keep only leaf nodes
+                    if categories_list:
+                        categories_list = [cat for cat in categories_list if '.' in cat]
+                    
+                    # DEBUG
+                    st.write("DEBUG - selected_cats:", selected_cats)
+                    st.write("DEBUG - categories_list:", categories_list)
+                    st.write("DEBUG - keywords:", kw_list)
+                    
+                    result = api.create_profile(
                         user_id=user['user_id'],
                         name=name,
                         keywords=kw_list,
+                        categories=categories_list,
                         frequency=frequency,
                         threshold=threshold
                     )
+                    
+                    st.write("DEBUG - API response:", result)
                     st.success("Profile created successfully! Go to 'List' view to upload papers.")
-                    st.rerun()
+                    # Don't rerun yet so we can see the debug info
+                    # st.rerun()
                 except Exception as e:
                     st.error(f"Error creating profile: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
+
 
 def recommendations_page(user: Dict):
-    """Recommendations page"""
+    """Recommendations page with profile filtering and date grouping"""
     st.markdown("### Recommendations")
     
     api = get_api_client()
     
     try:
-        recommendations = api.get_user_recommendations(user['user_id'], limit=100)
+        profiles = api.get_user_profiles(user['user_id'])
+        
+        if not profiles:
+            st.info("No profiles found. Create a profile first.")
+            return
+        
+        # Profile dropdown
+        profile_options = {"all": "All Profiles"}
+        for p in profiles:
+            profile_options[str(p['id'])] = p['name']
+        
+        selected = st.selectbox(
+            "Select Profile",
+            options=list(profile_options.keys()),
+            format_func=lambda x: profile_options[x]
+        )
+        
+        # Fetch recommendations
+        if selected == "all":
+            recommendations = api.get_user_recommendations(user['user_id'], limit=100)
+        else:
+            recommendations = api.get_profile_recommendations(int(selected), limit=100)
         
         if not recommendations:
-            st.info("No recommendations yet. Run the recommendation pipeline to generate recommendations.")
-            st.markdown("**To generate recommendations:**")
-            st.code("python -m preprint_bot.pipeline --mode user --uid <your_user_id>")
-        else:
-            # Filters
-            with st.expander("Filters", expanded=False):
-                min_score = st.slider("Minimum Score", 0.0, 1.0, 0.5, 0.01)
-                
-                # Category filter
-                all_categories = set()
-                for rec in recommendations:
-                    if rec.get('categories'):
-                        if isinstance(rec['categories'], list):
-                            all_categories.update(rec['categories'])
-                
-                selected_category = st.selectbox(
-                    "Category",
-                    ["All"] + sorted(list(all_categories))
-                )
+            st.info("No recommendations yet.")
+            return
+        
+        # Filters
+        with st.expander("Filters", expanded=False):
+            min_score = st.slider("Minimum Score", 0.0, 1.0, 0.5, 0.01)
+        
+        filtered = [r for r in recommendations if r['score'] >= min_score]
+        st.write(f"Showing {len(filtered)} recommendations")
+        
+        # Group by date
+        from datetime import datetime
+        from collections import defaultdict
+        
+        grouped = defaultdict(list)
+        
+        for rec in filtered:
+            created_at = rec.get('created_at')
+            if created_at:
+                try:
+                    # Parse datetime
+                    if isinstance(created_at, str):
+                        dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    else:
+                        dt = created_at
+                    
+                    # Simple date format: "31 December"
+                    date_str = dt.strftime("%d %B")
+                    
+                except Exception as e:
+                    date_str = "Unknown Date"
+            else:
+                date_str = "Unknown Date"
             
-            # Apply filters
-            filtered = [r for r in recommendations if r['score'] >= min_score]
+            grouped[date_str].append(rec)
+        
+        # Sort dates (newest first) - simpler sorting
+        try:
+            sorted_dates = sorted(
+                grouped.keys(),
+                key=lambda x: datetime.strptime(x, "%d %B") if x != "Unknown Date" else datetime.min,
+                reverse=True
+            )
+        except:
+            # If sorting fails, just use the keys as-is
+            sorted_dates = list(grouped.keys())
+        
+        # Display by date
+        for date in sorted_dates:
+            recs = sorted(grouped[date], key=lambda x: x['score'], reverse=True)
             
-            if selected_category != "All":
-                filtered = [
-                    r for r in filtered 
-                    if selected_category in (r.get('categories') or [])
-                ]
+            st.markdown(f"### {date}")
+            st.caption(f"{len(recs)} paper(s)")
             
-            st.write(f"Showing {len(filtered)} of {len(recommendations)} recommendations")
-            
-            # Sort by score
-            filtered.sort(key=lambda x: x['score'], reverse=True)
-            
-            for rec in filtered:
+            for rec in recs:
                 with st.container(border=True):
-                    st.markdown(f"#### {rec['title']}")
-                    st.caption(f"Score: {rec['score']:.3f} | arXiv: {rec.get('arxiv_id', 'N/A')}")
+                    col1, col2 = st.columns([5, 1])
+                    with col1:
+                        st.markdown(f"**{rec['title']}**")
+                    with col2:
+                        st.markdown(f"**{rec['score']:.3f}**")
+                    
+                    st.caption(f"arXiv: {rec.get('arxiv_id', 'N/A')}")
                     
                     if rec.get('abstract'):
-                        abstract_text = rec['abstract'][:400]
-                        st.write(abstract_text + ("..." if len(rec['abstract']) > 400 else ""))
+                        st.write(rec['abstract'][:300] + "...")
                     
                     if rec.get('arxiv_id'):
-                        url = f"https://arxiv.org/abs/{rec['arxiv_id']}"
-                        st.link_button("View on arXiv", url)
+                        st.link_button("View on arXiv", f"https://arxiv.org/abs/{rec['arxiv_id']}")
+            
+            st.divider()
     
     except Exception as e:
-        st.error(f"Error loading recommendations: {str(e)}")
-
+        st.error(f"Error: {str(e)}")
+        import traceback
+        with st.expander("Debug Info"):
+            st.code(traceback.format_exc())
+            
 def settings_page(user: Dict):
     """Settings page"""
     st.markdown("### Settings")
@@ -633,11 +714,11 @@ def settings_page(user: Dict):
 def main():
     st.set_page_config(
         page_title="Preprint Bot",
-        page_icon="📄",
+        page_icon="",
         layout="wide"
     )
     
-    st.title("📄 Preprint Bot")
+    st.title(" Preprint Bot")
     
     # Check authentication
     user = get_current_user()

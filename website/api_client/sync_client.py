@@ -7,6 +7,7 @@ class SyncWebAPIClient:
     
     def __init__(self, base_url: str = None):
         self._client = WebAPIClient(base_url)
+        self.base_url = self._client.base_url
     
     def _run_async(self, coro):
         """Run async coroutine synchronously"""
@@ -45,12 +46,20 @@ class SyncWebAPIClient:
         return self._run_async(self._client.list_users())
     
     # Profiles
-    def create_profile(self, user_id: int, name: str, keywords: List[str], 
-                      frequency: str = "weekly", threshold: str = "medium", 
-                      top_x: int = 10) -> Dict:
-        return self._run_async(self._client.create_profile(
-            user_id, name, keywords, frequency, threshold, top_x
-        ))
+    def create_profile(self, user_id: int, name: str, keywords: list, 
+                       categories: list = None, frequency: str = "weekly",
+                       threshold: str = "medium"):
+        """Create a new profile"""
+        return self._run_async(
+            self._client.create_profile(
+                user_id=user_id,
+                name=name,
+                keywords=keywords,
+                categories=categories or [],
+                frequency=frequency,
+                threshold=threshold
+            )
+        )
     
     def get_profile(self, profile_id: int) -> Dict:
         return self._run_async(self._client.get_profile(profile_id))
@@ -105,25 +114,41 @@ class SyncWebAPIClient:
     
     def get_user_recommendations(self, user_id: int, limit: int = 100) -> List[Dict]:
         return self._run_async(self._client.get_user_recommendations(user_id, limit))
+
+    def get_profile_recommendations(self, profile_id: int, limit: int = 100) -> List[Dict]:
+        return self._run_async(self._client.get_profile_recommendations(profile_id, limit))
     
     # Summaries
     def get_paper_summaries(self, paper_id: int) -> List[Dict]:
         return self._run_async(self._client.get_paper_summaries(paper_id))
 
-      # Uploads
-    def upload_paper_bytes(self, user_id: int, profile_id: int, 
-                          filename: str, file_bytes: bytes) -> Dict:
+    # Uploads - all use async wrapper
+    def upload_paper_bytes(self, user_id: int, profile_id: int, filename: str, file_bytes: bytes):
+        """Upload paper from bytes"""
         return self._run_async(
             self._client.upload_paper_bytes(user_id, profile_id, filename, file_bytes)
         )
     
-    def list_uploaded_papers(self, user_id: int, profile_id: int) -> Dict:
-        return self._run_async(self._client.list_uploaded_papers(user_id, profile_id))
+    def list_uploaded_papers(self, user_id: int, profile_id: int):
+        """List uploaded papers for a profile"""
+        return self._run_async(
+            self._client.list_uploaded_papers(user_id, profile_id)
+        )
     
-    def delete_uploaded_paper(self, user_id: int, profile_id: int, filename: str) -> Dict:
+    def delete_uploaded_paper(self, user_id: int, profile_id: int, filename: str):
+        """Delete an uploaded paper"""
         return self._run_async(
             self._client.delete_uploaded_paper(user_id, profile_id, filename)
         )
     
-    def trigger_processing(self, user_id: int, profile_id: int) -> Dict:
-        return self._run_async(self._client.trigger_processing(user_id, profile_id))
+    def trigger_processing(self, user_id: int, profile_id: int):
+        """Trigger processing of uploaded papers"""
+        return self._run_async(
+            self._client.trigger_processing(user_id, profile_id)
+        )
+    
+    def get_processing_progress(self, user_id: int, profile_id: int):
+        """Get processing progress"""
+        return self._run_async(
+            self._client.get_processing_progress(user_id, profile_id)
+        )

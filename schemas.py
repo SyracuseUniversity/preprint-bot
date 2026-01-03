@@ -50,6 +50,7 @@ class ProfileCreate(BaseModel):
     user_id: int
     name: str
     keywords: List[str]
+    categories: List[str] = []  # ADD THIS LINE
     email_notify: bool = True
     frequency: FrequencyEnum
     threshold: ThresholdEnum = ThresholdEnum.medium
@@ -58,6 +59,7 @@ class ProfileCreate(BaseModel):
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     keywords: Optional[List[str]] = None
+    categories: Optional[List[str]] = None  # ADD THIS LINE
     email_notify: Optional[bool] = None
     frequency: Optional[FrequencyEnum] = None
     threshold: Optional[ThresholdEnum] = None
@@ -68,6 +70,7 @@ class ProfileResponse(BaseModel):
     user_id: int
     name: str
     keywords: List[str]
+    categories: List[str]  # ADD THIS LINE
     email_notify: bool
     frequency: str
     threshold: str

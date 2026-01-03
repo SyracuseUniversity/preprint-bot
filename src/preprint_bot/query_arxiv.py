@@ -104,7 +104,7 @@ def get_yesterday_entries(rate_limit: float = 3.0, per_category: int = 10):
             "&sortBy=submittedDate&sortOrder=descending"
         )
 
-        print(f"📘 Category: {cat} — fetching up to {per_category} papers…")
+        print(f" Category: {cat} — fetching up to {per_category} papers…")
         try:
             resp = requests.get(url)
             resp.raise_for_status()
@@ -338,7 +338,7 @@ def write_all_json(records, filename="metadata.json"):
     json_path = os.path.join(SAVE_DIR, filename)
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(records, f, indent=2)
-    print(f"✅ Saved {len(records)} papers into {json_path}")
+    print(f" Saved {len(records)} papers into {json_path}")
 
 
 def main(max_results=MAX_RESULTS, delay=2):

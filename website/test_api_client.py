@@ -14,10 +14,10 @@ def test_api_client():
             password="testpass123",
             name="API Test User"
         )
-        print(f"✓ Registration successful: {user}")
+        print(f" Registration successful: {user}")
         user_id = user['user_id']
     except Exception as e:
-        print(f"✗ Registration failed: {e}")
+        print(f" Registration failed: {e}")
         return
     
     # Test 2: Login
@@ -27,18 +27,18 @@ def test_api_client():
             email="apitest@example.com",
             password="testpass123"
         )
-        print(f"✓ Login successful: {login_result}")
+        print(f" Login successful: {login_result}")
     except Exception as e:
-        print(f"✗ Login failed: {e}")
+        print(f" Login failed: {e}")
         return
     
     # Test 3: Get User
     print("\n3. Testing Get User...")
     try:
         user_data = client.get_user(user_id)
-        print(f"✓ Get user successful: {user_data}")
+        print(f" Get user successful: {user_data}")
     except Exception as e:
-        print(f"✗ Get user failed: {e}")
+        print(f" Get user failed: {e}")
     
     # Test 4: Create Profile
     print("\n4. Testing Create Profile...")
@@ -50,19 +50,19 @@ def test_api_client():
             frequency="weekly",
             threshold="medium"
         )
-        print(f"✓ Profile created: {profile}")
+        print(f" Profile created: {profile}")
     except Exception as e:
-        print(f"✗ Profile creation failed: {e}")
+        print(f" Profile creation failed: {e}")
     
     # Test 5: List Profiles
     print("\n5. Testing List Profiles...")
     try:
         profiles = client.get_user_profiles(user_id)
-        print(f"✓ Found {len(profiles)} profile(s)")
+        print(f" Found {len(profiles)} profile(s)")
         for p in profiles:
             print(f"  - {p['name']}: {p['keywords']}")
     except Exception as e:
-        print(f"✗ List profiles failed: {e}")
+        print(f" List profiles failed: {e}")
     
     print("\n" + "-" * 50)
     print("API Client test complete!")

@@ -76,7 +76,7 @@ class AdaptiveRateLimiter:
                 self.current_delay * 0.9
             )
             self.consecutive_successes = 0
-            print(f"  ✓ Reduced delay to {self.current_delay:.1f}s")
+            print(f"   Reduced delay to {self.current_delay:.1f}s")
     
     def record_rate_limit(self):
         """Adjust rate limit after being rate limited."""
@@ -190,7 +190,7 @@ def download_arxiv_pdfs(
                     if "application/pdf" in content_type:
                         with open(pdf_path, "wb") as f:
                             f.write(r.content)
-                        print(f"  ✓ Saved: {arxiv_id} ({len(r.content)/1024:.1f} KB)")
+                        print(f"   Saved: {arxiv_id} ({len(r.content)/1024:.1f} KB)")
                         stats["downloaded"] += 1
                         rate_limiter.record_success()
                         success = True
@@ -206,7 +206,7 @@ def download_arxiv_pdfs(
                             html_path = f"{pdf_path}.html"
                             with open(html_path, "w", encoding="utf-8") as f:
                                 f.write(r.text)
-                            print(f"  ✗ Saved HTML to: {html_path}")
+                            print(f"   Saved HTML to: {html_path}")
                 else:
                     print(f" HTTP {r.status_code} for {arxiv_id}")
                     if attempt < max_retries - 1:
@@ -234,7 +234,7 @@ def download_arxiv_pdfs(
         
         if not success:
             stats["failed"] += 1
-            print(f"  ✗ Failed after {max_retries} attempts")
+            print(f"   Failed after {max_retries} attempts")
         
         # Show progress every 10 papers
         if (idx + 1) % 10 == 0:
@@ -252,12 +252,12 @@ def download_arxiv_pdfs(
     print(f"\n{'='*60}")
     print("Download Complete!")
     print(f"{'='*60}")
-    print(f"  ✓ Downloaded: {stats['downloaded']}")
+    print(f"   Downloaded: {stats['downloaded']}")
     print(f"  ⊘ Skipped: {stats['skipped']}")
-    print(f"  ✗ Failed: {stats['failed']}")
-    print(f"  ⚠  Rate limited: {stats['rate_limited']}")
-    print(f"  ⏱  Total time: {elapsed/60:.1f} minutes")
-    print(f"  📊 Average: {elapsed/len(paper_metadata):.1f}s per paper")
+    print(f"   Failed: {stats['failed']}")
+    print(f"    Rate limited: {stats['rate_limited']}")
+    print(f"    Total time: {elapsed/60:.1f} minutes")
+    print(f"   Average: {elapsed/len(paper_metadata):.1f}s per paper")
     print(f"{'='*60}\n")
     
     return stats
