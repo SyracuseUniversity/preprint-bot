@@ -116,6 +116,7 @@ class SyncWebAPIClient:
         return self._run_async(self._client.get_user_recommendations(user_id, limit))
 
     def get_profile_recommendations(self, profile_id: int, limit: int = 100) -> List[Dict]:
+        """Get recommendations for a specific profile"""
         return self._run_async(self._client.get_profile_recommendations(profile_id, limit))
     
     # Summaries

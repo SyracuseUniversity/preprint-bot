@@ -145,6 +145,32 @@ async def delete_recommendation(rec_id: int):
 async def get_recommendations_by_profile(profile_id: int, limit: int = Query(100)):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
+        # First, get the corpus associated with this profile
+        profile = await conn.fetchrow(
+            "SELECT user_id FROM profiles WHERE id = $1",
+            profile_id
+        )
+        
+        if not profile:
+            return []
+        
+        user_id = profile['user_id']
+        
+        # Get the user corpus for this profile
+        # Assumes corpus name follows pattern: user_{user_id}_profile_{profile_id}
+        corpus_name = f"user_{user_id}_profile_{profile_id}"
+        
+        corpus = await conn.fetchrow(
+            "SELECT id FROM corpora WHERE user_id = $1 AND name = $2",
+            user_id, corpus_name
+        )
+        
+        if not corpus:
+            return []
+        
+        user_corpus_id = corpus['id']
+        
+        # Get recommendations where the user_corpus_id matches
         rows = await conn.fetch(
             """
             SELECT 
@@ -153,11 +179,11 @@ async def get_recommendations_by_profile(profile_id: int, limit: int = Query(100
             FROM recommendations r
             JOIN recommendation_runs rr ON r.run_id = rr.id
             JOIN papers p ON r.paper_id = p.id
-            WHERE rr.profile_id = $1
+            WHERE rr.user_corpus_id = $1
             ORDER BY r.created_at DESC, r.rank
             LIMIT $2
             """,
-            profile_id, limit
+            user_corpus_id, limit
         )
         
         return [dict(row) for row in rows]

@@ -139,16 +139,48 @@ def get_api_client() -> SyncWebAPIClient:
 
 def get_current_user() -> Optional[Dict]:
     """Get currently logged in user"""
-    return st.session_state.get('user')
+    # Try session first
+    if 'user' in st.session_state and st.session_state.get('user'):
+        return st.session_state['user']
+    
+    # Try to restore from query params
+    query_params = st.query_params
+    user_id = query_params.get('user_id')
+    
+    if user_id:
+        try:
+            api = get_api_client()
+            user = api.get_user(int(user_id))
+            st.session_state['user'] = user
+            return user
+        except:
+            pass
+    
+    return None
 
 def set_current_user(user: Dict):
     """Set current user in session"""
+    # Normalize - make sure both 'id' and 'user_id' exist
+    if 'user_id' in user and 'id' not in user:
+        user['id'] = user['user_id']
+    elif 'id' in user and 'user_id' not in user:
+        user['user_id'] = user['id']
+    
     st.session_state['user'] = user
+    
+    # Add to URL for persistence
+    user_id = user.get('user_id') or user.get('id')
+    if user_id:
+        st.query_params['user_id'] = str(user_id)
 
 def logout():
     """Logout current user"""
     if 'user' in st.session_state:
         del st.session_state['user']
+    
+    # Clear from URL
+    st.query_params.clear()
+    
     st.success("Logged out successfully")
     st.rerun()
 
@@ -301,8 +333,8 @@ def dashboard_page(user: Dict):
     
     try:
         # Get stats
-        profiles = api.get_user_profiles(user['user_id'])
-        corpora = api.get_user_corpora(user['user_id'])
+        profiles = api.get_user_profiles(user.get('id'))
+        corpora = api.get_user_corpora(user.get('id'))
         
         col1, col2 = st.columns(2)
         col1.metric("Your Profiles", len(profiles))
@@ -311,7 +343,7 @@ def dashboard_page(user: Dict):
         st.divider()
         st.markdown("#### Recent Recommendations")
         
-        recommendations = api.get_user_recommendations(user['user_id'], limit=10)
+        recommendations = api.get_user_recommendations(user.get('id'), limit=10)
         
         if not recommendations:
             st.info("No recommendations yet. Create a profile and run the recommendation pipeline!")
@@ -338,10 +370,10 @@ def profiles_page(user: Dict):
     
     # Check for any running processing tasks and auto-refresh
     try:
-        profiles = api.get_user_profiles(user['user_id'])
+        profiles = api.get_user_profiles(user.get('id'))
         for profile in profiles:
             try:
-                progress = api.get_processing_progress(user['user_id'], profile['id'])
+                progress = api.get_processing_progress(user.get('id'), profile['id'])
                 if progress and progress.get('status') == 'running':
                     # Show a banner at the top
                     st.info(f"Processing papers for profile '{profile['name']}'... Auto-refreshing every 3 seconds.")
@@ -360,7 +392,7 @@ def profiles_page(user: Dict):
     
     if view == "List":
         try:
-            profiles = api.get_user_profiles(user['user_id'])
+            profiles = api.get_user_profiles(user.get('id'))
             
             if not profiles:
                 st.info("No profiles yet. Switch to **Create/Edit** to add one.")
@@ -386,7 +418,7 @@ def profiles_page(user: Dict):
                         
                         # Show uploaded papers
                         try:
-                            papers_data = api.list_uploaded_papers(user['user_id'], profile['id'])
+                            papers_data = api.list_uploaded_papers(user.get('id'), profile['id'])
                             papers = papers_data.get('papers', [])
                             
                             if papers:
@@ -406,7 +438,7 @@ def profiles_page(user: Dict):
                                                         help="Delete this paper"):
                                                 try:
                                                     api.delete_uploaded_paper(
-                                                        user['user_id'],
+                                                        user.get('id'),
                                                         profile['id'],
                                                         paper['filename']
                                                     )
@@ -444,7 +476,7 @@ def profiles_page(user: Dict):
                                                 
                                                 # Upload to backend
                                                 result = api.upload_paper_bytes(
-                                                    user['user_id'],
+                                                    user.get('id'),
                                                     profile['id'],
                                                     uploaded_file.name,
                                                     file_bytes
@@ -549,7 +581,7 @@ def profiles_page(user: Dict):
                     st.write("DEBUG - keywords:", kw_list)
                     
                     result = api.create_profile(
-                        user_id=user['user_id'],
+                        user_id=user.get('id'),
                         name=name,
                         keywords=kw_list,
                         categories=categories_list,
@@ -574,7 +606,7 @@ def recommendations_page(user: Dict):
     api = get_api_client()
     
     try:
-        profiles = api.get_user_profiles(user['user_id'])
+        profiles = api.get_user_profiles(user.get('id'))
         
         if not profiles:
             st.info("No profiles found. Create a profile first.")
@@ -593,7 +625,7 @@ def recommendations_page(user: Dict):
         
         # Fetch recommendations
         if selected == "all":
-            recommendations = api.get_user_recommendations(user['user_id'], limit=100)
+            recommendations = api.get_user_recommendations(user.get('id'), limit=100)
         else:
             recommendations = api.get_profile_recommendations(int(selected), limit=100)
         
@@ -616,33 +648,54 @@ def recommendations_page(user: Dict):
         
         for rec in filtered:
             created_at = rec.get('created_at')
+            date_str = "Unknown Date"
+            date_obj = None
+            
             if created_at:
                 try:
-                    # Parse datetime
+                    # Parse datetime - handle multiple formats
                     if isinstance(created_at, str):
-                        dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                        # Remove timezone info and parse
+                        clean_date = created_at.replace('Z', '').replace('+00:00', '')
+                        if 'T' in clean_date:
+                            date_obj = datetime.fromisoformat(clean_date)
+                        else:
+                            # Try other formats
+                            for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d']:
+                                try:
+                                    date_obj = datetime.strptime(created_at, fmt)
+                                    break
+                                except:
+                                    continue
                     else:
-                        dt = created_at
+                        date_obj = created_at
                     
-                    # Simple date format: "31 December"
-                    date_str = dt.strftime("%d %B")
+                    if date_obj:
+                        # Format: "11 January 2026"
+                        date_str = date_obj.strftime("%d %B %Y")
                     
                 except Exception as e:
+                    st.warning(f"Date parsing error: {e} for date: {created_at}")
                     date_str = "Unknown Date"
-            else:
-                date_str = "Unknown Date"
             
+            # Store both the date string and the date object for sorting
+            rec['_date_obj'] = date_obj
             grouped[date_str].append(rec)
         
-        # Sort dates (newest first) - simpler sorting
+        # Sort dates (newest first)
+        def date_sort_key(date_str):
+            if date_str == "Unknown Date":
+                return datetime.min
+            # Get any recommendation from this date group to access the date object
+            recs_in_group = grouped[date_str]
+            if recs_in_group and recs_in_group[0].get('_date_obj'):
+                return recs_in_group[0]['_date_obj']
+            return datetime.min
+        
         try:
-            sorted_dates = sorted(
-                grouped.keys(),
-                key=lambda x: datetime.strptime(x, "%d %B") if x != "Unknown Date" else datetime.min,
-                reverse=True
-            )
-        except:
-            # If sorting fails, just use the keys as-is
+            sorted_dates = sorted(grouped.keys(), key=date_sort_key, reverse=True)
+        except Exception as e:
+            st.warning(f"Date sorting error: {e}")
             sorted_dates = list(grouped.keys())
         
         # Display by date
@@ -663,7 +716,8 @@ def recommendations_page(user: Dict):
                     st.caption(f"arXiv: {rec.get('arxiv_id', 'N/A')}")
                     
                     if rec.get('abstract'):
-                        st.write(rec['abstract'][:300] + "...")
+                        abstract = rec['abstract']
+                        st.write(abstract[:300] + ("..." if len(abstract) > 300 else ""))
                     
                     if rec.get('arxiv_id'):
                         st.link_button("View on arXiv", f"https://arxiv.org/abs/{rec['arxiv_id']}")
@@ -675,7 +729,7 @@ def recommendations_page(user: Dict):
         import traceback
         with st.expander("Debug Info"):
             st.code(traceback.format_exc())
-            
+
 def settings_page(user: Dict):
     """Settings page"""
     st.markdown("### Settings")
@@ -692,7 +746,7 @@ def settings_page(user: Dict):
     if submit:
         try:
             updated = api.update_user(
-                user['user_id'],
+                user.get('id'),
                 email=new_email if new_email != user['email'] else None,
                 name=new_name if new_name != user.get('name') else None
             )
@@ -706,7 +760,7 @@ def settings_page(user: Dict):
     
     # System info
     st.markdown("#### System Information")
-    st.caption(f"User ID: {user['user_id']}")
+    st.caption(f"User ID: {user.get('user_id') or user.get('id')}")
     st.caption(f"Account created: {user.get('created_at', 'N/A')}")
 
 # ==================== MAIN APP ====================
@@ -738,11 +792,11 @@ def main():
     # Logged in - show main app
     with st.sidebar:
         st.write(f"**{user.get('name') or user['email']}**")
-        st.caption(f"User ID: {user['user_id']}")
+        st.caption(f"User ID: {user.get('id')}")
         if st.button("Logout", use_container_width=True):
             logout()
     
-# Main navigation
+    # Main navigation
     tabs = st.tabs(["Dashboard", "Profiles", "Recommendations", "Settings"])
     
     with tabs[0]:
@@ -753,6 +807,7 @@ def main():
         recommendations_page(user)
     with tabs[3]:
         settings_page(user)
+
 
 if __name__ == "__main__":
     main()
