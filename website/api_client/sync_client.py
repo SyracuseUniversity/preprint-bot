@@ -12,12 +12,12 @@ class SyncWebAPIClient:
     def _run_async(self, coro):
         """Run async coroutine synchronously"""
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
+            # Already in async context, can't use run_until_complete
+            raise RuntimeError("Cannot run sync wrapper in async context")
         except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        return loop.run_until_complete(coro)
+            # No running loop, create new one
+            return asyncio.run(coro)
     
     # Auth
     def login(self, email: str, password: str) -> Dict:
