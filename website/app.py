@@ -68,6 +68,25 @@ ARXIV_CATEGORY_TREE: List[Dict] = [
         ],
     },
     {
+        "title": "Economics",
+        "value": "econ",
+        "children": [
+            {"title": "Econometrics (econ.EM)", "value": "econ.EM"},
+            {"title": "General Economics (econ.GN)", "value": "econ.GN"},
+            {"title": "Theoretical Economics (econ.TH)", "value": "econ.TH"},
+        ],
+    },
+    {
+        "title": "Electrical Engineering and Systems Science",
+        "value": "eess",
+        "children": [
+            {"title": "Audio and Speech Processing (eess.AS)", "value": "eess.AS"},
+            {"title": "Image and Video Processing (eess.IV)", "value": "eess.IV"},
+            {"title": "Signal Processing (eess.SP)", "value": "eess.SP"},
+            {"title": "Systems and Control (eess.SY)", "value": "eess.SY"},
+        ],
+    },
+    {
         "title": "Mathematics",
         "value": "math",
         "children": [
@@ -88,10 +107,133 @@ ARXIV_CATEGORY_TREE: List[Dict] = [
             {"title": "Geometric Topology (math.GT)", "value": "math.GT"},
             {"title": "History and Overview (math.HO)", "value": "math.HO"},
             {"title": "Information Theory (math.IT)", "value": "math.IT"},
+            {"title": "K-Theory and Homology (math.KT)", "value": "math.KT"},
+            {"title": "Logic (math.LO)", "value": "math.LO"},
+            {"title": "Metric Geometry (math.MG)", "value": "math.MG"},
+            {"title": "Mathematical Physics (math.MP)", "value": "math.MP"},
+            {"title": "Numerical Analysis (math.NA)", "value": "math.NA"},
             {"title": "Number Theory (math.NT)", "value": "math.NT"},
+            {"title": "Operator Algebras (math.OA)", "value": "math.OA"},
             {"title": "Optimization and Control (math.OC)", "value": "math.OC"},
             {"title": "Probability (math.PR)", "value": "math.PR"},
+            {"title": "Quantum Algebra (math.QA)", "value": "math.QA"},
+            {"title": "Rings and Algebras (math.RA)", "value": "math.RA"},
+            {"title": "Representation Theory (math.RT)", "value": "math.RT"},
+            {"title": "Symplectic Geometry (math.SG)", "value": "math.SG"},
+            {"title": "Spectral Theory (math.SP)", "value": "math.SP"},
             {"title": "Statistics Theory (math.ST)", "value": "math.ST"},
+        ],
+    },
+    {
+        "title": "Physics",
+        "value": "physics_group",
+        "children": [
+            {
+                "title": "Astrophysics",
+                "value": "astro-ph",
+                "children": [
+                    {"title": "Cosmology and Nongalactic Astrophysics (astro-ph.CO)", "value": "astro-ph.CO"},
+                    {"title": "Earth and Planetary Astrophysics (astro-ph.EP)", "value": "astro-ph.EP"},
+                    {"title": "Astrophysics of Galaxies (astro-ph.GA)", "value": "astro-ph.GA"},
+                    {"title": "High Energy Astrophysical Phenomena (astro-ph.HE)", "value": "astro-ph.HE"},
+                    {"title": "Instrumentation and Methods for Astrophysics (astro-ph.IM)", "value": "astro-ph.IM"},
+                    {"title": "Solar and Stellar Astrophysics (astro-ph.SR)", "value": "astro-ph.SR"},
+                ],
+            },
+            {
+                "title": "Condensed Matter",
+                "value": "cond-mat",
+                "children": [
+                    {"title": "Disordered Systems and Neural Networks (cond-mat.dis-nn)", "value": "cond-mat.dis-nn"},
+                    {"title": "Mesoscale and Nanoscale Physics (cond-mat.mes-hall)", "value": "cond-mat.mes-hall"},
+                    {"title": "Materials Science (cond-mat.mtrl-sci)", "value": "cond-mat.mtrl-sci"},
+                    {"title": "Other Condensed Matter (cond-mat.other)", "value": "cond-mat.other"},
+                    {"title": "Quantum Gases (cond-mat.quant-gas)", "value": "cond-mat.quant-gas"},
+                    {"title": "Soft Condensed Matter (cond-mat.soft)", "value": "cond-mat.soft"},
+                    {"title": "Statistical Mechanics (cond-mat.stat-mech)", "value": "cond-mat.stat-mech"},
+                    {"title": "Strongly Correlated Electrons (cond-mat.str-el)", "value": "cond-mat.str-el"},
+                    {"title": "Superconductivity (cond-mat.supr-con)", "value": "cond-mat.supr-con"},
+                ],
+            },
+            {"title": "General Relativity and Quantum Cosmology (gr-qc)", "value": "gr-qc"},
+            {"title": "High Energy Physics - Experiment (hep-ex)", "value": "hep-ex"},
+            {"title": "High Energy Physics - Lattice (hep-lat)", "value": "hep-lat"},
+            {"title": "High Energy Physics - Phenomenology (hep-ph)", "value": "hep-ph"},
+            {"title": "High Energy Physics - Theory (hep-th)", "value": "hep-th"},
+            {"title": "Mathematical Physics (math-ph)", "value": "math-ph"},
+            {
+                "title": "Nonlinear Sciences",
+                "value": "nlin",
+                "children": [
+                    {"title": "Adaptation and Self-Organizing Systems (nlin.AO)", "value": "nlin.AO"},
+                    {"title": "Chaotic Dynamics (nlin.CD)", "value": "nlin.CD"},
+                    {"title": "Cellular Automata and Lattice Gases (nlin.CG)", "value": "nlin.CG"},
+                    {"title": "Pattern Formation and Solitons (nlin.PS)", "value": "nlin.PS"},
+                    {"title": "Exactly Solvable and Integrable Systems (nlin.SI)", "value": "nlin.SI"},
+                ],
+            },
+            {"title": "Nuclear Experiment (nucl-ex)", "value": "nucl-ex"},
+            {"title": "Nuclear Theory (nucl-th)", "value": "nucl-th"},
+            {
+                "title": "Physics",
+                "value": "physics",
+                "children": [
+                    {"title": "Accelerator Physics (physics.acc-ph)", "value": "physics.acc-ph"},
+                    {"title": "Atmospheric and Oceanic Physics (physics.ao-ph)", "value": "physics.ao-ph"},
+                    {"title": "Applied Physics (physics.app-ph)", "value": "physics.app-ph"},
+                    {"title": "Atomic and Molecular Clusters (physics.atm-clus)", "value": "physics.atm-clus"},
+                    {"title": "Atomic Physics (physics.atom-ph)", "value": "physics.atom-ph"},
+                    {"title": "Biological Physics (physics.bio-ph)", "value": "physics.bio-ph"},
+                    {"title": "Chemical Physics (physics.chem-ph)", "value": "physics.chem-ph"},
+                    {"title": "Classical Physics (physics.class-ph)", "value": "physics.class-ph"},
+                    {"title": "Computational Physics (physics.comp-ph)", "value": "physics.comp-ph"},
+                    {"title": "Data Analysis, Statistics and Probability (physics.data-an)", "value": "physics.data-an"},
+                    {"title": "Physics Education (physics.ed-ph)", "value": "physics.ed-ph"},
+                    {"title": "Fluid Dynamics (physics.flu-dyn)", "value": "physics.flu-dyn"},
+                    {"title": "General Physics (physics.gen-ph)", "value": "physics.gen-ph"},
+                    {"title": "Geophysics (physics.geo-ph)", "value": "physics.geo-ph"},
+                    {"title": "History and Philosophy of Physics (physics.hist-ph)", "value": "physics.hist-ph"},
+                    {"title": "Instrumentation and Detectors (physics.ins-det)", "value": "physics.ins-det"},
+                    {"title": "Medical Physics (physics.med-ph)", "value": "physics.med-ph"},
+                    {"title": "Optics (physics.optics)", "value": "physics.optics"},
+                    {"title": "Plasma Physics (physics.plasm-ph)", "value": "physics.plasm-ph"},
+                    {"title": "Popular Physics (physics.pop-ph)", "value": "physics.pop-ph"},
+                    {"title": "Physics and Society (physics.soc-ph)", "value": "physics.soc-ph"},
+                    {"title": "Space Physics (physics.space-ph)", "value": "physics.space-ph"},
+                ],
+            },
+            {"title": "Quantum Physics (quant-ph)", "value": "quant-ph"},
+        ],
+    },
+    {
+        "title": "Quantitative Biology",
+        "value": "q-bio",
+        "children": [
+            {"title": "Biomolecules (q-bio.BM)", "value": "q-bio.BM"},
+            {"title": "Cell Behavior (q-bio.CB)", "value": "q-bio.CB"},
+            {"title": "Genomics (q-bio.GN)", "value": "q-bio.GN"},
+            {"title": "Molecular Networks (q-bio.MN)", "value": "q-bio.MN"},
+            {"title": "Neurons and Cognition (q-bio.NC)", "value": "q-bio.NC"},
+            {"title": "Other Quantitative Biology (q-bio.OT)", "value": "q-bio.OT"},
+            {"title": "Populations and Evolution (q-bio.PE)", "value": "q-bio.PE"},
+            {"title": "Quantitative Methods (q-bio.QM)", "value": "q-bio.QM"},
+            {"title": "Subcellular Processes (q-bio.SC)", "value": "q-bio.SC"},
+            {"title": "Tissues and Organs (q-bio.TO)", "value": "q-bio.TO"},
+        ],
+    },
+    {
+        "title": "Quantitative Finance",
+        "value": "q-fin",
+        "children": [
+            {"title": "Computational Finance (q-fin.CP)", "value": "q-fin.CP"},
+            {"title": "Economics (q-fin.EC)", "value": "q-fin.EC"},
+            {"title": "General Finance (q-fin.GN)", "value": "q-fin.GN"},
+            {"title": "Mathematical Finance (q-fin.MF)", "value": "q-fin.MF"},
+            {"title": "Portfolio Management (q-fin.PM)", "value": "q-fin.PM"},
+            {"title": "Pricing of Securities (q-fin.PR)", "value": "q-fin.PR"},
+            {"title": "Risk Management (q-fin.RM)", "value": "q-fin.RM"},
+            {"title": "Statistical Finance (q-fin.ST)", "value": "q-fin.ST"},
+            {"title": "Trading and Market Microstructure (q-fin.TR)", "value": "q-fin.TR"},
         ],
     },
     {
@@ -183,6 +325,19 @@ def logout():
     
     st.success("Logged out successfully")
     st.rerun()
+
+def check_duplicate_profile_name(api, user_id: int, name: str, exclude_profile_id: int = None) -> bool:
+    """Check if profile name already exists for this user (case-insensitive)"""
+    try:
+        profiles = api.get_user_profiles(user_id)
+        for p in profiles:
+            if p['id'] == exclude_profile_id:
+                continue
+            if p['name'].lower() == name.lower():
+                return True
+        return False
+    except:
+        return False
 
 # ==================== AUTH PAGES ====================
 
@@ -322,6 +477,40 @@ def reset_password_page():
         st.session_state['show_reset'] = False
         st.rerun()
 
+def forgot_password_page():
+    """Forgot password page"""
+    st.subheader("Forgot Password")
+    st.caption("Enter your email to receive a password reset token (valid for 1 hour)")
+    
+    with st.form("forgot_form"):
+        email = st.text_input("Email", placeholder="you@example.com")
+        submit = st.form_submit_button("Send Reset Token", use_container_width=True)
+    
+    if submit:
+        if not email:
+            st.error("Please enter your email")
+        else:
+            try:
+                api = get_api_client()
+                result = api.request_password_reset(email)
+                st.success("If that email exists, we've sent a reset token")
+                
+                # For development: show the token
+                if 'token' in result:
+                    st.info(f"Development Mode - Your reset token: {result['token']}")
+                
+                # Show button to go to reset page
+                if st.button("I have a token"):
+                    st.session_state['show_reset'] = True
+                    st.session_state['show_forgot'] = False
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+    
+    if st.button("Back to Login"):
+        st.session_state['show_forgot'] = False
+        st.rerun()
+
 # ==================== MAIN PAGES ====================
 
 def dashboard_page(user: Dict):
@@ -353,9 +542,10 @@ def dashboard_page(user: Dict):
                     st.markdown(f"**{rec['title']}**")
                     st.caption(f"Score: {rec['score']:.3f} | arXiv: {rec.get('arxiv_id', 'N/A')}")
                     
-                    if rec.get('abstract'):
-                        abstract_text = rec['abstract'][:300]
-                        st.write(abstract_text + ("..." if len(rec['abstract']) > 300 else ""))
+                    if rec.get('summary_text'):
+                        st.write(rec['summary_text'])
+                    elif rec.get('abstract'):
+                        st.write(rec['abstract'][:200] + "...")
                     
                     if rec.get('arxiv_id'):
                         url = f"https://arxiv.org/abs/{rec['arxiv_id']}"
@@ -375,7 +565,6 @@ def profiles_page(user: Dict):
             try:
                 progress = api.get_processing_progress(user.get('id'), profile['id'])
                 if progress and progress.get('status') == 'running':
-                    # Show a banner at the top
                     st.info(f"Processing papers for profile '{profile['name']}'... Auto-refreshing every 3 seconds.")
                     import time
                     time.sleep(3)
@@ -387,36 +576,52 @@ def profiles_page(user: Dict):
         
     st.markdown("### Profiles")
     
-    api = get_api_client()
-    view = st.radio("View", ["List", "Create/Edit"], horizontal=True)
+    # View selector
+    view = st.radio("View", ["List", "Create / Edit"], horizontal=True, key="profile_view")
     
+    # Clear pending state when switching away from Create/Edit
+    if view != "Create / Edit":
+        st.session_state.pop("pending_profile_create", None)
+        st.session_state.pop("show_profile_create_confirm", None)
+    
+    # ==================== LIST VIEW ====================
     if view == "List":
         try:
             profiles = api.get_user_profiles(user.get('id'))
             
             if not profiles:
-                st.info("No profiles yet. Switch to **Create/Edit** to add one.")
+                st.info("No profiles yet. Switch to **Create / Edit** to add one.")
             else:
                 for profile in profiles:
                     with st.container(border=True):
                         st.subheader(profile['name'])
                         
+                        # Profile info in 3 columns
                         col1, col2, col3 = st.columns(3)
-                        col1.write(f"**Frequency:** {profile['frequency']}")
-                        col2.write(f"**Threshold:** {profile['threshold']}")
+                        with col1:
+                            st.write("**Frequency**")
+                            st.write(profile['frequency'])
+                        with col2:
+                            st.write("**Threshold**")
+                            st.write(profile['threshold'])
+                        with col3:
+                            st.write("**Keywords**")
+                            keywords_display = ', '.join(profile['keywords'][:3])
+                            if len(profile['keywords']) > 3:
+                                keywords_display += f" (+{len(profile['keywords']) - 3} more)"
+                            st.write(keywords_display)
                         
-                        # Show keywords
-                        keywords_display = ', '.join(profile['keywords'][:3])
-                        if len(profile['keywords']) > 3:
-                            keywords_display += f" (+{len(profile['keywords']) - 3} more)"
-                        col3.write(f"**Keywords:** {keywords_display}")
+                        # Categories display
+                        if profile.get('categories'):
+                            st.write("**Categories**")
+                            cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in profile['categories']]
+                            st.caption(", ".join(cat_labels))
                         
                         st.divider()
                         
-                        # ============ PAPER UPLOAD SECTION ============
-                        st.markdown("####  Papers")
+                        # Papers section
+                        st.markdown("#### Papers")
                         
-                        # Show uploaded papers
                         try:
                             papers_data = api.list_uploaded_papers(user.get('id'), profile['id'])
                             papers = papers_data.get('papers', [])
@@ -424,18 +629,16 @@ def profiles_page(user: Dict):
                             if papers:
                                 st.write(f"**{len(papers)} paper(s) uploaded**")
                                 
-                                # Show papers in expandable section
                                 with st.expander("View Papers", expanded=False):
                                     for paper in papers:
                                         paper_col1, paper_col2, paper_col3 = st.columns([3, 1, 1])
                                         
                                         with paper_col1:
-                                            st.write(f" {paper['filename']}")
+                                            st.write(f"{paper['filename']}")
                                         with paper_col2:
                                             st.caption(f"{paper['size_mb']} MB")
                                         with paper_col3:
-                                            if st.button("🗑️", key=f"del_{profile['id']}_{paper['filename']}", 
-                                                        help="Delete this paper"):
+                                            if st.button("Delete", key=f"del_{profile['id']}_{paper['filename']}"):
                                                 try:
                                                     api.delete_uploaded_paper(
                                                         user.get('id'),
@@ -450,7 +653,7 @@ def profiles_page(user: Dict):
                                 st.caption("No papers uploaded yet")
                             
                             # Upload new papers
-                            with st.expander(" Upload Papers", expanded=False):
+                            with st.expander("Upload Papers", expanded=False):
                                 uploaded_files = st.file_uploader(
                                     "Choose PDF files",
                                     type=['pdf'],
@@ -470,11 +673,8 @@ def profiles_page(user: Dict):
                                         for i, uploaded_file in enumerate(uploaded_files):
                                             try:
                                                 status_text.text(f"Uploading {uploaded_file.name}...")
-                                                
-                                                # Read file bytes
                                                 file_bytes = uploaded_file.read()
                                                 
-                                                # Upload to backend
                                                 result = api.upload_paper_bytes(
                                                     user.get('id'),
                                                     profile['id'],
@@ -500,11 +700,10 @@ def profiles_page(user: Dict):
                         
                         st.divider()
                         
-                        # ============ DELETE PROFILE SECTION ============
-                        # Delete button with confirmation
+                        # Delete profile with confirmation
                         confirm_key = f"confirm_delete_{profile['id']}"
                         if st.session_state.get(confirm_key):
-                            st.warning(" Are you sure? This will delete the profile and all uploaded papers. This cannot be undone.")
+                            st.warning("⚠️ Delete this profile? This will delete the profile and all uploaded papers. This cannot be undone.")
                             col_yes, col_no = st.columns(2)
                             with col_yes:
                                 if st.button("Yes, delete", key=f"yes_{profile['id']}", type="primary"):
@@ -520,20 +719,79 @@ def profiles_page(user: Dict):
                                     st.session_state.pop(confirm_key)
                                     st.rerun()
                         else:
-                            if st.button(" Delete Profile", key=f"del_{profile['id']}"):
+                            if st.button("Delete Profile", key=f"del_{profile['id']}"):
                                 st.session_state[confirm_key] = True
                                 st.rerun()
         
         except Exception as e:
             st.error(f"Error loading profiles: {str(e)}")
+        
+        return  # End of List view
     
-    else:  # Create/Edit
-        with st.form("profile_form"):
-            name = st.text_input("Profile Name")
-            frequency = st.selectbox("Frequency", ["daily", "weekly", "biweekly", "monthly"])
-            threshold = st.selectbox("Threshold", ["low", "medium", "high"])
-            keywords = st.text_input("Keywords (comma-separated)", 
-                                    placeholder="machine learning, neural networks, optimization")
+    # ==================== CREATE / EDIT VIEW ====================
+    
+    # Mode selector
+    mode = st.radio("Mode", ["Create new", "Edit existing"], horizontal=True, key="profile_mode")
+    
+    # Initialize session keys
+    if "profile_cat_tree_selected" not in st.session_state:
+        st.session_state["profile_cat_tree_selected"] = []
+    
+    # Get existing profiles for edit mode
+    profiles = api.get_user_profiles(user.get('id'))
+    
+    selected_profile_id = None
+    if mode == "Edit existing":
+        if not profiles:
+            st.info("No profiles to edit. Create one first.")
+            return
+        
+        profile_options = {p['name']: p['id'] for p in profiles}
+        selected_name = st.selectbox("Choose profile to edit", ["— Select —"] + list(profile_options.keys()))
+        
+        if selected_name != "— Select —":
+            selected_profile_id = profile_options[selected_name]
+    
+    # Set defaults based on mode
+    if selected_profile_id:
+        # Load existing profile data
+        profile = next(p for p in profiles if p['id'] == selected_profile_id)
+        default_name = profile['name']
+        default_freq = profile['frequency']
+        default_threshold = profile['threshold']
+        default_keywords = ', '.join(profile['keywords'])
+        st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
+    else:
+        # New profile defaults
+        default_name = ""
+        default_freq = "weekly"
+        default_threshold = "medium"
+        default_keywords = ""
+        if mode == "Create new":
+            st.session_state["profile_cat_tree_selected"] = []
+    
+    # Profile form
+    if mode == "Create new" or selected_profile_id:
+        with st.form("profile_form", enter_to_submit=True):
+            name = st.text_input("Profile Name", value=default_name)
+            
+            freq = st.selectbox(
+                "Frequency",
+                ["daily", "weekly", "biweekly", "monthly"],
+                index=["daily", "weekly", "biweekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "biweekly", "monthly"] else 1
+            )
+            
+            threshold = st.selectbox(
+                "Threshold",
+                ["low", "medium", "high"],
+                index=["low", "medium", "high"].index(default_threshold) if default_threshold in ["low", "medium", "high"] else 1
+            )
+            
+            keywords = st.text_input(
+                "Keywords (comma-separated)",
+                value=default_keywords,
+                placeholder="machine learning, neural networks, optimization"
+            )
             
             st.write("**Select arXiv Categories** (optional)")
             selected_cats = st_ant_tree(
@@ -541,29 +799,34 @@ def profiles_page(user: Dict):
                 treeCheckable=True,
                 showSearch=True,
                 placeholder="Select categories",
+                defaultValue=st.session_state.get("profile_cat_tree_selected", []),
                 max_height=300,
-                only_children_select=True
+                only_children_select=True,
+                key=f"profile_cat_tree_{mode}_{selected_profile_id}"
             )
             
-            submit = st.form_submit_button("Create Profile")
+            submit_label = "Create Profile" if selected_profile_id is None else "Save Changes"
+            submit = st.form_submit_button(submit_label, type="primary")
         
         if submit:
-            if not name:
+            clean_name = name.strip()
+            if not clean_name:
                 st.error("Profile name is required")
             elif not keywords:
                 st.error("At least one keyword is required")
             else:
-                try:
+                # Check for duplicate name
+                if check_duplicate_profile_name(api, user.get('id'), clean_name, exclude_profile_id=selected_profile_id):
+                    st.error("A profile with this name already exists.")
+                else:
                     kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
                     
-                    # Extract selected categories from tree - handle different formats
+                    # Extract categories
                     categories_list = []
                     if selected_cats:
-                        # Try different possible keys the tree component might use
                         if isinstance(selected_cats, list):
                             categories_list = selected_cats
                         elif isinstance(selected_cats, dict):
-                            # Try common keys
                             for key in ['checked', 'selected', 'value', 'checkedKeys']:
                                 if key in selected_cats:
                                     val = selected_cats[key]
@@ -571,36 +834,84 @@ def profiles_page(user: Dict):
                                         categories_list = val
                                     break
                     
-                    # Filter out parent nodes (like "cs", "math", "stat") - keep only leaf nodes
+                    # Filter leaf nodes only
                     if categories_list:
                         categories_list = [cat for cat in categories_list if '.' in cat]
                     
-                    # DEBUG
-                    st.write("DEBUG - selected_cats:", selected_cats)
-                    st.write("DEBUG - categories_list:", categories_list)
-                    st.write("DEBUG - keywords:", kw_list)
-                    
-                    result = api.create_profile(
-                        user_id=user.get('id'),
-                        name=name,
-                        keywords=kw_list,
-                        categories=categories_list,
-                        frequency=frequency,
-                        threshold=threshold
-                    )
-                    
-                    st.write("DEBUG - API response:", result)
-                    st.success("Profile created successfully! Go to 'List' view to upload papers.")
-                    # Don't rerun yet so we can see the debug info
-                    # st.rerun()
-                except Exception as e:
-                    st.error(f"Error creating profile: {str(e)}")
-                    import traceback
-                    st.code(traceback.format_exc())
+                    if selected_profile_id:
+                        # EDIT MODE: Save immediately
+                        try:
+                            api.update_profile(
+                                selected_profile_id,
+                                name=clean_name,
+                                keywords=kw_list,
+                                categories=categories_list,
+                                frequency=freq,
+                                threshold=threshold
+                            )
+                            st.success("Profile updated successfully!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error updating profile: {str(e)}")
+                    else:
+                        # CREATE MODE: Stage for confirmation
+                        st.session_state["pending_profile_create"] = {
+                            "name": clean_name,
+                            "keywords": kw_list,
+                            "categories": categories_list,
+                            "frequency": freq,
+                            "threshold": threshold
+                        }
+                        st.session_state["show_profile_create_confirm"] = True
+    
+    # Creation confirmation panel
+    if st.session_state.get("show_profile_create_confirm") and st.session_state.get("pending_profile_create"):
+        data = st.session_state["pending_profile_create"]
+        
+        with st.container(border=True):
+            st.warning("Create this profile?")
+            
+            st.write(f"**Name:** {data['name']}")
+            st.write(f"**Frequency:** {data['frequency']}")
+            st.write(f"**Threshold:** {data['threshold']}")
+            st.write(f"**Keywords:** {', '.join(data['keywords'])}")
+            if data.get('categories'):
+                cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in data['categories']]
+                st.write(f"**Categories:** {', '.join(cat_labels)}")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Confirm Create", key="confirm_profile_create", type="primary"):
+                    try:
+                        result = api.create_profile(
+                            user_id=user.get('id'),
+                            name=data['name'],
+                            keywords=data['keywords'],
+                            categories=data.get('categories', []),
+                            frequency=data['frequency'],
+                            threshold=data['threshold']
+                        )
+                        
+                        st.session_state.pop("pending_profile_create", None)
+                        st.session_state.pop("show_profile_create_confirm", None)
+                        st.session_state["profile_cat_tree_selected"] = []
+                        
+                        st.success("Profile created successfully! Go to 'List' view to upload papers.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error creating profile: {str(e)}")
+            
+            with col2:
+                if st.button("Cancel", key="cancel_profile_create"):
+                    st.session_state.pop("pending_profile_create", None)
+                    st.session_state.pop("show_profile_create_confirm", None)
+                    st.session_state["profile_cat_tree_selected"] = []
+                    st.info("Creation cancelled")
+                    st.rerun()
 
 
 def recommendations_page(user: Dict):
-    """Recommendations page with profile filtering and date grouping"""
+    """Recommendations page with advanced filtering and date grouping"""
     st.markdown("### Recommendations")
     
     api = get_api_client()
@@ -633,12 +944,95 @@ def recommendations_page(user: Dict):
             st.info("No recommendations yet.")
             return
         
-        # Filters
+        # Advanced filters in expandable section
         with st.expander("Filters", expanded=False):
-            min_score = st.slider("Minimum Score", 0.0, 1.0, 0.5, 0.01)
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                date_from = st.date_input("From date", value=None, key="rec_date_from")
+            with col2:
+                date_to = st.date_input("To date", value=None, key="rec_date_to")
+            with col3:
+                min_score = st.slider("Minimum Score", 0.0, 1.0, 0.5, 0.01, key="rec_min_score")
+            
+            # Keyword search
+            keyword_search = st.text_input("Search in title/abstract", placeholder="Enter keywords...")
+            
+            # Category filter
+            st.write("**Filter by Categories**")
+            if "rec_cat_tree_selected" not in st.session_state:
+                st.session_state["rec_cat_tree_selected"] = []
+            
+            rec_cat_selected = st_ant_tree(
+                treeData=ARXIV_CATEGORY_TREE,
+                treeCheckable=True,
+                allowClear=True,
+                showSearch=True,
+                placeholder="Any category",
+                defaultValue=st.session_state.get("rec_cat_tree_selected", []),
+                max_height=300,
+                only_children_select=True,
+                key="rec_cat_tree"
+            )
+            
+            if rec_cat_selected:
+                st.session_state["rec_cat_tree_selected"] = rec_cat_selected
         
-        filtered = [r for r in recommendations if r['score'] >= min_score]
+        # Apply filters
+        filtered = recommendations
+        
+        # Score filter
+        filtered = [r for r in filtered if r['score'] >= min_score]
+        
+        # Date filters
+        if date_from or date_to:
+            from datetime import datetime
+            
+            date_filtered = []
+            for r in filtered:
+                created_at = r.get('created_at')
+                if created_at:
+                    try:
+                        if isinstance(created_at, str):
+                            rec_date = datetime.fromisoformat(created_at.replace('Z', '').replace('+00:00', '')).date()
+                        else:
+                            rec_date = created_at.date()
+                        
+                        if date_from and rec_date < date_from:
+                            continue
+                        if date_to and rec_date > date_to:
+                            continue
+                        date_filtered.append(r)
+                    except:
+                        date_filtered.append(r)
+                else:
+                    date_filtered.append(r)
+            filtered = date_filtered
+        
+        # Keyword search filter
+        if keyword_search:
+            keyword_lower = keyword_search.lower()
+            filtered = [
+                r for r in filtered
+                if keyword_lower in r.get('title', '').lower() or 
+                   keyword_lower in r.get('abstract', '').lower()
+            ]
+        
+        # Category filter
+        cat_codes = st.session_state.get("rec_cat_tree_selected", [])
+        if cat_codes:
+            # Filter by paper metadata categories
+            filtered = [
+                r for r in filtered
+                if r.get('metadata') and 
+                   any(cat in r['metadata'].get('categories', []) for cat in cat_codes)
+            ]
+        
         st.write(f"Showing {len(filtered)} recommendations")
+        
+        if not filtered:
+            st.info("No recommendations match the filters.")
+            return
         
         # Group by date
         from datetime import datetime
@@ -653,14 +1047,11 @@ def recommendations_page(user: Dict):
             
             if created_at:
                 try:
-                    # Parse datetime - handle multiple formats
                     if isinstance(created_at, str):
-                        # Remove timezone info and parse
                         clean_date = created_at.replace('Z', '').replace('+00:00', '')
                         if 'T' in clean_date:
                             date_obj = datetime.fromisoformat(clean_date)
                         else:
-                            # Try other formats
                             for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d']:
                                 try:
                                     date_obj = datetime.strptime(created_at, fmt)
@@ -671,22 +1062,18 @@ def recommendations_page(user: Dict):
                         date_obj = created_at
                     
                     if date_obj:
-                        # Format: "11 January 2026"
                         date_str = date_obj.strftime("%d %B %Y")
-                    
-                except Exception as e:
-                    st.warning(f"Date parsing error: {e} for date: {created_at}")
+                
+                except Exception:
                     date_str = "Unknown Date"
             
-            # Store both the date string and the date object for sorting
             rec['_date_obj'] = date_obj
             grouped[date_str].append(rec)
         
-        # Sort dates (newest first)
+        # Sort dates
         def date_sort_key(date_str):
             if date_str == "Unknown Date":
                 return datetime.min
-            # Get any recommendation from this date group to access the date object
             recs_in_group = grouped[date_str]
             if recs_in_group and recs_in_group[0].get('_date_obj'):
                 return recs_in_group[0]['_date_obj']
@@ -694,8 +1081,7 @@ def recommendations_page(user: Dict):
         
         try:
             sorted_dates = sorted(grouped.keys(), key=date_sort_key, reverse=True)
-        except Exception as e:
-            st.warning(f"Date sorting error: {e}")
+        except Exception:
             sorted_dates = list(grouped.keys())
         
         # Display by date
@@ -715,9 +1101,11 @@ def recommendations_page(user: Dict):
                     
                     st.caption(f"arXiv: {rec.get('arxiv_id', 'N/A')}")
                     
-                    if rec.get('abstract'):
-                        abstract = rec['abstract']
-                        st.write(abstract[:300] + ("..." if len(abstract) > 300 else ""))
+                    # Show summary if available, otherwise truncated abstract
+                    if rec.get('summary_text'):
+                        st.write(rec['summary_text'])
+                    elif rec.get('abstract'):
+                        st.write(rec['abstract'][:200] + "...")
                     
                     if rec.get('arxiv_id'):
                         st.link_button("View on arXiv", f"https://arxiv.org/abs/{rec['arxiv_id']}")

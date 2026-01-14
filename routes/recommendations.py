@@ -113,9 +113,11 @@ async def get_recommendations_with_papers(run_id: int, limit: int = Query(50, ge
             """
             SELECT 
                 r.id, r.run_id, r.paper_id, r.score, r.rank, r.summary, r.created_at,
-                p.arxiv_id, p.title, p.abstract, p.metadata, p.source
+                p.arxiv_id, p.title, p.abstract, p.metadata, p.source,
+                s.summary_text
             FROM recommendations r
             JOIN papers p ON r.paper_id = p.id
+            LEFT JOIN summaries s ON s.paper_id = p.id
             WHERE r.run_id = $1
             ORDER BY r.rank
             LIMIT $2
@@ -157,7 +159,6 @@ async def get_recommendations_by_profile(profile_id: int, limit: int = Query(100
         user_id = profile['user_id']
         
         # Get the user corpus for this profile
-        # Assumes corpus name follows pattern: user_{user_id}_profile_{profile_id}
         corpus_name = f"user_{user_id}_profile_{profile_id}"
         
         corpus = await conn.fetchrow(
@@ -170,15 +171,17 @@ async def get_recommendations_by_profile(profile_id: int, limit: int = Query(100
         
         user_corpus_id = corpus['id']
         
-        # Get recommendations where the user_corpus_id matches
+        # Get recommendations with summaries
         rows = await conn.fetch(
             """
             SELECT 
                 r.id, r.run_id, r.paper_id, r.score, r.rank, r.created_at,
-                p.arxiv_id, p.title, p.abstract, p.metadata
+                p.arxiv_id, p.title, p.abstract, p.metadata,
+                s.summary_text
             FROM recommendations r
             JOIN recommendation_runs rr ON r.run_id = rr.id
             JOIN papers p ON r.paper_id = p.id
+            LEFT JOIN summaries s ON s.paper_id = p.id
             WHERE rr.user_corpus_id = $1
             ORDER BY r.created_at DESC, r.rank
             LIMIT $2

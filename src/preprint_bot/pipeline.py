@@ -53,7 +53,8 @@ async def fetch_and_store_arxiv(
     max_results_per_category: int = 20,
     skip_download: bool = False,
     skip_parse: bool = False,
-    combined_query: bool = False
+    combined_query: bool = False,
+    use_daily_window: bool = False
 ):
     """
     Fetch arXiv papers from one or multiple categories and store in database.
@@ -88,7 +89,18 @@ async def fetch_and_store_arxiv(
     print(f"Using corpus: {corpus['name']} (ID: {corpus['id']})")
     
     # Handle different input types
-    if categories == "all":
+    # Handle different input types
+    if use_daily_window:
+        # NEW: Fetch daily submission window (yesterday 2PM - today 2PM EST)
+        from .query_arxiv import get_daily_submission_window
+        
+        if isinstance(categories, list):
+            entries = get_daily_submission_window(categories, max_results=10000)
+        else:
+            print("Error: --daily-window requires categories (auto-fetched from profiles)")
+            return None
+
+    elif categories == "all":
         print(f"\nFetching ALL preprints from yesterday...")
         entries = get_yesterday_entries(rate_limit=3.0)
     
@@ -163,9 +175,8 @@ async def fetch_and_store_arxiv(
         download_arxiv_pdfs(
             [{"arxiv_url": p["metadata"]["arxiv_url"]} for p in papers_data],
             output_folder=str(PDF_DIR),
-            min_delay=5,
-            max_delay=15,
-            requests_per_hour=100
+            use_s3=False,
+            min_delay=3  # arXiv requires 3 seconds minimum
         )
     
     # Parse PDFs with GROBID
@@ -299,7 +310,8 @@ async def run_corpus_mode(args):
             max_results_per_category=args.max_per_category,
             skip_download=args.skip_download,
             skip_parse=args.skip_parse,
-            combined_query=args.combined_query
+            combined_query=args.combined_query,
+            use_daily_window=args.daily_window
         )
         
         if not corpus_id:
@@ -444,6 +456,7 @@ def main():
     parser.add_argument("--llm-model", default="models/Llama-3.1-8B-Instruct-IQ4_XS.gguf")
     parser.add_argument("--uid", help="Process specific UID only (e.g., UID001)")
     parser.add_argument("--use-sections", action="store_true")
+    parser.add_argument("--daily-window", action="store_true", help="Fetch papers from yesterday 2PM EST to today 2PM EST (arXiv submission window)")
     
     args = parser.parse_args()
     

@@ -340,6 +340,105 @@ def write_all_json(records, filename="metadata.json"):
         json.dump(records, f, indent=2)
     print(f" Saved {len(records)} papers into {json_path}")
 
+def get_arxiv_entries_date_range(
+    categories: List[str],
+    start_date: str,  # Format: "YYYYMMDD"
+    end_date: str,    # Format: "YYYYMMDD"
+    max_results: int = 1000,
+    rate_limit: float = 3.0
+):
+    """Fetch arXiv entries within a specific date range."""
+    
+    # Build query
+    cat_queries = [f"cat:{cat}" for cat in categories]
+    combined_query = " OR ".join(cat_queries)
+    
+    # arXiv date format in query
+    full_query = f"({combined_query}) AND submittedDate:[{start_date} TO {end_date}]"
+    
+    url = (
+        "http://export.arxiv.org/api/query?"
+        f"search_query={full_query}"
+        f"&start=0&max_results={max_results}"
+        "&sortBy=submittedDate&sortOrder=descending"
+    )
+    
+    print(f"\nAPI Query:")
+    print(f"  Categories: {', '.join(categories)}")
+    print(f"  Date range: {start_date} to {end_date}")
+    print(f"  URL: {url[:150]}...")
+    
+    try:
+        time.sleep(rate_limit)
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        feed = feedparser.parse(resp.text)
+        entries = feed.entries
+        
+        print(f"  Result: {len(entries)} papers\n")
+        return entries
+        
+    except Exception as e:
+        print(f"  Error: {e}\n")
+        return []
+
+        
+def get_daily_submission_window(categories: List[str], max_results: int = 1000):
+    """
+    Fetch papers from yesterday 2PM EST to today 2PM EST.
+    """
+    from datetime import datetime, timedelta
+    import pytz
+    
+    # Get EST timezone
+    try:
+        est = pytz.timezone('America/New_York')
+    except:
+        # Fallback if pytz not installed
+        print("⚠️ pytz not installed. Using UTC-5 approximation.")
+        est = None
+    
+    if est:
+        # Current time in EST
+        now_est = datetime.now(est)
+        
+        # Today 2 PM EST
+        today_2pm = now_est.replace(hour=14, minute=0, second=0, microsecond=0)
+        
+        # Yesterday 2 PM EST
+        yesterday_2pm = today_2pm - timedelta(days=1)
+        
+        # Convert to UTC
+        start_utc = yesterday_2pm.astimezone(pytz.UTC)
+        end_utc = today_2pm.astimezone(pytz.UTC)
+    else:
+        # Simple UTC-5 offset
+        now_utc = datetime.utcnow()
+        now_est_approx = now_utc - timedelta(hours=5)
+        
+        today_2pm = now_est_approx.replace(hour=14, minute=0, second=0, microsecond=0)
+        yesterday_2pm = today_2pm - timedelta(days=1)
+        
+        start_utc = yesterday_2pm + timedelta(hours=5)
+        end_utc = today_2pm + timedelta(hours=5)
+    
+    # arXiv date format: YYYYMMDD (just date, no time)
+    start_str = start_utc.strftime("%Y%m%d")
+    end_str = end_utc.strftime("%Y%m%d")
+    
+    print(f"\n📅 Daily Submission Window:")
+    print(f"   From: {yesterday_2pm.strftime('%Y-%m-%d %I:%M %p')} EST")
+    print(f"   To:   {today_2pm.strftime('%Y-%m-%d %I:%M %p')} EST")
+    print(f"   UTC range: {start_utc.strftime('%Y-%m-%d %H:%M')} to {end_utc.strftime('%Y-%m-%d %H:%M')}")
+    print(f"   Query dates: {start_str} to {end_str}")
+    
+    return get_arxiv_entries_date_range(
+        categories=categories,
+        start_date=start_str,
+        end_date=end_str,
+        max_results=max_results,
+        rate_limit=3.0
+    )
 
 def main(max_results=MAX_RESULTS, delay=2):
     """

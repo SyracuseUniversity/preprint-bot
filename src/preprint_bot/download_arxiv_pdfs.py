@@ -6,10 +6,14 @@ import os
 import time
 import random
 import requests
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import deque
 from .config import DATA_DIR
+from .download_s3_bulk import download_from_s3_bulk
 
 HEADERS = {
     "User-Agent": "arxiv-pdf-fetcher/1.0 (contact: ospo@syr.edu)"
@@ -113,151 +117,98 @@ class AdaptiveRateLimiter:
 def download_arxiv_pdfs(
     paper_metadata, 
     output_folder="arxiv_pipeline_data/arxiv_pdfs", 
-    min_delay=5,  # Increased from 3
-    max_delay=15,  # Increased from 10
-    requests_per_hour=100,  # New: enforce hourly limit
-    max_retries=3,
-    initial_backoff=10  # Increased from 5
+    use_s3=False,
+    min_delay=3,  # arXiv requires 3 seconds minimum
+    max_retries=2,
+    initial_backoff=5
 ):
     """
-    Downloads PDFs of arXiv papers with robust rate limiting.
-    
-    Args:
-        paper_metadata: List of paper dictionaries with 'arxiv_url' keys
-        output_folder: Directory to save PDFs
-        min_delay: Minimum delay between requests (seconds)
-        max_delay: Maximum delay between requests (seconds)
-        requests_per_hour: Maximum requests per hour (arXiv recommends ~100)
-        max_retries: Maximum number of retry attempts
-        initial_backoff: Initial backoff delay for exponential backoff (seconds)
-    
-    Returns:
-        dict: Statistics about the download process
+    Downloads PDFs respecting arXiv's ToS:
+    - 3 seconds between requests
+    - Single connection only
+    - NO hourly limit enforcement (let arXiv handle it)
     """
     os.makedirs(output_folder, exist_ok=True)
     
-    rate_limiter = AdaptiveRateLimiter(min_delay, max_delay, requests_per_hour)
-    stats = {
-        "downloaded": 0,
-        "skipped": 0,
-        "failed": 0,
-        "rate_limited": 0,
-        "start_time": time.time()
-    }
+    # Try S3 first
+    if use_s3:
+        try:
+            s3_stats = download_from_s3_bulk(paper_metadata, output_folder)
+            failed_papers = [p for p in paper_metadata 
+                           if not os.path.exists(os.path.join(output_folder, f"{p['arxiv_url'].split('/')[-1]}.pdf"))]
+            
+            if not failed_papers:
+                return s3_stats
+            
+            print(f"HTTP fallback for {len(failed_papers)} papers...")
+            paper_metadata = failed_papers
+        except:
+            pass
+    
+    total = len(paper_metadata)
+    est_time = (total * min_delay) / 60
     
     print(f"\n{'='*60}")
-    print(f"Starting arXiv PDF download")
-    print(f"Papers to process: {len(paper_metadata)}")
-    print(f"Rate limit: {requests_per_hour} requests/hour, {min_delay}-{max_delay}s delay")
+    print(f"arXiv Download ({min_delay}s delay between requests)")
+    print(f"Papers: {total}")
+    print(f"Estimated time: {est_time:.1f} minutes")
     print(f"{'='*60}\n")
-
-    for idx, paper in enumerate(paper_metadata):
+    
+    stats = {"downloaded": 0, "skipped": 0, "failed": 0, "start_time": time.time()}
+    
+    for paper in tqdm(paper_metadata, desc="Downloading", unit="paper"):
         arxiv_id = paper["arxiv_url"].split("/")[-1]
         pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
         pdf_path = os.path.join(output_folder, f"{arxiv_id}.pdf")
-
-        # Skip if already downloaded
+        
+        # Skip if exists
         if os.path.exists(pdf_path):
-            print(f"[{idx + 1}/{len(paper_metadata)}] ⊘ Skipping (exists): {arxiv_id}")
             stats["skipped"] += 1
             continue
-
-        # Attempt download with exponential backoff
-        retry_delay = initial_backoff
-        success = False
         
+        # Download with retry
+        success = False
         for attempt in range(max_retries):
-            # Apply rate limiting before each attempt
-            rate_limiter.wait()
-            
             try:
-                print(f"[{idx + 1}/{len(paper_metadata)}] Downloading: {arxiv_id} (attempt {attempt + 1}/{max_retries})")
+                # Enforce minimum delay
+                time.sleep(min_delay)
+                
                 r = requests.get(pdf_url, headers=HEADERS, timeout=30)
-
-                # Handle rate limiting responses
+                
+                if r.status_code == 200 and "application/pdf" in r.headers.get("Content-Type", ""):
+                    with open(pdf_path, "wb") as f:
+                        f.write(r.content)
+                    stats["downloaded"] += 1
+                    success = True
+                    break
+                
+                # Rate limited - exponential backoff
                 if r.status_code in [403, 429, 503]:
-                    stats["rate_limited"] += 1
-                    rate_limiter.record_rate_limit()
-                    print(f"Rate limited (HTTP {r.status_code}). Backing off {retry_delay}s...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-                    continue
-
-                # Check for successful response
-                if r.status_code == 200:
-                    content_type = r.headers.get("Content-Type", "").lower()
-                    
-                    if "application/pdf" in content_type:
-                        with open(pdf_path, "wb") as f:
-                            f.write(r.content)
-                        print(f"   Saved: {arxiv_id} ({len(r.content)/1024:.1f} KB)")
-                        stats["downloaded"] += 1
-                        rate_limiter.record_success()
-                        success = True
-                        break
-                    else:
-                        # Likely CAPTCHA or block page
-                        print(f" Got {content_type} instead of PDF")
-                        if attempt < max_retries - 1:
-                            print(f"     Retrying in {retry_delay}s...")
-                            time.sleep(retry_delay)
-                            retry_delay *= 2
-                        else:
-                            html_path = f"{pdf_path}.html"
-                            with open(html_path, "w", encoding="utf-8") as f:
-                                f.write(r.text)
-                            print(f"   Saved HTML to: {html_path}")
-                else:
-                    print(f" HTTP {r.status_code} for {arxiv_id}")
                     if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                        retry_delay *= 2
-                        
-            except requests.exceptions.Timeout:
-                print(f"Timeout for {arxiv_id}")
-                if attempt < max_retries - 1:
-                    print(f"     Retrying in {retry_delay}s...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-                    
-            except requests.exceptions.RequestException as e:
-                print(f"Request error: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-                    
+                        backoff = initial_backoff * (2 ** attempt)
+                        tqdm.write(f"  Rate limited, waiting {backoff}s...")
+                        time.sleep(backoff)
+                        continue
+                
             except Exception as e:
-                print(f"Unexpected error: {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
+                    time.sleep(initial_backoff)
+                    continue
         
         if not success:
             stats["failed"] += 1
-            print(f"   Failed after {max_retries} attempts")
-        
-        # Show progress every 10 papers
-        if (idx + 1) % 10 == 0:
-            elapsed = time.time() - stats["start_time"]
-            rate_stats = rate_limiter.get_stats()
-            print(f"\n--- Progress Report ---")
-            print(f"  Processed: {idx + 1}/{len(paper_metadata)}")
-            print(f"  Downloaded: {stats['downloaded']}, Failed: {stats['failed']}, Skipped: {stats['skipped']}")
-            print(f"  Requests this hour: {rate_stats['requests_last_hour']}/{requests_per_hour}")
-            print(f"  Current delay: {rate_stats['current_delay']:.1f}s")
-            print(f"  Elapsed time: {elapsed/60:.1f} min\n")
+            tqdm.write(f"  Failed: {arxiv_id}")
     
     # Final summary
     elapsed = time.time() - stats["start_time"]
     print(f"\n{'='*60}")
     print("Download Complete!")
     print(f"{'='*60}")
-    print(f"   Downloaded: {stats['downloaded']}")
+    print(f"   ✓ Downloaded: {stats['downloaded']}")
     print(f"  ⊘ Skipped: {stats['skipped']}")
-    print(f"   Failed: {stats['failed']}")
-    print(f"    Rate limited: {stats['rate_limited']}")
+    print(f"   ✗ Failed: {stats['failed']}")
     print(f"    Total time: {elapsed/60:.1f} minutes")
-    print(f"   Average: {elapsed/len(paper_metadata):.1f}s per paper")
+    print(f"   Speed: {stats['downloaded']/(elapsed/60) if elapsed > 0 else 0:.1f} papers/min")
     print(f"{'='*60}\n")
     
     return stats
