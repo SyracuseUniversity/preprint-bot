@@ -147,9 +147,9 @@ async def delete_recommendation(rec_id: int):
 async def get_recommendations_by_profile(profile_id: int, limit: int = Query(100)):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
-        # First, get the corpus associated with this profile
+        # Get profile with top_x setting
         profile = await conn.fetchrow(
-            "SELECT user_id FROM profiles WHERE id = $1",
+            "SELECT user_id, top_x FROM profiles WHERE id = $1",
             profile_id
         )
         
@@ -157,6 +157,9 @@ async def get_recommendations_by_profile(profile_id: int, limit: int = Query(100
             return []
         
         user_id = profile['user_id']
+        
+        # Use profile's top_x if set, otherwise use limit parameter
+        effective_limit = profile['top_x'] if profile['top_x'] else limit
         
         # Get the user corpus for this profile
         corpus_name = f"user_{user_id}_profile_{profile_id}"
@@ -171,7 +174,7 @@ async def get_recommendations_by_profile(profile_id: int, limit: int = Query(100
         
         user_corpus_id = corpus['id']
         
-        # Get recommendations with summaries
+        # Get recommendations with effective_limit
         rows = await conn.fetch(
             """
             SELECT 
@@ -183,10 +186,10 @@ async def get_recommendations_by_profile(profile_id: int, limit: int = Query(100
             JOIN papers p ON r.paper_id = p.id
             LEFT JOIN summaries s ON s.paper_id = p.id
             WHERE rr.user_corpus_id = $1
-            ORDER BY r.created_at DESC, r.rank
+            ORDER BY r.created_at DESC, r.score DESC
             LIMIT $2
             """,
-            user_corpus_id, limit
+            user_corpus_id, effective_limit
         )
         
         return [dict(row) for row in rows]

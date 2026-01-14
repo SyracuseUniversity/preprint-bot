@@ -530,26 +530,54 @@ def dashboard_page(user: Dict):
         col2.metric("Your Corpora", len(corpora))
         
         st.divider()
-        st.markdown("#### Recent Recommendations")
-        
-        recommendations = api.get_user_recommendations(user.get('id'), limit=10)
-        
+        st.markdown("#### Today's Recommendations")
+
+        recommendations = api.get_user_recommendations(user.get('id'), limit=100)
+
         if not recommendations:
             st.info("No recommendations yet. Create a profile and run the recommendation pipeline!")
         else:
-            for rec in recommendations[:10]:
-                with st.container(border=True):
-                    st.markdown(f"**{rec['title']}**")
-                    st.caption(f"Score: {rec['score']:.3f} | arXiv: {rec.get('arxiv_id', 'N/A')}")
-                    
-                    if rec.get('summary_text'):
-                        st.write(rec['summary_text'])
-                    elif rec.get('abstract'):
-                        st.write(rec['abstract'][:200] + "...")
-                    
-                    if rec.get('arxiv_id'):
-                        url = f"https://arxiv.org/abs/{rec['arxiv_id']}"
-                        st.link_button("View on arXiv", url)
+            # Filter to today's recommendations only
+            from datetime import datetime, date
+            
+            today = date.today()
+            todays_recs = []
+            
+            for rec in recommendations:
+                created_at = rec.get('created_at')
+                if created_at:
+                    try:
+                        # Parse the datetime
+                        if isinstance(created_at, str):
+                            rec_date = datetime.fromisoformat(created_at.replace('Z', '').replace('+00:00', '')).date()
+                        else:
+                            rec_date = created_at.date() if hasattr(created_at, 'date') else None
+                        
+                        # Only include if from today
+                        if rec_date == today:
+                            todays_recs.append(rec)
+                    except:
+                        continue
+            
+            if not todays_recs:
+                st.info(f"No recommendations generated today. Last run had {len(recommendations)} total recommendations.")
+            else:
+                st.caption(f"{len(todays_recs)} new paper(s) today")
+                
+                for rec in todays_recs[:10]:  # Show top 10 from today
+                    with st.container(border=True):
+                        st.markdown(f"**{rec['title']}**")
+                        st.caption(f"Score: {rec['score']:.3f} | arXiv: {rec.get('arxiv_id', 'N/A')}")
+                        
+                        # Show summary if available
+                        if rec.get('summary_text'):
+                            st.write(rec['summary_text'])
+                        elif rec.get('abstract'):
+                            st.write(rec['abstract'][:200] + "...")
+                        
+                        if rec.get('arxiv_id'):
+                            url = f"https://arxiv.org/abs/{rec['arxiv_id']}"
+                            st.link_button("View on arXiv", url)
     
     except Exception as e:
         st.error(f"Error loading dashboard: {str(e)}")
@@ -597,7 +625,7 @@ def profiles_page(user: Dict):
                         st.subheader(profile['name'])
                         
                         # Profile info in 3 columns
-                        col1, col2, col3 = st.columns(3)
+                        col1, col2, col3, col4 = st.columns(4)
                         with col1:
                             st.write("**Frequency**")
                             st.write(profile['frequency'])
@@ -605,6 +633,9 @@ def profiles_page(user: Dict):
                             st.write("**Threshold**")
                             st.write(profile['threshold'])
                         with col3:
+                            st.write("**Max Papers**")
+                            st.write(str(profile.get('top_x', 10)))
+                        with col4:
                             st.write("**Keywords**")
                             keywords_display = ', '.join(profile['keywords'][:3])
                             if len(profile['keywords']) > 3:
@@ -754,18 +785,18 @@ def profiles_page(user: Dict):
     
     # Set defaults based on mode
     if selected_profile_id:
-        # Load existing profile data
         profile = next(p for p in profiles if p['id'] == selected_profile_id)
         default_name = profile['name']
         default_freq = profile['frequency']
         default_threshold = profile['threshold']
+        default_top_x = profile.get('top_x', 10)  # ADD THIS
         default_keywords = ', '.join(profile['keywords'])
         st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
     else:
-        # New profile defaults
         default_name = ""
         default_freq = "weekly"
         default_threshold = "medium"
+        default_top_x = 10  # ADD THIS
         default_keywords = ""
         if mode == "Create new":
             st.session_state["profile_cat_tree_selected"] = []
@@ -785,6 +816,15 @@ def profiles_page(user: Dict):
                 "Threshold",
                 ["low", "medium", "high"],
                 index=["low", "medium", "high"].index(default_threshold) if default_threshold in ["low", "medium", "high"] else 1
+            )
+
+            top_x = st.slider(
+                "Maximum recommendations to show",
+                min_value=5,
+                max_value=50,
+                value=default_top_x if selected_profile_id else 10,
+                step=5,
+                help="Number of top papers to show for this profile"
             )
             
             keywords = st.text_input(
@@ -847,7 +887,8 @@ def profiles_page(user: Dict):
                                 keywords=kw_list,
                                 categories=categories_list,
                                 frequency=freq,
-                                threshold=threshold
+                                threshold=threshold,
+                                top_x=top_x
                             )
                             st.success("Profile updated successfully!")
                             st.rerun()
@@ -860,7 +901,8 @@ def profiles_page(user: Dict):
                             "keywords": kw_list,
                             "categories": categories_list,
                             "frequency": freq,
-                            "threshold": threshold
+                            "threshold": threshold,
+                            "top_x": top_x
                         }
                         st.session_state["show_profile_create_confirm"] = True
     
@@ -874,6 +916,7 @@ def profiles_page(user: Dict):
             st.write(f"**Name:** {data['name']}")
             st.write(f"**Frequency:** {data['frequency']}")
             st.write(f"**Threshold:** {data['threshold']}")
+            st.write(f"**Max Papers:** {data['top_x']}")
             st.write(f"**Keywords:** {', '.join(data['keywords'])}")
             if data.get('categories'):
                 cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in data['categories']]
@@ -889,7 +932,8 @@ def profiles_page(user: Dict):
                             keywords=data['keywords'],
                             categories=data.get('categories', []),
                             frequency=data['frequency'],
-                            threshold=data['threshold']
+                            threshold=data['threshold'],
+                            top_x=data['top_x']
                         )
                         
                         st.session_state.pop("pending_profile_create", None)
@@ -936,8 +980,10 @@ def recommendations_page(user: Dict):
         
         # Fetch recommendations
         if selected == "all":
+            fetch_limit = 100
             recommendations = api.get_user_recommendations(user.get('id'), limit=100)
         else:
+            fetch_limit = 200 
             recommendations = api.get_profile_recommendations(int(selected), limit=100)
         
         if not recommendations:
@@ -946,14 +992,77 @@ def recommendations_page(user: Dict):
         
         # Advanced filters in expandable section
         with st.expander("Filters", expanded=False):
+            # Quick filter buttons
+            col_quick1, col_quick2, col_quick3, col_quick4 = st.columns(4)
+            
+            from datetime import date, timedelta
+            
+            with col_quick1:
+                if st.button("Today", use_container_width=True):
+                    st.session_state['rec_date_from'] = date.today()
+                    st.session_state['rec_date_to'] = date.today()
+                    st.rerun()
+            
+            with col_quick2:
+                if st.button("Last 7 days", use_container_width=True):
+                    st.session_state['rec_date_from'] = date.today() - timedelta(days=7)
+                    st.session_state['rec_date_to'] = date.today()
+                    st.rerun()
+            
+            with col_quick3:
+                if st.button("Last 30 days", use_container_width=True):
+                    st.session_state['rec_date_from'] = date.today() - timedelta(days=30)
+                    st.session_state['rec_date_to'] = date.today()
+                    st.rerun()
+            
+            with col_quick4:
+                if st.button("All time", use_container_width=True):
+                    st.session_state['rec_date_from'] = None
+                    st.session_state['rec_date_to'] = None
+                    st.rerun()
+            
+            st.divider()
+            
+            # Manual date inputs
             col1, col2, col3 = st.columns(3)
             
             with col1:
-                date_from = st.date_input("From date", value=None, key="rec_date_from")
+                date_from = st.date_input(
+                    "From date", 
+                    value=st.session_state.get('rec_date_from'),
+                    key="rec_date_from_input"
+                )
+                if date_from:
+                    st.session_state['rec_date_from'] = date_from
+            
             with col2:
-                date_to = st.date_input("To date", value=None, key="rec_date_to")
+                date_to = st.date_input(
+                    "To date", 
+                    value=st.session_state.get('rec_date_to'),
+                    key="rec_date_to_input"
+                )
+                if date_to:
+                    st.session_state['rec_date_to'] = date_to
+            
             with col3:
                 min_score = st.slider("Minimum Score", 0.0, 1.0, 0.5, 0.01, key="rec_min_score")
+
+            if selected != "all":
+                # Get the profile's default top_x
+                selected_profile = next((p for p in profiles if str(p['id']) == selected), None)
+                default_top_x = selected_profile.get('top_x', 10) if selected_profile else 10
+                
+                top_x_limit = st.slider(
+                    "Number of papers to show",
+                    min_value=5,
+                    max_value=100,
+                    value=default_top_x,
+                    step=5,
+                    key="rec_top_x_slider",
+                    help="Override profile's default max papers setting"
+                )
+            else:
+                top_x_limit = 100  # For "All Profiles", show up to 100
             
             # Keyword search
             keyword_search = st.text_input("Search in title/abstract", placeholder="Enter keywords...")
@@ -984,7 +1093,10 @@ def recommendations_page(user: Dict):
         # Score filter
         filtered = [r for r in filtered if r['score'] >= min_score]
         
-        # Date filters
+        # Date filters - use session state values
+        date_from = st.session_state.get('rec_date_from')
+        date_to = st.session_state.get('rec_date_to')
+
         if date_from or date_to:
             from datetime import datetime
             
@@ -1004,8 +1116,10 @@ def recommendations_page(user: Dict):
                             continue
                         date_filtered.append(r)
                     except:
+                        # If we can't parse date, include it
                         date_filtered.append(r)
                 else:
+                    # No date info, include it
                     date_filtered.append(r)
             filtered = date_filtered
         
@@ -1027,6 +1141,12 @@ def recommendations_page(user: Dict):
                 if r.get('metadata') and 
                    any(cat in r['metadata'].get('categories', []) for cat in cat_codes)
             ]
+        
+        # Apply top_x limit (only for specific profiles)
+        if selected != "all" and 'rec_top_x_slider' in st.session_state:
+            top_x_limit = st.session_state['rec_top_x_slider']
+            # Sort by score first, then take top X
+            filtered = sorted(filtered, key=lambda x: x['score'], reverse=True)[:top_x_limit]
         
         st.write(f"Showing {len(filtered)} recommendations")
         
