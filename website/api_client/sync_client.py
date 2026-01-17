@@ -11,14 +11,27 @@ class SyncWebAPIClient:
     
     def _run_async(self, coro):
         """Run async coroutine synchronously"""
+        import nest_asyncio
+        
         try:
-            loop = asyncio.get_running_loop()
-            # Already in async context, can't use run_until_complete
-            raise RuntimeError("Cannot run sync wrapper in async context")
+            # Try to get existing loop
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
         except RuntimeError:
-            # No running loop, create new one
-            return asyncio.run(coro)
-    
+            # No loop exists, create new one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # Allow nested event loops (needed for Streamlit)
+        try:
+            nest_asyncio.apply(loop)
+        except:
+            pass
+        
+        return loop.run_until_complete(coro)
+        
     # Auth
     def login(self, email: str, password: str) -> Dict:
         return self._run_async(self._client.login(email, password))
