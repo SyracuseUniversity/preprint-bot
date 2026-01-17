@@ -1,6 +1,5 @@
 from typing import Dict, Optional
 from datetime import datetime
-import asyncio
 
 class ProgressTracker:
     """Track processing progress for user tasks"""
