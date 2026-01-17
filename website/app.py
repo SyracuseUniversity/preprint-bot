@@ -415,39 +415,6 @@ def signup_page():
         st.session_state['show_signup'] = False
         st.rerun()
 
-def forgot_password_page():
-    """Forgot password page"""
-    st.subheader("Forgot Password")
-    st.caption("Enter your email to receive a password reset token")
-    
-    with st.form("forgot_form"):
-        email = st.text_input("Email", placeholder="you@example.com")
-        submit = st.form_submit_button("Send Reset Token", use_container_width=True)
-    
-    if submit:
-        if not email:
-            st.error("Please enter your email")
-        else:
-            try:
-                api = get_api_client()
-                result = api.request_password_reset(email)
-                st.success("If that email exists, we've sent a reset token")
-                
-                # For development: show the token
-                if 'token' in result:
-                    st.info(f"Development Mode - Your reset token: {result['token']}")
-                
-                if st.button("I have a token"):
-                    st.session_state['show_reset'] = True
-                    st.session_state['show_forgot'] = False
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
-    
-    if st.button("Back to Login"):
-        st.session_state['show_forgot'] = False
-        st.rerun()
-
 def reset_password_page():
     """Reset password page"""
     st.subheader("Reset Password")

@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from dotenv import load_dotenv
+
 
 # List of arXiv subject categories to query
 ARXIV_CATEGORIES = [
@@ -56,11 +58,13 @@ ARXIV_CORPUS_NAME = "arxiv_papers"
 
 # Database Settings class
 class Settings(BaseSettings):
-    DATABASE_HOST: str = "localhost"
-    DATABASE_PORT: int = 5432
-    DATABASE_NAME: str = "preprint_bot"
-    DATABASE_USER: str = "postgres"
-    DATABASE_PASSWORD: str = "ggwpfax"
+    load_dotenv() 
+
+    DATABASE_HOST: str = os.getenv("DATABASE_HOST", "localhost")
+    DATABASE_PORT: int = int(os.getenv("DATABASE_PORT", 5432))
+    DATABASE_NAME: str = os.getenv("DATABASE_NAME", "preprint_bot")
+    DATABASE_USER: str = os.getenv("DATABASE_USER", "postgres")
+    DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD", "")
 
     class Config:
         env_file = ".env"

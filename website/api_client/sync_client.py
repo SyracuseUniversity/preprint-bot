@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional, List, Dict
+from typing import List, Dict
 from .client import WebAPIClient
 
 class SyncWebAPIClient:

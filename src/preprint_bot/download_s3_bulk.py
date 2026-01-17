@@ -7,7 +7,6 @@ from botocore import UNSIGNED
 from botocore.config import Config
 from pathlib import Path
 from tqdm import tqdm
-import os
 
 def download_from_s3_bulk(paper_metadata, output_folder):
     """

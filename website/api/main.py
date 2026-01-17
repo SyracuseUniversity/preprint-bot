@@ -8,10 +8,6 @@ import json
 import bcrypt
 from typing import Optional
 
-# --- Simple in-memory users (email -> bcrypt hash). Generate hashes with bcrypt.hashpw(...) once and paste here.
-USERS = {
-    "demo@example.com": b"$2b$12$5rqH0P7a3Jm2j9JwH3t6xOGq9b6t3lD6O9y8y1QYgJwVtY3R2kzTe",  # password: demo1234
-}
 
 def verify_password(plain: str, hashed: bytes) -> bool:
     try:

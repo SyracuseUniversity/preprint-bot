@@ -6,11 +6,9 @@ import os
 import time
 import random
 import requests
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import deque
 from .config import DATA_DIR
 from .download_s3_bulk import download_from_s3_bulk

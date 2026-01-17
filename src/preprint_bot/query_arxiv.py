@@ -11,9 +11,6 @@ from typing import List
 from .extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
 from .config import MAX_RESULTS as CONFIG_MAX_RESULTS, DATA_DIR
 
-# # Output directory
-# SAVE_DIR = os.path.join(os.getcwd(), "pdf_processes")
-# os.makedirs(SAVE_DIR, exist_ok=True)
 
 # Default MAX_RESULTS (can be overridden by CLI or config)
 MAX_RESULTS = CONFIG_MAX_RESULTS if CONFIG_MAX_RESULTS else 500  # increase, since we want *all*

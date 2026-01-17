@@ -3,10 +3,9 @@ from .progress_tracker import progress_tracker
 import json
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
 from typing import List
-from pathlib import Path
 import shutil
 from database import get_db_pool
-from config import USER_PDF_DIR, USER_PROCESSED_DIR
+from config import USER_PDF_DIR
 import asyncio
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
