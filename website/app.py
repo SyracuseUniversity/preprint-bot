@@ -295,7 +295,7 @@ def get_current_user() -> Optional[Dict]:
             user = api.get_user(int(user_id))
             st.session_state['user'] = user
             return user
-        except:
+        except Exception:
             pass
     
     return None
@@ -336,7 +336,7 @@ def check_duplicate_profile_name(api, user_id: int, name: str, exclude_profile_i
             if p['name'].lower() == name.lower():
                 return True
         return False
-    except:
+    except Exception:
         return False
 
 # ==================== AUTH PAGES ====================
@@ -523,7 +523,7 @@ def dashboard_page(user: Dict):
                         # Only include if from today
                         if rec_date == today:
                             todays_recs.append(rec)
-                    except:
+                    except Exception:
                         continue
             
             if not todays_recs:
@@ -564,9 +564,9 @@ def profiles_page(user: Dict):
                     import time
                     time.sleep(3)
                     st.rerun()
-            except:
+            except Exception:
                 pass
-    except:
+    except Exception:
         pass
         
     st.markdown("### Profiles")
