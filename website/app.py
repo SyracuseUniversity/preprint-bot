@@ -499,39 +499,77 @@ def dashboard_page(user: Dict):
         st.divider()
         st.markdown("#### Today's Recommendations")
 
-        recommendations = api.get_user_recommendations(user.get('id'), limit=100)
+        # Get recommendations from ALL profiles
+        all_recommendations = []
+        for profile in profiles:
+            try:
+                recs = api.get_profile_recommendations(profile['id'], limit=5000)
+                all_recommendations.extend(recs)
+            except:
+                continue
 
-        if not recommendations:
+        if not all_recommendations:
             st.info("No recommendations yet. Create a profile and run the recommendation pipeline!")
         else:
-            # Filter to today's recommendations only
-            from datetime import datetime, date
+            # Find the most recent date across all recommendations
+            from datetime import datetime
             
-            today = date.today()
-            todays_recs = []
-            
-            for rec in recommendations:
-                created_at = rec.get('created_at')
-                if created_at:
+            most_recent_date = None
+            for rec in all_recommendations:
+                submitted_date = rec.get('submitted_date')
+                if submitted_date:
                     try:
-                        # Parse the datetime
-                        if isinstance(created_at, str):
-                            rec_date = datetime.fromisoformat(created_at.replace('Z', '').replace('+00:00', '')).date()
+                        if isinstance(submitted_date, str):
+                            paper_date = datetime.fromisoformat(submitted_date.replace('Z', '').replace('+00:00', ''))
                         else:
-                            rec_date = created_at.date() if hasattr(created_at, 'date') else None
+                            paper_date = submitted_date
                         
-                        # Only include if from today
-                        if rec_date == today:
-                            todays_recs.append(rec)
-                    except Exception:
+                        if most_recent_date is None or paper_date > most_recent_date:
+                            most_recent_date = paper_date
+                    except:
                         continue
             
+            if not most_recent_date:
+                st.info("No dated recommendations found.")
+                return
+            
+            # Filter to only papers from the most recent date
+            todays_recs = []
+            most_recent_date_only = most_recent_date.date() if hasattr(most_recent_date, 'date') else most_recent_date
+            
+            for rec in all_recommendations:
+                submitted_date = rec.get('submitted_date')
+                if submitted_date:
+                    try:
+                        if isinstance(submitted_date, str):
+                            rec_date = datetime.fromisoformat(submitted_date.replace('Z', '').replace('+00:00', '')).date()
+                        else:
+                            rec_date = submitted_date.date() if hasattr(submitted_date, 'date') else None
+                        
+                        if rec_date == most_recent_date_only:
+                            todays_recs.append(rec)
+                    except:
+                        continue
+            
+            # Deduplicate by arxiv_id - keep highest score
+            seen_arxiv_ids = {}
+            for rec in todays_recs:
+                arxiv_id = rec.get('arxiv_id')
+                if arxiv_id:
+                    if arxiv_id not in seen_arxiv_ids or rec['score'] > seen_arxiv_ids[arxiv_id]['score']:
+                        seen_arxiv_ids[arxiv_id] = rec
+            
+            todays_recs = list(seen_arxiv_ids.values())
+            
             if not todays_recs:
-                st.info(f"No recommendations generated today. Last run had {len(recommendations)} total recommendations.")
+                st.info(f"No recommendations from the most recent date ({most_recent_date_only}).")
             else:
-                st.caption(f"{len(todays_recs)} new paper(s) today")
+                # Sort by score
+                todays_recs = sorted(todays_recs, key=lambda x: x['score'], reverse=True)
                 
-                for rec in todays_recs[:10]:  # Show top 10 from today
+                st.caption(f"**{len(todays_recs)} paper(s) from {most_recent_date_only.strftime('%d %B %Y')}** (across all profiles)")
+                
+                for rec in todays_recs[:10]:  # Show top 10
                     with st.container(border=True):
                         st.markdown(f"**{rec['title']}**")
                         st.caption(f"Score: {rec['score']:.3f} | arXiv: {rec.get('arxiv_id', 'N/A')}")
@@ -543,8 +581,7 @@ def dashboard_page(user: Dict):
                             st.write(rec['abstract'][:200] + "...")
                         
                         if rec.get('arxiv_id'):
-                            url = f"https://arxiv.org/abs/{rec['arxiv_id']}"
-                            st.link_button("View on arXiv", url)
+                            st.link_button("View on arXiv", f"https://arxiv.org/abs/{rec['arxiv_id']}")
     
     except Exception as e:
         st.error(f"Error loading dashboard: {str(e)}")
