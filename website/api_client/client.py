@@ -254,7 +254,7 @@ class WebAPIClient:
         all_recommendations.sort(key=lambda x: x.get('score', 0), reverse=True)
         return all_recommendations[:limit]
     
-    async def get_profile_recommendations(self, profile_id: int, limit: int = 100) -> List[Dict]:
+    async def get_profile_recommendations(self, profile_id: int, limit: int = 5000) -> List[Dict]:
         """Get recommendations for a specific profile"""
         response = await self.client.get(
             f"{self.base_url}/recommendations/profile/{profile_id}",

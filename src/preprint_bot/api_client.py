@@ -1,5 +1,6 @@
 import httpx
 from typing import List, Dict, Optional
+import datetime
 
 class APIClient:
     def __init__(self, base_url: str = "http://127.0.0.1:8000"):
@@ -109,8 +110,9 @@ class APIClient:
     
     
     async def create_paper(self, corpus_id: int, arxiv_id: str, title: str, 
-                          abstract: str, metadata: Dict, source: str = "arxiv",
-                          processed_text_path: str = None, pdf_path: str = None) -> Dict:
+                        abstract: str, metadata: Dict, source: str = "arxiv",
+                        processed_text_path: str = None, pdf_path: str = None,
+                        submitted_date: datetime = None) -> Dict:  # ADD THIS PARAM
         paper_data = {
             "corpus_id": corpus_id,
             "arxiv_id": arxiv_id,
@@ -118,7 +120,8 @@ class APIClient:
             "abstract": abstract,
             "metadata": metadata,
             "source": source,
-            "pdf_path": pdf_path
+            "pdf_path": pdf_path,
+            "submitted_date": submitted_date.isoformat() if submitted_date else None  # ADD THIS
         }
         
         response = await self.client.post(

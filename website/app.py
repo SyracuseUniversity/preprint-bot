@@ -800,7 +800,7 @@ def profiles_page(user: Dict):
                 placeholder="machine learning, neural networks, optimization"
             )
             
-            st.write("**Select arXiv Categories** (optional)")
+            st.write("**Select arXiv Categories** (required)")
             selected_cats = st_ant_tree(
                 treeData=ARXIV_CATEGORY_TREE,
                 treeCheckable=True,
@@ -811,6 +811,8 @@ def profiles_page(user: Dict):
                 only_children_select=True,
                 key=f"profile_cat_tree_{mode}_{selected_profile_id}"
             )
+            st.write("DEBUG - selected_cats RIGHT AFTER TREE:", selected_cats)
+            st.write("DEBUG - Type:", type(selected_cats))
             
             submit_label = "Create Profile" if selected_profile_id is None else "Save Changes"
             submit = st.form_submit_button(submit_label, type="primary")
@@ -829,21 +831,27 @@ def profiles_page(user: Dict):
                     kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
                     
                     # Extract categories
+                   # Extract selected categories from tree - handle different formats
                     categories_list = []
                     if selected_cats:
+                        st.write("DEBUG - Raw selected_cats type:", type(selected_cats))
+                        st.write("DEBUG - Raw selected_cats value:", selected_cats)
+                        
+                        # Try different possible keys the tree component might use
                         if isinstance(selected_cats, list):
                             categories_list = selected_cats
                         elif isinstance(selected_cats, dict):
-                            for key in ['checked', 'selected', 'value', 'checkedKeys']:
+                            # Try ALL keys to see what's there
+                            st.write("DEBUG - Dict keys:", list(selected_cats.keys()))
+                            
+                            # Try common keys
+                            for key in ['checked', 'selected', 'value', 'checkedKeys', 'halfCheckedKeys']:
                                 if key in selected_cats:
                                     val = selected_cats[key]
+                                    st.write(f"DEBUG - Found key '{key}' with value:", val)
                                     if isinstance(val, list):
                                         categories_list = val
-                                    break
-                    
-                    # Filter leaf nodes only
-                    if categories_list:
-                        categories_list = [cat for cat in categories_list if '.' in cat]
+                                        break
                     
                     if selected_profile_id:
                         # EDIT MODE: Save immediately
@@ -944,15 +952,26 @@ def recommendations_page(user: Dict):
             options=list(profile_options.keys()),
             format_func=lambda x: profile_options[x]
         )
-        
-        # Fetch recommendations
+
+        # Fetch recommendations with higher limit
         if selected == "all":
-            fetch_limit = 100
-            recommendations = api.get_user_recommendations(user.get('id'), limit=100)
+            recommendations = api.get_user_recommendations(user.get('id'), limit=5000)
         else:
-            fetch_limit = 200 
-            recommendations = api.get_profile_recommendations(int(selected), limit=100)
-        
+            profile_id_int = int(selected)
+            recommendations = api.get_profile_recommendations(profile_id_int, limit=5000)  # ← Increase limit
+
+        # DEDUPLICATE by arxiv_id - keep highest score (KEEP THIS CODE)
+        seen_arxiv_ids = {}
+        for rec in recommendations:
+            arxiv_id = rec.get('arxiv_id')
+            if arxiv_id:
+                if arxiv_id not in seen_arxiv_ids or rec['score'] > seen_arxiv_ids[arxiv_id]['score']:
+                    seen_arxiv_ids[arxiv_id] = rec
+            else:
+                seen_arxiv_ids[f"_no_id_{rec.get('id')}"] = rec
+
+        recommendations = list(seen_arxiv_ids.values())
+                    
         if not recommendations:
             st.info("No recommendations yet.")
             return
@@ -1022,8 +1041,8 @@ def recommendations_page(user: Dict):
                 top_x_limit = st.slider(
                     "Number of papers to show",
                     min_value=5,
-                    max_value=100,
-                    value=default_top_x,
+                    max_value=500,
+                    value=100,
                     step=5,
                     key="rec_top_x_slider",
                     help="Override profile's default max papers setting"
@@ -1060,7 +1079,7 @@ def recommendations_page(user: Dict):
         # Score filter
         filtered = [r for r in filtered if r['score'] >= min_score]
         
-        # Date filters - use session state values
+        # Date filters - NOW USING submitted_date DIRECTLY
         date_from = st.session_state.get('rec_date_from')
         date_to = st.session_state.get('rec_date_to')
 
@@ -1069,25 +1088,31 @@ def recommendations_page(user: Dict):
             
             date_filtered = []
             for r in filtered:
-                created_at = r.get('created_at')
-                if created_at:
+                submitted_date = r.get('submitted_date')
+                
+                if submitted_date:
                     try:
-                        if isinstance(created_at, str):
-                            rec_date = datetime.fromisoformat(created_at.replace('Z', '').replace('+00:00', '')).date()
+                        # Parse submitted_date
+                        if isinstance(submitted_date, str):
+                            paper_date = datetime.fromisoformat(submitted_date.replace('Z', '').replace('+00:00', '')).date()
                         else:
-                            rec_date = created_at.date()
+                            paper_date = submitted_date.date() if hasattr(submitted_date, 'date') else None
                         
-                        if date_from and rec_date < date_from:
-                            continue
-                        if date_to and rec_date > date_to:
-                            continue
-                        date_filtered.append(r)
-                    except:
+                        if paper_date:
+                            # Apply date filters
+                            if date_from and paper_date < date_from:
+                                continue
+                            if date_to and paper_date > date_to:
+                                continue
+                            
+                            date_filtered.append(r)
+                    except Exception as e:
                         # If we can't parse date, include it
                         date_filtered.append(r)
                 else:
-                    # No date info, include it
+                    # No submitted_date, include it
                     date_filtered.append(r)
+            
             filtered = date_filtered
         
         # Keyword search filter
@@ -1121,43 +1146,33 @@ def recommendations_page(user: Dict):
             st.info("No recommendations match the filters.")
             return
         
-        # Group by date
+        # Group by submitted_date (SIMPLIFIED - using submitted_date directly)
         from datetime import datetime
         from collections import defaultdict
         
         grouped = defaultdict(list)
         
         for rec in filtered:
-            created_at = rec.get('created_at')
+            submitted_date = rec.get('submitted_date')
             date_str = "Unknown Date"
             date_obj = None
             
-            if created_at:
+            if submitted_date:
                 try:
-                    if isinstance(created_at, str):
-                        clean_date = created_at.replace('Z', '').replace('+00:00', '')
-                        if 'T' in clean_date:
-                            date_obj = datetime.fromisoformat(clean_date)
-                        else:
-                            for fmt in ['%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d']:
-                                try:
-                                    date_obj = datetime.strptime(created_at, fmt)
-                                    break
-                                except:
-                                    continue
+                    # Parse submitted_date
+                    if isinstance(submitted_date, str):
+                        date_obj = datetime.fromisoformat(submitted_date.replace('Z', '').replace('+00:00', ''))
                     else:
-                        date_obj = created_at
+                        date_obj = submitted_date
                     
-                    if date_obj:
-                        date_str = date_obj.strftime("%d %B %Y")
-                
-                except Exception:
+                    date_str = date_obj.strftime("%d %B %Y")  # "15 January 2026"
+                except Exception as e:
                     date_str = "Unknown Date"
             
             rec['_date_obj'] = date_obj
             grouped[date_str].append(rec)
         
-        # Sort dates
+        # Sort dates (newest first)
         def date_sort_key(date_str):
             if date_str == "Unknown Date":
                 return datetime.min
@@ -1204,6 +1219,7 @@ def recommendations_page(user: Dict):
         import traceback
         with st.expander("Debug Info"):
             st.code(traceback.format_exc())
+
 
 def settings_page(user: Dict):
     """Settings page"""

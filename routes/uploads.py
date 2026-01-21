@@ -294,10 +294,28 @@ async def process_user_papers_task(user_id: int, profile_id: int):
                 progress_tracker.update_progress(task_id, i+1, f"Completed: {pdf_file.name}")
                 print(f"  Completed {pdf_file.name}")
                 
+            except requests.exceptions.RequestException as e:
+                # GROBID connection errors - can continue with other papers
+                logger.error(f"GROBID processing failed for {pdf_file.name}: {e}")
+                progress_tracker.update_progress(task_id, i+1, f"Failed (GROBID): {pdf_file.name}")
+                continue
+                
+            except IOError as e:
+                # File read/write errors - can continue with other papers
+                logger.error(f"File I/O error for {pdf_file.name}: {e}")
+                progress_tracker.update_progress(task_id, i+1, f"Failed (I/O): {pdf_file.name}")
+                continue
+                
+            except KeyError as e:
+                # Missing expected data in parsed content - can continue
+                logger.error(f"Missing data in {pdf_file.name}: {e}")
+                progress_tracker.update_progress(task_id, i+1, f"Failed (parsing): {pdf_file.name}")
+                continue
+                
             except Exception as e:
-                print(f"  Error processing {pdf_file.name}: {e}")
-                import traceback
-                traceback.print_exc()
+                # Unexpected errors - log and continue with next paper
+                logger.exception(f"Unexpected error processing {pdf_file.name}: {e}")
+                progress_tracker.update_progress(task_id, i+1, f"Failed (error): {pdf_file.name}")
                 continue
         
         # Mark as complete

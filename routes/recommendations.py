@@ -113,7 +113,7 @@ async def get_recommendations_with_papers(run_id: int, limit: int = Query(50, ge
             """
             SELECT 
                 r.id, r.run_id, r.paper_id, r.score, r.rank, r.summary, r.created_at,
-                p.arxiv_id, p.title, p.abstract, p.metadata, p.source,
+                p.arxiv_id, p.title, p.abstract, p.metadata, p.source, p.submitted_date,
                 s.summary_text
             FROM recommendations r
             JOIN papers p ON r.paper_id = p.id
@@ -129,7 +129,10 @@ async def get_recommendations_with_papers(run_id: int, limit: int = Query(50, ge
         for row in rows:
             result = dict(row)
             if result.get('metadata'):
-                result['metadata'] = json.loads(result['metadata'])
+                try:
+                    result['metadata'] = json.loads(result['metadata'])
+                except:
+                    pass
             results.append(result)
         
         return results
@@ -144,10 +147,11 @@ async def delete_recommendation(rec_id: int):
 
 
 @recommendations_router.get("/profile/{profile_id}")
-async def get_recommendations_by_profile(profile_id: int, limit: int = Query(100)):
+async def get_recommendations_by_profile(profile_id: int, limit: int = Query(5000)):
+    """Get unique recommendations per paper (highest score) for a specific profile"""
     pool = await get_db_pool()
     async with pool.acquire() as conn:
-        # Get profile with top_x setting
+        # Get profile
         profile = await conn.fetchrow(
             "SELECT user_id, top_x FROM profiles WHERE id = $1",
             profile_id
@@ -157,9 +161,6 @@ async def get_recommendations_by_profile(profile_id: int, limit: int = Query(100
             return []
         
         user_id = profile['user_id']
-        
-        # Use profile's top_x if set, otherwise use limit parameter
-        effective_limit = profile['top_x'] if profile['top_x'] else limit
         
         # Get the user corpus for this profile
         corpus_name = f"user_{user_id}_profile_{profile_id}"
@@ -174,22 +175,32 @@ async def get_recommendations_by_profile(profile_id: int, limit: int = Query(100
         
         user_corpus_id = corpus['id']
         
-        # Get recommendations with effective_limit
+        # Use DISTINCT ON to get one recommendation per paper (highest score)
         rows = await conn.fetch(
             """
-            SELECT 
+            SELECT DISTINCT ON (p.arxiv_id)
                 r.id, r.run_id, r.paper_id, r.score, r.rank, r.created_at,
-                p.arxiv_id, p.title, p.abstract, p.metadata,
+                p.arxiv_id, p.title, p.abstract, p.metadata, p.submitted_date,
                 s.summary_text
             FROM recommendations r
             JOIN recommendation_runs rr ON r.run_id = rr.id
             JOIN papers p ON r.paper_id = p.id
-            LEFT JOIN summaries s ON s.paper_id = p.id
+            LEFT JOIN summaries s ON s.paper_id = p.id AND s.mode = 'abstract'
             WHERE rr.user_corpus_id = $1
-            ORDER BY r.created_at DESC, r.score DESC
+            ORDER BY p.arxiv_id, r.score DESC, p.submitted_date DESC
             LIMIT $2
             """,
-            user_corpus_id, effective_limit
+            user_corpus_id, limit
         )
         
-        return [dict(row) for row in rows]
+        results = []
+        for row in rows:
+            result = dict(row)
+            if result.get('metadata'):
+                try:
+                    result['metadata'] = json.loads(result['metadata'])
+                except:
+                    pass
+            results.append(result)
+        
+        return results
