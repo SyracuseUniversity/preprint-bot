@@ -1038,7 +1038,7 @@ def recommendations_page(user: Dict):
                 selected_profile = next((p for p in profiles if str(p['id']) == selected), None)
                 default_top_x = selected_profile.get('top_x', 10) if selected_profile else 10
                 
-                top_x_limit = st.slider(
+                st.slider(
                     "Number of papers to show",
                     min_value=5,
                     max_value=500,
