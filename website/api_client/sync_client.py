@@ -27,7 +27,7 @@ class SyncWebAPIClient:
         # Allow nested event loops (needed for Streamlit)
         try:
             nest_asyncio.apply(loop)
-        except:
+        except Exception:
             pass
         
         return loop.run_until_complete(coro)

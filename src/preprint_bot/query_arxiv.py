@@ -423,7 +423,7 @@ def get_daily_submission_window(categories: List[str], max_results: int = 1000):
     start_str = start_utc.strftime("%Y%m%d")
     end_str = end_utc.strftime("%Y%m%d")
     
-    print(f"\n📅 Daily Submission Window:")
+    print("\n[DAILY] Daily Submission Window:")
     print(f"   From: {yesterday_2pm.strftime('%Y-%m-%d %I:%M %p')} EST")
     print(f"   To:   {today_2pm.strftime('%Y-%m-%d %I:%M %p')} EST")
     print(f"   UTC range: {start_utc.strftime('%Y-%m-%d %H:%M')} to {end_utc.strftime('%Y-%m-%d %H:%M')}")
