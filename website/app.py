@@ -673,7 +673,7 @@ def profiles_page(user: Dict):
                                                 status_text.text(f"Uploading {uploaded_file.name}...")
                                                 file_bytes = uploaded_file.read()
                                                 
-                                                result = api.upload_paper_bytes(
+                                                api.upload_paper_bytes(
                                                     user.get('id'),
                                                     profile['id'],
                                                     uploaded_file.name,
