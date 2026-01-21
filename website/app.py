@@ -673,7 +673,7 @@ def profiles_page(user: Dict):
                                                 status_text.text(f"Uploading {uploaded_file.name}...")
                                                 file_bytes = uploaded_file.read()
                                                 
-                                                result = api.upload_paper_bytes(
+                                                api.upload_paper_bytes(
                                                     user.get('id'),
                                                     profile['id'],
                                                     uploaded_file.name,
@@ -901,7 +901,7 @@ def profiles_page(user: Dict):
             with col1:
                 if st.button("Confirm Create", key="confirm_profile_create", type="primary"):
                     try:
-                        result = api.create_profile(
+                        api.create_profile(
                             user_id=user.get('id'),
                             name=data['name'],
                             keywords=data['keywords'],
@@ -1038,7 +1038,7 @@ def recommendations_page(user: Dict):
                 selected_profile = next((p for p in profiles if str(p['id']) == selected), None)
                 default_top_x = selected_profile.get('top_x', 10) if selected_profile else 10
                 
-                top_x_limit = st.slider(
+                st.slider(
                     "Number of papers to show",
                     min_value=5,
                     max_value=500,
@@ -1047,8 +1047,8 @@ def recommendations_page(user: Dict):
                     key="rec_top_x_slider",
                     help="Override profile's default max papers setting"
                 )
-            else:
-                top_x_limit = 100  # For "All Profiles", show up to 100
+            
+            
             
             # Keyword search
             keyword_search = st.text_input("Search in title/abstract", placeholder="Enter keywords...")
