@@ -901,7 +901,7 @@ def profiles_page(user: Dict):
             with col1:
                 if st.button("Confirm Create", key="confirm_profile_create", type="primary"):
                     try:
-                        result = api.create_profile(
+                        api.create_profile(
                             user_id=user.get('id'),
                             name=data['name'],
                             keywords=data['keywords'],
