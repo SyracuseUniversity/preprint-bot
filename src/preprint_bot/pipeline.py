@@ -7,7 +7,7 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import Union, List
+from typing import List
 
 from .config import (
     DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS,

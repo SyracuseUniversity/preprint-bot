@@ -55,10 +55,11 @@ SYSTEM_USER_NAME = "Preprint Bot"
 # Corpus naming
 ARXIV_CORPUS_NAME = "arxiv_papers"
 
+# Load environment variables at module level
+load_dotenv() 
 
 # Database Settings class
 class Settings(BaseSettings):
-    load_dotenv() 
 
     DATABASE_HOST: str = os.getenv("DATABASE_HOST", "localhost")
     DATABASE_PORT: int = int(os.getenv("DATABASE_PORT", 5432))

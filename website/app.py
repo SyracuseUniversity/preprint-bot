@@ -15,7 +15,7 @@ def auto_refresh_during_processing(api, user_id, profile_id, interval=3):
         if progress and progress.get('status') == 'running':
             time.sleep(interval)
             st.rerun()
-    except:
+    except Exception:
         pass
 
 # ==================== ARXIV CATEGORY TREE ====================
