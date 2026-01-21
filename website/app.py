@@ -1047,8 +1047,8 @@ def recommendations_page(user: Dict):
                     key="rec_top_x_slider",
                     help="Override profile's default max papers setting"
                 )
-            else:
-                top_x_limit = 100  # For "All Profiles", show up to 100
+            
+            
             
             # Keyword search
             keyword_search = st.text_input("Search in title/abstract", placeholder="Enter keywords...")
