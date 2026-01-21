@@ -1,12 +1,99 @@
 from setuptools import setup, find_packages
 import os
 
+"""
+Installation Commands:
+----------------------
+
+Basic installation (core dependencies only):
+    pip install -e .
+
+Install with specific extras:
+    pip install -e ".[dev]"          # Development tools
+    pip install -e ".[test]"         # Testing dependencies
+    pip install -e ".[cuda]"         # GPU support (faiss-gpu)
+    pip install -e ".[qdrant]"       # Qdrant vector database
+    pip install -e ".[llama]"        # LLaMA summarization
+    pip install -e ".[production]"   # Production deployment tools
+
+Install multiple extras:
+    pip install -e ".[dev,test]"
+    pip install -e ".[dev,test,llama]"
+
+Install ALL optional dependencies (excludes CUDA - install separately if needed):
+    pip install -e ".[all]"
+
+For GPU support (RTX 5070 Ti), install PyTorch with CUDA first, then manually install faiss-gpu:
+    pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+    pip install faiss-gpu
+    pip install -e ".[all]"
+
+Post-installation steps:
+    python -m spacy download en_core_web_sm
+    python -c "import nltk; nltk.download('punkt')"
+"""
+
 def read_readme():
     readme_path = os.path.join(os.path.dirname(__file__), 'README.md')
     if os.path.exists(readme_path):
         with open(readme_path, 'r', encoding='utf-8') as f:
             return f.read()
     return "A database-integrated preprint recommendation bot"
+
+# Define extras_require first
+extras_require = {
+    # Development tools
+    "dev": [
+        "setuptools>=65.0.0",
+        "wheel>=0.38.0",
+        "pytest>=8.0.0",
+        "pytest-asyncio>=0.23.0",
+        "black>=24.0.0",
+        "flake8>=7.0.0",
+        "mypy>=1.8.0",
+        "isort>=5.13.0",
+    ],
+    
+    # GPU support - NOTE: Install manually if pip install fails
+    # pip install faiss-gpu (requires CUDA toolkit)
+    "cuda": [
+        # Commented out to prevent installation errors on systems without CUDA
+        # Manually install with: pip install faiss-gpu
+        # "faiss-gpu>=1.7.4",
+    ],
+    
+    # Alternative vector database
+    "qdrant": [
+        "qdrant-client>=1.12.1",
+    ],
+    
+    # LLM-based summarization
+    "llama": [
+        "llama-cpp-python>=0.1.83",
+    ],
+    
+    # Production deployment
+    "production": [
+        "gunicorn>=21.2.0",
+        "redis>=5.0.0",
+        "celery>=5.3.0",
+    ],
+    
+    # Testing
+    "test": [
+        "pytest>=8.0.0",
+        "pytest-asyncio>=0.23.0",
+        "pytest-cov>=4.1.0",
+        "faker>=22.0.0",
+    ],
+}
+
+# Create 'all' extra that includes everything except CUDA (install manually)
+all_extras = set()
+for key, extra_deps in extras_require.items():
+    if key != "cuda":  # Skip CUDA dependencies in 'all'
+        all_extras.update(extra_deps)
+extras_require['all'] = list(all_extras)
 
 setup(
     name="preprint_bot",
@@ -34,9 +121,9 @@ setup(
         "transformers>=4.41.0,<5.0.0",
         "torch>=2.5.0",
         "nltk>=3.9",
-        "spacy>=3.8.0",  # CRITICAL: Changed from >=3.7.0 to >=3.8.0
+        "spacy>=3.8.0",
         
-        # Similarity Search
+        # Similarity Search (CPU version - works everywhere)
         "faiss-cpu>=1.7.4",
         "scikit-learn>=1.5.0",
         
@@ -58,50 +145,7 @@ setup(
         "python-dotenv>=1.0.0",
     ],
     
-    # Optional dependencies for specific features
-    extras_require={
-        # Development tools
-        "dev": [
-            "setuptools>=65.0.0",
-            "wheel>=0.38.0",
-            "pytest>=8.0.0",
-            "pytest-asyncio>=0.23.0",
-            "black>=24.0.0",
-            "flake8>=7.0.0",
-            "mypy>=1.8.0",
-            "isort>=5.13.0",
-        ],
-        
-        # GPU support
-        "cuda": [
-            "faiss-gpu>=1.7.4",
-        ],
-        
-        # Alternative vector database
-        "qdrant": [
-            "qdrant-client>=1.12.1",
-        ],
-        
-        # LLM-based summarization
-        "llama": [
-            "llama-cpp-python>=0.1.83",
-        ],
-        
-        # Production deployment
-        "production": [
-            "gunicorn>=21.2.0",
-            "redis>=5.0.0",
-            "celery>=5.3.0",
-        ],
-        
-        # Testing
-        "test": [
-            "pytest>=8.0.0",
-            "pytest-asyncio>=0.23.0",
-            "pytest-cov>=4.1.0",
-            "faker>=22.0.0",
-        ],
-    },
+    extras_require=extras_require,
     
     # Console scripts
     entry_points={

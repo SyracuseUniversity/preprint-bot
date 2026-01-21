@@ -192,3 +192,4 @@ parsed_arxiv_outputs
 models
 config.py
 pdf_data
+src/preprint_bot/config.py

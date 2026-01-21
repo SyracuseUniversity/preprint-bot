@@ -6,13 +6,11 @@ import argparse
 import json
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
+from typing import List
 
 from .extract_grobid import extract_grobid_sections_from_bytes, spacy_tokenize
 from .config import MAX_RESULTS as CONFIG_MAX_RESULTS, DATA_DIR
 
-# Output directory
-SAVE_DIR = os.path.join(os.getcwd(), "pdf_processes")
-os.makedirs(SAVE_DIR, exist_ok=True)
 
 # Default MAX_RESULTS (can be overridden by CLI or config)
 MAX_RESULTS = CONFIG_MAX_RESULTS if CONFIG_MAX_RESULTS else 500  # increase, since we want *all*
@@ -103,7 +101,7 @@ def get_yesterday_entries(rate_limit: float = 3.0, per_category: int = 10):
             "&sortBy=submittedDate&sortOrder=descending"
         )
 
-        print(f"📘 Category: {cat} — fetching up to {per_category} papers…")
+        print(f" Category: {cat} — fetching up to {per_category} papers…")
         try:
             resp = requests.get(url)
             resp.raise_for_status()
@@ -149,6 +147,134 @@ def get_arxiv_pdf_bytes(arxiv_url):
     response.raise_for_status()
     return response.content, arxiv_id
 
+# query_arxiv.py - Add this function
+
+def get_arxiv_entries_multi_category(
+    categories: List[str], 
+    max_results_per_category: int = 20,
+    rate_limit: float = 3.0
+):
+    """
+    Fetch arXiv entries from multiple categories.
+    
+    Args:
+        categories: List of arXiv categories (e.g., ['cs.LG', 'cs.CV'])
+        max_results_per_category: Max papers per category
+        rate_limit: Seconds to wait between API calls
+    
+    Returns:
+        list: Combined list of all entries (duplicates removed)
+    """
+    all_entries = []
+    seen_ids = set()
+    
+    print(f"\nFetching from {len(categories)} categories...")
+    print(f"Max results per category: {max_results_per_category}")
+    print(f"Rate limit: {rate_limit}s between requests\n")
+    
+    for i, category in enumerate(categories, 1):
+        print(f"[{i}/{len(categories)}] Fetching from {category}...")
+        
+        try:
+            # Fetch entries for this category
+            entries = get_arxiv_entries(
+                category=category, 
+                max_results=max_results_per_category
+            )
+            
+            # Deduplicate based on arXiv ID
+            new_entries = 0
+            for entry in entries:
+                arxiv_id = entry.id.split('/')[-1]
+                if arxiv_id not in seen_ids:
+                    seen_ids.add(arxiv_id)
+                    all_entries.append(entry)
+                    new_entries += 1
+            
+            print(f"  Retrieved: {len(entries)} papers")
+            print(f"  New papers: {new_entries}")
+            print(f"  Total unique: {len(all_entries)}\n")
+            
+            # Rate limiting between categories
+            if i < len(categories):
+                time.sleep(rate_limit)
+                
+        except Exception as e:
+            print(f"  Error fetching {category}: {e}\n")
+            continue
+    
+    print(f"{'='*60}")
+    print(f"Total papers fetched: {len(all_entries)}")
+    print(f"Duplicates removed: {len(seen_ids) - len(all_entries) if len(seen_ids) > len(all_entries) else 0}")
+    print(f"{'='*60}\n")
+    
+    return all_entries
+
+
+def get_arxiv_entries_combined_query(
+    categories: List[str],
+    max_results: int = 100,
+    days_back: int = 7
+):
+    """
+    Fetch papers from multiple categories using a single combined query.
+    More efficient than separate queries but less control over per-category limits.
+    
+    Args:
+        categories: List of arXiv categories
+        max_results: Total max results across all categories
+        days_back: Fetch papers from last N days
+    
+    Returns:
+        list: Combined entries
+    """
+    from datetime import datetime, timedelta
+    
+    # Build combined query: (cat:cs.LG OR cat:cs.CV OR cat:cs.CL)
+    cat_queries = [f"cat:{cat}" for cat in categories]
+    combined_query = f"({' OR '.join(cat_queries)})"
+    
+    # Add date filter
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days_back)
+    
+    date_query = f"submittedDate:[{start_date.strftime('%Y%m%d')}* TO {end_date.strftime('%Y%m%d')}*]"
+    full_query = f"{combined_query} AND {date_query}"
+    
+    print(f"\nCombined query for categories: {', '.join(categories)}")
+    print(f"Date range: Last {days_back} days")
+    print(f"Max results: {max_results}\n")
+    
+    url = (
+        "http://export.arxiv.org/api/query?"
+        f"search_query={full_query}"
+        f"&start=0&max_results={max_results}"
+        "&sortBy=submittedDate&sortOrder=descending"
+    )
+    
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        feed = feedparser.parse(resp.text)
+        entries = feed.entries
+        
+        # Group by category for reporting
+        category_counts = {}
+        for entry in entries:
+            for tag in entry.get('tags', []):
+                cat = tag.get('term', '')
+                if cat in categories:
+                    category_counts[cat] = category_counts.get(cat, 0) + 1
+        
+        print(f"Retrieved {len(entries)} papers:")
+        for cat in sorted(category_counts.keys()):
+            print(f"  {cat}: {category_counts[cat]} papers")
+        
+        return entries
+        
+    except Exception as e:
+        print(f"Error in combined query: {e}")
+        return []
 
 def process_entry(entry, delay):
     """
@@ -209,8 +335,107 @@ def write_all_json(records, filename="metadata.json"):
     json_path = os.path.join(SAVE_DIR, filename)
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(records, f, indent=2)
-    print(f"✅ Saved {len(records)} papers into {json_path}")
+    print(f" Saved {len(records)} papers into {json_path}")
 
+def get_arxiv_entries_date_range(
+    categories: List[str],
+    start_date: str,  # Format: "YYYYMMDD"
+    end_date: str,    # Format: "YYYYMMDD"
+    max_results: int = 1000,
+    rate_limit: float = 3.0
+):
+    """Fetch arXiv entries within a specific date range."""
+    
+    # Build query
+    cat_queries = [f"cat:{cat}" for cat in categories]
+    combined_query = " OR ".join(cat_queries)
+    
+    # arXiv date format in query
+    full_query = f"({combined_query}) AND submittedDate:[{start_date} TO {end_date}]"
+    
+    url = (
+        "http://export.arxiv.org/api/query?"
+        f"search_query={full_query}"
+        f"&start=0&max_results={max_results}"
+        "&sortBy=submittedDate&sortOrder=descending"
+    )
+    
+    print(f"\nAPI Query:")
+    print(f"  Categories: {', '.join(categories)}")
+    print(f"  Date range: {start_date} to {end_date}")
+    print(f"  URL: {url[:150]}...")
+    
+    try:
+        time.sleep(rate_limit)
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        feed = feedparser.parse(resp.text)
+        entries = feed.entries
+        
+        print(f"  Result: {len(entries)} papers\n")
+        return entries
+        
+    except Exception as e:
+        print(f"  Error: {e}\n")
+        return []
+
+        
+def get_daily_submission_window(categories: List[str], max_results: int = 1000):
+    """
+    Fetch papers from yesterday 2PM EST to today 2PM EST.
+    """
+    from datetime import datetime, timedelta
+    import pytz
+    
+    # Get EST timezone
+    try:
+        est = pytz.timezone('America/New_York')
+    except:
+        # Fallback if pytz not installed
+        print("⚠️ pytz not installed. Using UTC-5 approximation.")
+        est = None
+    
+    if est:
+        # Current time in EST
+        now_est = datetime.now(est)
+        
+        # Today 2 PM EST
+        today_2pm = now_est.replace(hour=14, minute=0, second=0, microsecond=0)
+        
+        # Yesterday 2 PM EST
+        yesterday_2pm = today_2pm - timedelta(days=1)
+        
+        # Convert to UTC
+        start_utc = yesterday_2pm.astimezone(pytz.UTC)
+        end_utc = today_2pm.astimezone(pytz.UTC)
+    else:
+        # Simple UTC-5 offset
+        now_utc = datetime.utcnow()
+        now_est_approx = now_utc - timedelta(hours=5)
+        
+        today_2pm = now_est_approx.replace(hour=14, minute=0, second=0, microsecond=0)
+        yesterday_2pm = today_2pm - timedelta(days=1)
+        
+        start_utc = yesterday_2pm + timedelta(hours=5)
+        end_utc = today_2pm + timedelta(hours=5)
+    
+    # arXiv date format: YYYYMMDD (just date, no time)
+    start_str = start_utc.strftime("%Y%m%d")
+    end_str = end_utc.strftime("%Y%m%d")
+    
+    print("\n[DAILY] Daily Submission Window:")
+    print(f"   From: {yesterday_2pm.strftime('%Y-%m-%d %I:%M %p')} EST")
+    print(f"   To:   {today_2pm.strftime('%Y-%m-%d %I:%M %p')} EST")
+    print(f"   UTC range: {start_utc.strftime('%Y-%m-%d %H:%M')} to {end_utc.strftime('%Y-%m-%d %H:%M')}")
+    print(f"   Query dates: {start_str} to {end_str}")
+    
+    return get_arxiv_entries_date_range(
+        categories=categories,
+        start_date=start_str,
+        end_date=end_str,
+        max_results=max_results,
+        rate_limit=3.0
+    )
 
 def main(max_results=MAX_RESULTS, delay=2):
     """

@@ -50,6 +50,7 @@ class ProfileCreate(BaseModel):
     user_id: int
     name: str
     keywords: List[str]
+    categories: List[str] = []  # ADD THIS LINE
     email_notify: bool = True
     frequency: FrequencyEnum
     threshold: ThresholdEnum = ThresholdEnum.medium
@@ -58,6 +59,7 @@ class ProfileCreate(BaseModel):
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     keywords: Optional[List[str]] = None
+    categories: Optional[List[str]] = None  # ADD THIS LINE
     email_notify: Optional[bool] = None
     frequency: Optional[FrequencyEnum] = None
     threshold: Optional[ThresholdEnum] = None
@@ -68,6 +70,7 @@ class ProfileResponse(BaseModel):
     user_id: int
     name: str
     keywords: List[str]
+    categories: List[str]  # ADD THIS LINE
     email_notify: bool
     frequency: str
     threshold: str
@@ -102,14 +105,6 @@ class ProfileCorpusResponse(BaseModel):
     corpus_id: int
 
 # Paper Schemas
-class PaperCreate(BaseModel):
-    corpus_id: int
-    arxiv_id: Optional[str] = None
-    title: str
-    abstract: Optional[str] = None
-    metadata: Optional[dict] = None
-    pdf_path: Optional[str] = None
-    source: SourceEnum
 
 class PaperUpdate(BaseModel):
     arxiv_id: Optional[str] = None
@@ -118,6 +113,16 @@ class PaperUpdate(BaseModel):
     metadata: Optional[dict] = None
     pdf_path: Optional[str] = None
     source: Optional[SourceEnum] = None
+
+class PaperCreate(BaseModel):
+    corpus_id: int
+    arxiv_id: Optional[str] = None
+    title: str
+    abstract: Optional[str] = None
+    metadata: Optional[dict] = None
+    pdf_path: Optional[str] = None
+    submitted_date: Optional[datetime] = None  
+    source: SourceEnum
 
 class PaperResponse(BaseModel):
     id: int
@@ -128,6 +133,7 @@ class PaperResponse(BaseModel):
     metadata: Optional[dict]
     pdf_path: Optional[str]
     processed_text_path: Optional[str]
+    submitted_date: Optional[datetime]  
     source: str
     created_at: datetime
 
@@ -175,6 +181,8 @@ class EmbeddingCreate(BaseModel):
     type: TypeEnum
     model_name: str
 
+    model_config = {"protected_namespaces": ()}
+
 class EmbeddingUpdate(BaseModel):
     embedding: Optional[List[float]] = None
     
@@ -186,6 +194,8 @@ class EmbeddingResponse(BaseModel):
     type: str
     model_name: str
     created_at: datetime
+
+    model_config = {"protected_namespaces": ()}
 
 # RecommendationRun Schemas
 class RecommendationRunCreate(BaseModel):

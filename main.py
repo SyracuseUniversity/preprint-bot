@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from database import get_db_pool, close_db_pool
 
 # Import route modules
-from routes import users, papers, corpora, sections, embeddings
+from routes import users, papers, corpora, sections, embeddings, auth, uploads
 # from routes.recommendations import router as recommendation_runs_router, recommendations_router
 import routes.recommendations as recommendations
 
@@ -61,6 +61,8 @@ app.include_router(embeddings.router)
 app.include_router(recommendations.router)
 app.include_router(recommendations.recommendations_router)  # This one!
 app.include_router(summaries.router)
+app.include_router(auth.router)
+app.include_router(uploads.router) 
 
 # Include optional routers if available
 if HAS_OPTIONAL_ROUTES:
@@ -70,9 +72,9 @@ if HAS_OPTIONAL_ROUTES:
         app.include_router(summaries.router)
         app.include_router(profile_recommendations.router)
         app.include_router(email_logs.router)
-        print("✓ All route modules loaded")
+        print(" All route modules loaded")
     except Exception as e:
-        print(f"⚠ Warning loading optional routes: {e}")
+        print(f" Warning loading optional routes: {e}")
 
 
 @app.get("/")
