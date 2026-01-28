@@ -316,3 +316,11 @@ class WebAPIClient:
         )
         response.raise_for_status()
         return response.json()
+    
+    async def add_paper_from_arxiv(self, user_id: int, profile_id: int, arxiv_id: str) -> Dict:
+        response = await self.client.post(
+            f"{self.base_url}/uploads/arxiv/{user_id}/{profile_id}",
+            json={"arxiv_id": arxiv_id}
+        )
+        response.raise_for_status()
+        return response.json()

@@ -167,3 +167,15 @@ class SyncWebAPIClient:
         return self._run_async(
             self._client.get_processing_progress(user_id, profile_id)
         )
+
+    def get_arxiv_stats_for_date(self, date: str) -> Dict:
+        """Get total papers for a specific date"""
+        response = self.client.get(f"{self.base_url}/papers/arxiv-stats/date/{date}")
+        response.raise_for_status()
+        return response.json()
+
+    def add_paper_from_arxiv(self, user_id: int, profile_id: int, arxiv_id: str) -> Dict:
+        """Add a paper from arXiv by ID"""
+        return self._run_async(
+            self._client.add_paper_from_arxiv(user_id, profile_id, arxiv_id)
+        )

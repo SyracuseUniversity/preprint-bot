@@ -122,7 +122,8 @@ def get_yesterday_entries(rate_limit: float = 3.0, per_category: int = 10):
 
 def get_arxiv_entries(category: str, max_results: int = 20):
     """
-    Fetch the most recent arXiv entries for a given category (e.g., 'cs.LG').
+    Fetch the most recent arXiv entries for a given category.
+    Returns: (entries, total_available)
     """
     query = f"cat:{category}"
     url = (
@@ -132,7 +133,13 @@ def get_arxiv_entries(category: str, max_results: int = 20):
     )
     resp = requests.get(url)
     resp.raise_for_status()
-    return feedparser.parse(resp.text).entries
+    
+    feed = feedparser.parse(resp.text)
+    
+    # Get total available from opensearch:totalResults
+    total_available = int(feed.feed.get('opensearch_totalresults', 0))
+    
+    return feed.entries, total_available
 
 
 
