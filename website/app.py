@@ -567,36 +567,12 @@ def dashboard_page(user: Dict):
                 # Sort by score
                 todays_recs = sorted(todays_recs, key=lambda x: x['score'], reverse=True)
                 
-                st.caption(f"**{len(todays_recs)} paper(s) from {most_recent_date_only.strftime('%d %B %Y')}**")
+                st.caption(f"**{len(todays_recs)} paper(s) from {most_recent_date_only.strftime('%d %B %Y')}** (across all profiles)")
                 
                 for rec in todays_recs[:10]:  # Show top 10
                     with st.container(border=True):
                         st.markdown(f"**{rec['title']}**")
                         st.caption(f"Score: {rec['score']:.3f} | arXiv: {rec.get('arxiv_id', 'N/A')}")
-                        
-                        # GET CATEGORIES FROM METADATA
-                        metadata = rec.get('metadata', {})
-                        categories = metadata.get('categories', [])
-                        
-                        if categories:
-                            # OPTION 1: Show all categories with readable labels 
-                            # category_labels = []
-                            # for cat in categories[:3]:  # Show first 3
-                            #     label = ARXIV_CODE_TO_LABEL.get(cat, cat)
-                            #     category_labels.append(label)
-                            
-                            # category_text = " | ".join(category_labels)
-                            # if len(categories) > 3:
-                            #     category_text += f" (+{len(categories) - 3} more)"
-                            # st.caption(f"**Categories:** {category_text}")
-                            
-                            # # OPTION 2: Show only primary category 
-                            primary_cat = categories[0]
-                            primary_label = ARXIV_CODE_TO_LABEL.get(primary_cat, primary_cat)
-                            if len(categories) > 1:
-                                st.caption(f"**Category:** {primary_label} (+{len(categories) - 1} more)")
-                            else:
-                                st.caption(f"**Category:** {primary_label}")
                         
                         # Show summary if available
                         if rec.get('summary_text'):
@@ -616,37 +592,32 @@ def profiles_page(user: Dict):
     
     # Check for any running processing tasks and auto-refresh
     try:
-        profiles = api.get_user_profiles(user.get('id'))
+        profiles = api.get_user_profiles(user.get('id'))  # CHANGED
         for profile in profiles:
             try:
-                progress = api.get_processing_progress(user.get('id'), profile['id'])
+                progress = api.get_processing_progress(user.get('id'), profile['id'])  # CHANGED
                 if progress and progress.get('status') == 'running':
+                    # Show a banner at the top
                     st.info(f"Processing papers for profile '{profile['name']}'... Auto-refreshing every 3 seconds.")
                     import time
                     time.sleep(3)
                     st.rerun()
-            except Exception:
+            except:
                 pass
-    except Exception:
+    except:
         pass
         
     st.markdown("### Profiles")
     
-    # View selector
-    view = st.radio("View", ["List", "Create / Edit"], horizontal=True, key="profile_view")
+    api = get_api_client()
+    view = st.radio("View", ["List", "Create/Edit"], horizontal=True)
     
-    # Clear pending state when switching away from Create/Edit
-    if view != "Create / Edit":
-        st.session_state.pop("pending_profile_create", None)
-        st.session_state.pop("show_profile_create_confirm", None)
-    
-    # ==================== LIST VIEW ====================
     if view == "List":
         try:
-            profiles = api.get_user_profiles(user.get('id'))
+            profiles = api.get_user_profiles(user.get('id'))  # CHANGED
             
             if not profiles:
-                st.info("No profiles yet. Switch to **Create / Edit** to add one.")
+                st.info("No profiles yet. Switch to **Create/Edit** to add one.")
             else:
                 for profile in profiles:
                     with st.container(border=True):
@@ -678,29 +649,32 @@ def profiles_page(user: Dict):
                         
                         st.divider()
                         
-                        # Papers section
-                        st.markdown("#### Papers")
+                        # ============ PAPER UPLOAD SECTION ============
+                        st.markdown("#### 📄 Papers")
                         
+                        # Show uploaded papers
                         try:
-                            papers_data = api.list_uploaded_papers(user.get('id'), profile['id'])
+                            papers_data = api.list_uploaded_papers(user.get('id'), profile['id'])  # CHANGED
                             papers = papers_data.get('papers', [])
                             
                             if papers:
                                 st.write(f"**{len(papers)} paper(s) uploaded**")
                                 
+                                # Show papers in expandable section
                                 with st.expander("View Papers", expanded=False):
                                     for paper in papers:
                                         paper_col1, paper_col2, paper_col3 = st.columns([3, 1, 1])
                                         
                                         with paper_col1:
-                                            st.write(f"{paper['filename']}")
+                                            st.write(f"📄 {paper['filename']}")
                                         with paper_col2:
                                             st.caption(f"{paper['size_mb']} MB")
                                         with paper_col3:
-                                            if st.button("Delete", key=f"del_{profile['id']}_{paper['filename']}"):
+                                            if st.button("🗑️", key=f"del_{profile['id']}_{paper['filename']}", 
+                                                        help="Delete this paper"):
                                                 try:
                                                     api.delete_uploaded_paper(
-                                                        user.get('id'),
+                                                        user.get('id'),  # CHANGED
                                                         profile['id'],
                                                         paper['filename']
                                                     )
@@ -836,10 +810,11 @@ def profiles_page(user: Dict):
                         
                         st.divider()
                         
-                        # Delete profile with confirmation
+                        # ============ DELETE PROFILE SECTION ============
+                        # Delete button with confirmation
                         confirm_key = f"confirm_delete_{profile['id']}"
                         if st.session_state.get(confirm_key):
-                            st.warning("⚠️ Delete this profile? This will delete the profile and all uploaded papers. This cannot be undone.")
+                            st.warning("⚠️ Are you sure? This will delete the profile and all uploaded papers. This cannot be undone.")
                             col_yes, col_no = st.columns(2)
                             with col_yes:
                                 if st.button("Yes, delete", key=f"yes_{profile['id']}", type="primary"):
@@ -855,7 +830,7 @@ def profiles_page(user: Dict):
                                     st.session_state.pop(confirm_key)
                                     st.rerun()
                         else:
-                            if st.button("Delete Profile", key=f"del_{profile['id']}"):
+                            if st.button("🗑️ Delete Profile", key=f"del_{profile['id']}"):
                                 st.session_state[confirm_key] = True
                                 st.rerun()
         
@@ -938,34 +913,28 @@ def profiles_page(user: Dict):
                 placeholder="machine learning, neural networks, optimization"
             )
             
-            st.write("**Select arXiv Categories** (required)")
+            st.write("**Select arXiv Categories** (optional)")
             selected_cats = st_ant_tree(
                 treeData=ARXIV_CATEGORY_TREE,
                 treeCheckable=True,
                 showSearch=True,
                 placeholder="Select categories",
-                defaultValue=st.session_state.get("profile_cat_tree_selected", []),
                 max_height=300,
-                only_children_select=True,
-                key=f"profile_cat_tree_{mode}_{selected_profile_id}"
+                only_children_select=True
             )
             
-            submit_label = "Create Profile" if selected_profile_id is None else "Save Changes"
-            submit = st.form_submit_button(submit_label, type="primary")
+            submit = st.form_submit_button("Create Profile")
         
         if submit:
-            clean_name = name.strip()
-            if not clean_name:
+            if not name:
                 st.error("Profile name is required")
             elif not keywords:
                 st.error("At least one keyword is required")
             else:
-                # Check for duplicate name
-                if check_duplicate_profile_name(api, user.get('id'), clean_name, exclude_profile_id=selected_profile_id):
-                    st.error("A profile with this name already exists.")
-                else:
+                try:
                     kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
                     
+                    # Extract selected categories from tree
                     # Extract selected categories from tree
                     categories_list = []
                     if selected_cats:
@@ -977,7 +946,7 @@ def profiles_page(user: Dict):
                                     val = selected_cats[key]
                                     if isinstance(val, list):
                                         categories_list = val
-                                        break
+                                    break
                     
                     # Filter out parent nodes (keep only leaf categories with dots)
                     if categories_list:
@@ -1071,27 +1040,25 @@ def recommendations_page(user: Dict):
             st.info("No profiles found. Create a profile first.")
             return
         
-        # Profile dropdown - NO "All Profiles" option, default to first profile
-        profile_options = {}
+        # Profile dropdown
+        profile_options = {"all": "All Profiles"}
         for p in profiles:
             profile_options[str(p['id'])] = p['name']
         
         selected = st.selectbox(
             "Select Profile",
             options=list(profile_options.keys()),
-            format_func=lambda x: profile_options[x],
-            index=0  # Default to first profile
+            format_func=lambda x: profile_options[x]
         )
 
-        # Get selected profile details
-        selected_profile = next((p for p in profiles if str(p['id']) == selected), None)
-        profile_categories = selected_profile.get('categories', []) if selected_profile else []
+        # Fetch recommendations with higher limit
+        if selected == "all":
+            recommendations = api.get_user_recommendations(user.get('id'), limit=5000)
+        else:
+            profile_id_int = int(selected)
+            recommendations = api.get_profile_recommendations(profile_id_int, limit=5000)  # ← Increase limit
 
-        # Fetch recommendations for selected profile
-        profile_id_int = int(selected)
-        recommendations = api.get_profile_recommendations(profile_id_int, limit=5000)
-
-        # DEDUPLICATE by arxiv_id - keep highest score
+        # DEDUPLICATE by arxiv_id - keep highest score (KEEP THIS CODE)
         seen_arxiv_ids = {}
         for rec in recommendations:
             arxiv_id = rec.get('arxiv_id')
@@ -1106,11 +1073,6 @@ def recommendations_page(user: Dict):
         if not recommendations:
             st.info("No recommendations yet.")
             return
-        
-        # Calculate min and max scores from ALL recommendations
-        all_scores = [r['score'] for r in recommendations if r.get('score') is not None]
-        min_score_available = min(all_scores) if all_scores else 0.0
-        max_score_available = max(all_scores) if all_scores else 1.0
         
         # Advanced filters in expandable section
         with st.expander("Filters", expanded=False):
@@ -1146,7 +1108,7 @@ def recommendations_page(user: Dict):
             st.divider()
             
             # Manual date inputs
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             
             with col1:
                 date_from = st.date_input(
@@ -1166,51 +1128,48 @@ def recommendations_page(user: Dict):
                 if date_to:
                     st.session_state['rec_date_to'] = date_to
             
-            # Minimum score slider with dynamic range based on actual data
-            min_score = st.slider(
-                "Minimum Score", 
-                min_value=float(min_score_available),
-                max_value=float(max_score_available),
-                value=float(min_score_available),  # Default to showing all
-                step=0.01, 
-                key="rec_min_score",
-                help=f"Score range: {min_score_available:.3f} to {max_score_available:.3f}"
-            )
+            with col3:
+                min_score = st.slider("Minimum Score", 0.0, 1.0, 0.5, 0.01, key="rec_min_score")
+
+            if selected != "all":
+                # Get the profile's default top_x
+                selected_profile = next((p for p in profiles if str(p['id']) == selected), None)
+                default_top_x = selected_profile.get('top_x', 10) if selected_profile else 10
+                
+                st.slider(
+                    "Number of papers to show",
+                    min_value=5,
+                    max_value=500,
+                    value=100,
+                    step=5,
+                    key="rec_top_x_slider",
+                    help="Override profile's default max papers setting"
+                )
+            
+            
             
             # Keyword search
             keyword_search = st.text_input("Search in title/abstract", placeholder="Enter keywords...")
             
-            # Category filter - Show profile's categories as checkboxes
+            # Category filter
             st.write("**Filter by Categories**")
+            if "rec_cat_tree_selected" not in st.session_state:
+                st.session_state["rec_cat_tree_selected"] = []
             
-            if profile_categories:
-                # Initialize session state for category selections if not exists
-                if f"selected_cats_{selected}" not in st.session_state:
-                    st.session_state[f"selected_cats_{selected}"] = []
-                
-                # Create checkboxes for each category in the profile
-                selected_cats = []
-                
-                for cat in profile_categories:
-                    cat_label = ARXIV_CODE_TO_LABEL.get(cat, cat)
-                    is_checked = st.checkbox(
-                        cat_label,
-                        value=cat in st.session_state[f"selected_cats_{selected}"],
-                        key=f"cat_checkbox_{selected}_{cat}"
-                    )
-                    if is_checked:
-                        selected_cats.append(cat)
-                
-                # Update session state
-                st.session_state[f"selected_cats_{selected}"] = selected_cats
-                
-                # Add "Clear all" button if any categories are selected
-                if selected_cats:
-                    if st.button("Clear category filters", key=f"clear_cats_{selected}"):
-                        st.session_state[f"selected_cats_{selected}"] = []
-                        st.rerun()
-            else:
-                st.caption("No categories configured for this profile")
+            rec_cat_selected = st_ant_tree(
+                treeData=ARXIV_CATEGORY_TREE,
+                treeCheckable=True,
+                allowClear=True,
+                showSearch=True,
+                placeholder="Any category",
+                defaultValue=st.session_state.get("rec_cat_tree_selected", []),
+                max_height=300,
+                only_children_select=True,
+                key="rec_cat_tree"
+            )
+            
+            if rec_cat_selected:
+                st.session_state["rec_cat_tree_selected"] = rec_cat_selected
         
         # Apply filters
         filtered = recommendations
@@ -1263,14 +1222,14 @@ def recommendations_page(user: Dict):
                    keyword_lower in r.get('abstract', '').lower()
             ]
         
-        # Category filter - use checkboxes selection
-        selected_cats = st.session_state.get(f"selected_cats_{selected}", [])
-        if selected_cats:
+        # Category filter
+        cat_codes = st.session_state.get("rec_cat_tree_selected", [])
+        if cat_codes:
             # Filter by paper metadata categories
             filtered = [
                 r for r in filtered
                 if r.get('metadata') and 
-                   any(cat in r['metadata'].get('categories', []) for cat in selected_cats)
+                   any(cat in r['metadata'].get('categories', []) for cat in cat_codes)
             ]
         
         # Sort by score (show ALL results, no limit)
@@ -1318,8 +1277,82 @@ def recommendations_page(user: Dict):
         
         # Flatten papers for pagination (while maintaining date order)
         all_papers_ordered = []
+        # Flatten papers for pagination (while maintaining date order)
+        all_papers_ordered = []
         for date in sorted_dates:
             recs = sorted(grouped[date], key=lambda x: x['score'], reverse=True)
+            for rec in recs:
+                rec['_display_date'] = date  # Store date for display
+                all_papers_ordered.append(rec)
+        
+        # PAGINATION - 20 papers per page
+        PAPERS_PER_PAGE = 20
+        total_papers = len(all_papers_ordered)
+        total_pages = (total_papers + PAPERS_PER_PAGE - 1) // PAPERS_PER_PAGE  # Ceiling division
+        
+        # Initialize page number in session state
+        if f'rec_page_{selected}' not in st.session_state:
+            st.session_state[f'rec_page_{selected}'] = 1
+        
+        current_page = st.session_state[f'rec_page_{selected}']
+        
+        # Ensure current page is valid
+        if current_page > total_pages and total_pages > 0:
+            current_page = total_pages
+            st.session_state[f'rec_page_{selected}'] = current_page
+        
+        # Calculate pagination indices
+        start_idx = (current_page - 1) * PAPERS_PER_PAGE
+        end_idx = min(start_idx + PAPERS_PER_PAGE, total_papers)
+        
+        # Get papers for current page
+        page_papers = all_papers_ordered[start_idx:end_idx]
+        
+        # Display info and pagination controls
+        col_info, col_pagination = st.columns([2, 1])
+        
+        with col_info:
+            st.write(f"Showing {start_idx + 1}-{end_idx} of {total_papers} recommendations")
+        
+        with col_pagination:
+            if total_pages > 1:
+                col_prev, col_page, col_next = st.columns([1, 2, 1])
+                
+                with col_prev:
+                    if st.button("← Prev", disabled=(current_page == 1), key=f"prev_{selected}"):
+                        st.session_state[f'rec_page_{selected}'] = current_page - 1
+                        st.rerun()
+                
+                with col_page:
+                    st.write(f"Page {current_page} of {total_pages}")
+                
+                with col_next:
+                    if st.button("Next →", disabled=(current_page == total_pages), key=f"next_{selected}"):
+                        st.session_state[f'rec_page_{selected}'] = current_page + 1
+                        st.rerun()
+        
+        if not page_papers:
+            st.info("No recommendations match the filters.")
+            return
+        
+        # Re-group papers for current page by date for display
+        page_grouped = defaultdict(list)
+        for rec in page_papers:
+            date_str = rec.get('_display_date', 'Unknown Date')
+            page_grouped[date_str].append(rec)
+        
+        # Get unique dates in order they appear on this page
+        page_dates = []
+        seen = set()
+        for rec in page_papers:
+            date_str = rec.get('_display_date', 'Unknown Date')
+            if date_str not in seen:
+                page_dates.append(date_str)
+                seen.add(date_str)
+        
+        # Display by date (only for papers on current page)
+        for date in page_dates:
+            recs = page_grouped[date]
             for rec in recs:
                 rec['_display_date'] = date  # Store date for display
                 all_papers_ordered.append(rec)
@@ -1432,20 +1465,7 @@ def recommendations_page(user: Dict):
                     with col2:
                         st.markdown(f"**{rec['score']:.3f}**")
                     
-                    # GET CATEGORIES FROM METADATA
-                    metadata = rec.get('metadata', {})
-                    categories = metadata.get('categories', [])
-                    
-                    if categories:
-                        # Show only primary category 
-                        primary_cat = categories[0]
-                        primary_label = ARXIV_CODE_TO_LABEL.get(primary_cat, primary_cat)
-                        if len(categories) > 1:
-                            st.caption(f"**Category:** {primary_label} (+{len(categories) - 1} more)")
-                        else:
-                            st.caption(f"**Category:** {primary_label}")
-                    
-                    st.caption(f"**arXiv:** {rec.get('arxiv_id', 'N/A')}")
+                    st.caption(f"arXiv: {rec.get('arxiv_id', 'N/A')}")
                     
                     # Show summary if available, otherwise truncated abstract
                     if rec.get('summary_text'):
@@ -1474,12 +1494,30 @@ def recommendations_page(user: Dict):
                 if st.button("Next →", disabled=(current_page == total_pages), key=f"next2_{selected}"):
                     st.session_state[f'rec_page_{selected}'] = current_page + 1
                     st.rerun()
+        
+        # Bottom pagination controls
+        if total_pages > 1:
+            col_prev2, col_page2, col_next2 = st.columns([1, 2, 1])
+            
+            with col_prev2:
+                if st.button("← Previous", disabled=(current_page == 1), key=f"prev2_{selected}"):
+                    st.session_state[f'rec_page_{selected}'] = current_page - 1
+                    st.rerun()
+            
+            with col_page2:
+                st.write(f"Page {current_page} of {total_pages}")
+            
+            with col_next2:
+                if st.button("Next →", disabled=(current_page == total_pages), key=f"next2_{selected}"):
+                    st.session_state[f'rec_page_{selected}'] = current_page + 1
+                    st.rerun()
     
     except Exception as e:
         st.error(f"Error: {str(e)}")
         import traceback
         with st.expander("Debug Info"):
             st.code(traceback.format_exc())
+
 
 
 def settings_page(user: Dict):
