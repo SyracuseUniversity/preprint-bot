@@ -17,15 +17,27 @@ async def create_recommendation_run(run: RecommendationRunCreate):
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO recommendation_runs (profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                RETURNING id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, created_at
+                INSERT INTO recommendation_runs (profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, total_papers_fetched)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, total_papers_fetched, created_at
                 """,
-                run.profile_id, run.user_id, run.user_corpus_id, run.ref_corpus_id, run.threshold, run.method
+                run.profile_id, run.user_id, run.user_corpus_id, run.ref_corpus_id, run.threshold, run.method, run.total_papers_fetched
             )
             return dict(row)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/{run_id}", response_model=RecommendationRunResponse)
+async def get_recommendation_run(run_id: int):
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, total_papers_fetched, created_at FROM recommendation_runs WHERE id = $1",
+            run_id
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Recommendation run not found")
+        return dict(row)
 
 @router.get("/", response_model=List[RecommendationRunResponse])
 async def get_recommendation_runs():
@@ -181,7 +193,8 @@ async def get_recommendations_by_profile(profile_id: int, limit: int = Query(500
             SELECT DISTINCT ON (p.arxiv_id)
                 r.id, r.run_id, r.paper_id, r.score, r.rank, r.created_at,
                 p.arxiv_id, p.title, p.abstract, p.metadata, p.submitted_date,
-                s.summary_text
+                s.summary_text,
+                rr.total_papers_fetched
             FROM recommendations r
             JOIN recommendation_runs rr ON r.run_id = rr.id
             JOIN papers p ON r.paper_id = p.id

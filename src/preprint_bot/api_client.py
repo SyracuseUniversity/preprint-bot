@@ -241,8 +241,8 @@ class APIClient:
     
     
     async def create_recommendation_run(self, profile_id: int, user_id: int,
-                                       user_corpus_id: int, ref_corpus_id: int,
-                                       threshold: str, method: str) -> Dict:
+                                    user_corpus_id: int, ref_corpus_id: int,
+                                    threshold: str, method: str, total_papers_fetched: int = 0) -> Dict:
         response = await self.client.post(
             f"{self.base_url}/recommendation-runs/",
             json={
@@ -251,7 +251,8 @@ class APIClient:
                 "user_corpus_id": user_corpus_id,
                 "ref_corpus_id": ref_corpus_id,
                 "threshold": threshold,
-                "method": method
+                "method": method,
+                "total_papers_fetched": total_papers_fetched  # ADD THIS
             }
         )
         response.raise_for_status()
@@ -286,17 +287,17 @@ class APIClient:
         return response.json() 
 
     async def record_arxiv_stats(self, submission_date: str, category: str, total_papers: int):
-    """Record arXiv fetch statistics"""
-    response = await self.client.post(
-        f"{self.base_url}/papers/arxiv-stats",
-        params={
-            "submission_date": submission_date,
-            "category": category,
-            "total_papers": total_papers
-        }
-    )
-    response.raise_for_status()
-    return response.json()
+        """Record arXiv fetch statistics"""
+        response = await self.client.post(
+            f"{self.base_url}/papers/arxiv-stats",
+            params={
+                "submission_date": submission_date,
+                "category": category,
+                "total_papers": total_papers
+            }
+        )
+        response.raise_for_status()
+        return response.json()
 
     async def get_arxiv_stats_for_date(self, date: str) -> Dict:
         """Get total papers for a specific date"""

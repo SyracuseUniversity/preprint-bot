@@ -652,7 +652,7 @@ def profiles_page(user: Dict):
                     with st.container(border=True):
                         st.subheader(profile['name'])
                         
-                        # Profile info in 3 columns
+                        # Profile info in 4 columns
                         col1, col2, col3, col4 = st.columns(4)
                         with col1:
                             st.write("**Frequency**")
@@ -711,48 +711,125 @@ def profiles_page(user: Dict):
                             else:
                                 st.caption("No papers uploaded yet")
                             
-                            # Upload new papers
+                            # Upload new papers - WITH TABS
                             with st.expander("Upload Papers", expanded=False):
-                                uploaded_files = st.file_uploader(
-                                    "Choose PDF files",
-                                    type=['pdf'],
-                                    accept_multiple_files=True,
-                                    key=f"upload_{profile['id']}",
-                                    help="Upload one or more PDF papers for this profile"
-                                )
+                                # Create tabs for different upload methods
+                                upload_tab, arxiv_tab = st.tabs(["Upload PDF", "Add from arXiv"])
                                 
-                                if uploaded_files:
-                                    if st.button("Upload Files", key=f"upload_btn_{profile['id']}", type="primary"):
-                                        progress_bar = st.progress(0)
-                                        status_text = st.empty()
-                                        
-                                        uploaded_count = 0
-                                        total_files = len(uploaded_files)
-                                        
-                                        for i, uploaded_file in enumerate(uploaded_files):
-                                            try:
-                                                status_text.text(f"Uploading {uploaded_file.name}...")
-                                                file_bytes = uploaded_file.read()
+                                # TAB 1: Upload PDF files
+                                with upload_tab:
+                                    uploaded_files = st.file_uploader(
+                                        "Choose PDF files",
+                                        type=['pdf'],
+                                        accept_multiple_files=True,
+                                        key=f"upload_{profile['id']}",
+                                        help="Upload one or more PDF papers for this profile"
+                                    )
+                                    
+                                    if uploaded_files:
+                                        if st.button("Upload Files", key=f"upload_btn_{profile['id']}", type="primary"):
+                                            progress_bar = st.progress(0)
+                                            status_text = st.empty()
+                                            
+                                            uploaded_count = 0
+                                            total_files = len(uploaded_files)
+                                            
+                                            for i, uploaded_file in enumerate(uploaded_files):
+                                                try:
+                                                    status_text.text(f"Uploading {uploaded_file.name}...")
+                                                    file_bytes = uploaded_file.read()
+                                                    
+                                                    api.upload_paper_bytes(
+                                                        user.get('id'),
+                                                        profile['id'],
+                                                        uploaded_file.name,
+                                                        file_bytes
+                                                    )
+                                                    
+                                                    uploaded_count += 1
+                                                    progress_bar.progress((i + 1) / total_files)
+                                                    
+                                                except Exception as e:
+                                                    st.error(f"Failed to upload {uploaded_file.name}: {str(e)}")
+                                            
+                                            status_text.text("")
+                                            progress_bar.empty()
+                                            
+                                            if uploaded_count > 0:
+                                                st.success(f"Successfully uploaded {uploaded_count} file(s)!")
+                                                st.rerun()
+                                
+                                # TAB 2: Add from arXiv
+                                with arxiv_tab:
+                                    st.write("**Add papers from arXiv**")
+                                    st.caption("Enter arXiv IDs (one per line or comma-separated)")
+                                    
+                                    arxiv_input = st.text_area(
+                                        "arXiv IDs",
+                                        placeholder="2301.12345\n2302.67890\nor\n2301.12345, 2302.67890",
+                                        key=f"arxiv_input_{profile['id']}",
+                                        height=100
+                                    )
+                                    
+                                    if st.button("Add from arXiv", key=f"arxiv_btn_{profile['id']}", type="primary"):
+                                        if not arxiv_input.strip():
+                                            st.error("Please enter at least one arXiv ID")
+                                        else:
+                                            # Parse arXiv IDs
+                                            arxiv_ids = []
+                                            
+                                            # Handle both newline and comma separation
+                                            for line in arxiv_input.split('\n'):
+                                                for arxiv_id in line.split(','):
+                                                    arxiv_id = arxiv_id.strip()
+                                                    if arxiv_id:
+                                                        # Remove version suffix if present (e.g., v1, v2)
+                                                        if 'v' in arxiv_id:
+                                                            arxiv_id = arxiv_id.split('v')[0]
+                                                        arxiv_ids.append(arxiv_id)
+                                            
+                                            if not arxiv_ids:
+                                                st.error("No valid arXiv IDs found")
+                                            else:
+                                                st.info(f"Adding {len(arxiv_ids)} paper(s) from arXiv...")
                                                 
-                                                api.upload_paper_bytes(
-                                                    user.get('id'),
-                                                    profile['id'],
-                                                    uploaded_file.name,
-                                                    file_bytes
-                                                )
+                                                progress_bar = st.progress(0)
+                                                status_text = st.empty()
                                                 
-                                                uploaded_count += 1
-                                                progress_bar.progress((i + 1) / total_files)
+                                                success_count = 0
+                                                failed_papers = []
                                                 
-                                            except Exception as e:
-                                                st.error(f"Failed to upload {uploaded_file.name}: {str(e)}")
-                                        
-                                        status_text.text("")
-                                        progress_bar.empty()
-                                        
-                                        if uploaded_count > 0:
-                                            st.success(f"Successfully uploaded {uploaded_count} file(s)!")
-                                            st.rerun()
+                                                for i, arxiv_id in enumerate(arxiv_ids):
+                                                    try:
+                                                        status_text.text(f"Fetching {arxiv_id}...")
+                                                        
+                                                        # Call backend API to add paper from arXiv
+                                                        result = api.add_paper_from_arxiv(
+                                                            user.get('id'),
+                                                            profile['id'],
+                                                            arxiv_id
+                                                        )
+                                                        
+                                                        success_count += 1
+                                                        progress_bar.progress((i + 1) / len(arxiv_ids))
+                                                        
+                                                    except Exception as e:
+                                                        failed_papers.append(f"{arxiv_id}: {str(e)}")
+                                                        progress_bar.progress((i + 1) / len(arxiv_ids))
+                                                
+                                                status_text.text("")
+                                                progress_bar.empty()
+                                                
+                                                if success_count > 0:
+                                                    st.success(f"Successfully added {success_count} paper(s) from arXiv!")
+                                                
+                                                if failed_papers:
+                                                    with st.expander("❌ Failed papers"):
+                                                        for failure in failed_papers:
+                                                            st.error(failure)
+                                                
+                                                if success_count > 0:
+                                                    st.rerun()
                         
                         except Exception as e:
                             st.error(f"Error managing papers: {str(e)}")
@@ -817,14 +894,14 @@ def profiles_page(user: Dict):
         default_name = profile['name']
         default_freq = profile['frequency']
         default_threshold = profile['threshold']
-        default_top_x = profile.get('top_x', 10)  # ADD THIS
+        default_top_x = profile.get('top_x', 10)
         default_keywords = ', '.join(profile['keywords'])
         st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
     else:
         default_name = ""
         default_freq = "weekly"
         default_threshold = "medium"
-        default_top_x = 10  # ADD THIS
+        default_top_x = 10
         default_keywords = ""
         if mode == "Create new":
             st.session_state["profile_cat_tree_selected"] = []
@@ -872,8 +949,6 @@ def profiles_page(user: Dict):
                 only_children_select=True,
                 key=f"profile_cat_tree_{mode}_{selected_profile_id}"
             )
-            st.write("DEBUG - selected_cats RIGHT AFTER TREE:", selected_cats)
-            st.write("DEBUG - Type:", type(selected_cats))
             
             submit_label = "Create Profile" if selected_profile_id is None else "Save Changes"
             submit = st.form_submit_button(submit_label, type="primary")
@@ -891,28 +966,22 @@ def profiles_page(user: Dict):
                 else:
                     kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
                     
-                    # Extract categories
-                   # Extract selected categories from tree - handle different formats
+                    # Extract selected categories from tree
                     categories_list = []
                     if selected_cats:
-                        st.write("DEBUG - Raw selected_cats type:", type(selected_cats))
-                        st.write("DEBUG - Raw selected_cats value:", selected_cats)
-                        
-                        # Try different possible keys the tree component might use
                         if isinstance(selected_cats, list):
                             categories_list = selected_cats
                         elif isinstance(selected_cats, dict):
-                            # Try ALL keys to see what's there
-                            st.write("DEBUG - Dict keys:", list(selected_cats.keys()))
-                            
-                            # Try common keys
                             for key in ['checked', 'selected', 'value', 'checkedKeys', 'halfCheckedKeys']:
                                 if key in selected_cats:
                                     val = selected_cats[key]
-                                    st.write(f"DEBUG - Found key '{key}' with value:", val)
                                     if isinstance(val, list):
                                         categories_list = val
                                         break
+                    
+                    # Filter out parent nodes (keep only leaf categories with dots)
+                    if categories_list:
+                        categories_list = [cat for cat in categories_list if '.' in cat]
                     
                     if selected_profile_id:
                         # EDIT MODE: Save immediately
@@ -989,7 +1058,6 @@ def profiles_page(user: Dict):
                     st.info("Creation cancelled")
                     st.rerun()
 
-
 def recommendations_page(user: Dict):
     """Recommendations page with advanced filtering and date grouping"""
     st.markdown("### Recommendations")
@@ -1007,9 +1075,6 @@ def recommendations_page(user: Dict):
         profile_options = {}
         for p in profiles:
             profile_options[str(p['id'])] = p['name']
-        
-        # Default to first profile
-        default_profile = str(profiles[0]['id'])
         
         selected = st.selectbox(
             "Select Profile",
@@ -1211,13 +1276,7 @@ def recommendations_page(user: Dict):
         # Sort by score (show ALL results, no limit)
         filtered = sorted(filtered, key=lambda x: x['score'], reverse=True)
         
-        st.write(f"Showing {len(filtered)} recommendations")
-        
-        if not filtered:
-            st.info("No recommendations match the filters.")
-            return
-        
-        # Group by submitted_date (SIMPLIFIED - using submitted_date directly)
+        # Group by submitted_date
         from datetime import datetime
         from collections import defaultdict
         
@@ -1257,9 +1316,82 @@ def recommendations_page(user: Dict):
         except Exception:
             sorted_dates = list(grouped.keys())
         
-        # Display by date
+        # Flatten papers for pagination (while maintaining date order)
+        all_papers_ordered = []
         for date in sorted_dates:
             recs = sorted(grouped[date], key=lambda x: x['score'], reverse=True)
+            for rec in recs:
+                rec['_display_date'] = date  # Store date for display
+                all_papers_ordered.append(rec)
+        
+        # PAGINATION - 20 papers per page
+        PAPERS_PER_PAGE = 20
+        total_papers = len(all_papers_ordered)
+        total_pages = (total_papers + PAPERS_PER_PAGE - 1) // PAPERS_PER_PAGE  # Ceiling division
+        
+        # Initialize page number in session state
+        if f'rec_page_{selected}' not in st.session_state:
+            st.session_state[f'rec_page_{selected}'] = 1
+        
+        current_page = st.session_state[f'rec_page_{selected}']
+        
+        # Ensure current page is valid
+        if current_page > total_pages and total_pages > 0:
+            current_page = total_pages
+            st.session_state[f'rec_page_{selected}'] = current_page
+        
+        # Calculate pagination indices
+        start_idx = (current_page - 1) * PAPERS_PER_PAGE
+        end_idx = min(start_idx + PAPERS_PER_PAGE, total_papers)
+        
+        # Get papers for current page
+        page_papers = all_papers_ordered[start_idx:end_idx]
+        
+        # Display info and pagination controls
+        col_info, col_pagination = st.columns([2, 1])
+        
+        with col_info:
+            st.write(f"Showing {start_idx + 1}-{end_idx} of {total_papers} recommendations")
+        
+        with col_pagination:
+            if total_pages > 1:
+                col_prev, col_page, col_next = st.columns([1, 2, 1])
+                
+                with col_prev:
+                    if st.button("← Prev", disabled=(current_page == 1), key=f"prev_{selected}"):
+                        st.session_state[f'rec_page_{selected}'] = current_page - 1
+                        st.rerun()
+                
+                with col_page:
+                    st.write(f"Page {current_page} of {total_pages}")
+                
+                with col_next:
+                    if st.button("Next →", disabled=(current_page == total_pages), key=f"next_{selected}"):
+                        st.session_state[f'rec_page_{selected}'] = current_page + 1
+                        st.rerun()
+        
+        if not page_papers:
+            st.info("No recommendations match the filters.")
+            return
+        
+        # Re-group papers for current page by date for display
+        page_grouped = defaultdict(list)
+        for rec in page_papers:
+            date_str = rec.get('_display_date', 'Unknown Date')
+            page_grouped[date_str].append(rec)
+        
+        # Get unique dates in order they appear on this page
+        page_dates = []
+        seen = set()
+        for rec in page_papers:
+            date_str = rec.get('_display_date', 'Unknown Date')
+            if date_str not in seen:
+                page_dates.append(date_str)
+                seen.add(date_str)
+        
+        # Display by date (only for papers on current page)
+        for date in page_dates:
+            recs = page_grouped[date]
             
             # Get total papers published on arXiv for this date
             total_papers_for_date = 0
@@ -1272,13 +1404,25 @@ def recommendations_page(user: Dict):
                     total_papers_for_date = stats.get('total_papers', 0)
                 except Exception as e:
                     pass
-            
+
             # Display header with counts
             st.markdown(f"### {date}")
-            if total_papers_for_date > 0:
-                st.caption(f"Recommended {len(recs)} out of {total_papers_for_date} papers published on arXiv this day")
+
+            # Get total_papers_fetched from the recommendation run
+            total_fetched = recs[0].get('total_papers_fetched', 0) if recs else 0
+            total_for_this_date = len(grouped[date])
+
+            if total_fetched > 0:
+                st.caption(f"Recommended {total_for_this_date} out of {total_fetched} papers fetched on this day")
             else:
-                st.caption(f"{len(recs)} paper(s)")
+                st.caption(f"{total_for_this_date} paper(s)")
+
+
+            # Display single caption with all info
+            if total_papers_for_date > 0:
+                st.caption(f"Recommended {total_for_this_date} out of {total_papers_for_date} papers published on arXiv this day")
+            else:
+                st.caption(f"{total_for_this_date} paper(s)")
             
             for rec in recs:
                 with st.container(border=True):
@@ -1313,12 +1457,30 @@ def recommendations_page(user: Dict):
                         st.link_button("View on arXiv", f"https://arxiv.org/abs/{rec['arxiv_id']}")
             
             st.divider()
+        
+        # Bottom pagination controls
+        if total_pages > 1:
+            col_prev2, col_page2, col_next2 = st.columns([1, 2, 1])
+            
+            with col_prev2:
+                if st.button("← Previous", disabled=(current_page == 1), key=f"prev2_{selected}"):
+                    st.session_state[f'rec_page_{selected}'] = current_page - 1
+                    st.rerun()
+            
+            with col_page2:
+                st.write(f"Page {current_page} of {total_pages}")
+            
+            with col_next2:
+                if st.button("Next →", disabled=(current_page == total_pages), key=f"next2_{selected}"):
+                    st.session_state[f'rec_page_{selected}'] = current_page + 1
+                    st.rerun()
     
     except Exception as e:
         st.error(f"Error: {str(e)}")
         import traceback
         with st.expander("Debug Info"):
             st.code(traceback.format_exc())
+
 
 def settings_page(user: Dict):
     """Settings page"""

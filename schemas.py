@@ -50,7 +50,7 @@ class ProfileCreate(BaseModel):
     user_id: int
     name: str
     keywords: List[str]
-    categories: List[str] = []  # ADD THIS LINE
+    categories: List[str] = []
     email_notify: bool = True
     frequency: FrequencyEnum
     threshold: ThresholdEnum = ThresholdEnum.medium
@@ -59,7 +59,7 @@ class ProfileCreate(BaseModel):
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     keywords: Optional[List[str]] = None
-    categories: Optional[List[str]] = None  # ADD THIS LINE
+    categories: Optional[List[str]] = None
     email_notify: Optional[bool] = None
     frequency: Optional[FrequencyEnum] = None
     threshold: Optional[ThresholdEnum] = None
@@ -70,7 +70,7 @@ class ProfileResponse(BaseModel):
     user_id: int
     name: str
     keywords: List[str]
-    categories: List[str]  # ADD THIS LINE
+    categories: List[str]
     email_notify: bool
     frequency: str
     threshold: str
@@ -105,6 +105,15 @@ class ProfileCorpusResponse(BaseModel):
     corpus_id: int
 
 # Paper Schemas
+class PaperCreate(BaseModel):
+    corpus_id: int
+    arxiv_id: Optional[str] = None
+    title: str
+    abstract: Optional[str] = None
+    metadata: Optional[dict] = None
+    pdf_path: Optional[str] = None
+    submitted_date: Optional[datetime] = None
+    source: SourceEnum
 
 class PaperUpdate(BaseModel):
     arxiv_id: Optional[str] = None
@@ -113,16 +122,6 @@ class PaperUpdate(BaseModel):
     metadata: Optional[dict] = None
     pdf_path: Optional[str] = None
     source: Optional[SourceEnum] = None
-
-class PaperCreate(BaseModel):
-    corpus_id: int
-    arxiv_id: Optional[str] = None
-    title: str
-    abstract: Optional[str] = None
-    metadata: Optional[dict] = None
-    pdf_path: Optional[str] = None
-    submitted_date: Optional[datetime] = None  
-    source: SourceEnum
 
 class PaperResponse(BaseModel):
     id: int
@@ -133,7 +132,7 @@ class PaperResponse(BaseModel):
     metadata: Optional[dict]
     pdf_path: Optional[str]
     processed_text_path: Optional[str]
-    submitted_date: Optional[datetime]  
+    submitted_date: Optional[datetime]
     source: str
     created_at: datetime
 
@@ -205,6 +204,7 @@ class RecommendationRunCreate(BaseModel):
     ref_corpus_id: int
     threshold: Optional[str] = None
     method: Optional[str] = None
+    total_papers_fetched: Optional[int] = 0  # ADD THIS LINE
 
 class RecommendationRunResponse(BaseModel):
     id: int
@@ -214,6 +214,7 @@ class RecommendationRunResponse(BaseModel):
     ref_corpus_id: int
     threshold: Optional[str]
     method: Optional[str]
+    total_papers_fetched: Optional[int]  # ADD THIS LINE
     created_at: datetime
 
 # Recommendation Schemas
