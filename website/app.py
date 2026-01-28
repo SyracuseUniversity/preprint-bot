@@ -567,12 +567,36 @@ def dashboard_page(user: Dict):
                 # Sort by score
                 todays_recs = sorted(todays_recs, key=lambda x: x['score'], reverse=True)
                 
-                st.caption(f"**{len(todays_recs)} paper(s) from {most_recent_date_only.strftime('%d %B %Y')}** (across all profiles)")
+                st.caption(f"**{len(todays_recs)} paper(s) from {most_recent_date_only.strftime('%d %B %Y')}**")
                 
                 for rec in todays_recs[:10]:  # Show top 10
                     with st.container(border=True):
                         st.markdown(f"**{rec['title']}**")
                         st.caption(f"Score: {rec['score']:.3f} | arXiv: {rec.get('arxiv_id', 'N/A')}")
+                        
+                        # GET CATEGORIES FROM METADATA
+                        metadata = rec.get('metadata', {})
+                        categories = metadata.get('categories', [])
+                        
+                        if categories:
+                            # OPTION 1: Show all categories with readable labels 
+                            # category_labels = []
+                            # for cat in categories[:3]:  # Show first 3
+                            #     label = ARXIV_CODE_TO_LABEL.get(cat, cat)
+                            #     category_labels.append(label)
+                            
+                            # category_text = " | ".join(category_labels)
+                            # if len(categories) > 3:
+                            #     category_text += f" (+{len(categories) - 3} more)"
+                            # st.caption(f"**Categories:** {category_text}")
+                            
+                            # # OPTION 2: Show only primary category 
+                            primary_cat = categories[0]
+                            primary_label = ARXIV_CODE_TO_LABEL.get(primary_cat, primary_cat)
+                            if len(categories) > 1:
+                                st.caption(f"**Category:** {primary_label} (+{len(categories) - 1} more)")
+                            else:
+                                st.caption(f"**Category:** {primary_label}")
                         
                         # Show summary if available
                         if rec.get('summary_text'):
@@ -979,25 +1003,30 @@ def recommendations_page(user: Dict):
             st.info("No profiles found. Create a profile first.")
             return
         
-        # Profile dropdown
-        profile_options = {"all": "All Profiles"}
+        # Profile dropdown - NO "All Profiles" option, default to first profile
+        profile_options = {}
         for p in profiles:
             profile_options[str(p['id'])] = p['name']
+        
+        # Default to first profile
+        default_profile = str(profiles[0]['id'])
         
         selected = st.selectbox(
             "Select Profile",
             options=list(profile_options.keys()),
-            format_func=lambda x: profile_options[x]
+            format_func=lambda x: profile_options[x],
+            index=0  # Default to first profile
         )
 
-        # Fetch recommendations with higher limit
-        if selected == "all":
-            recommendations = api.get_user_recommendations(user.get('id'), limit=5000)
-        else:
-            profile_id_int = int(selected)
-            recommendations = api.get_profile_recommendations(profile_id_int, limit=5000)  # ← Increase limit
+        # Get selected profile details
+        selected_profile = next((p for p in profiles if str(p['id']) == selected), None)
+        profile_categories = selected_profile.get('categories', []) if selected_profile else []
 
-        # DEDUPLICATE by arxiv_id - keep highest score (KEEP THIS CODE)
+        # Fetch recommendations for selected profile
+        profile_id_int = int(selected)
+        recommendations = api.get_profile_recommendations(profile_id_int, limit=5000)
+
+        # DEDUPLICATE by arxiv_id - keep highest score
         seen_arxiv_ids = {}
         for rec in recommendations:
             arxiv_id = rec.get('arxiv_id')
@@ -1012,6 +1041,11 @@ def recommendations_page(user: Dict):
         if not recommendations:
             st.info("No recommendations yet.")
             return
+        
+        # Calculate min and max scores from ALL recommendations
+        all_scores = [r['score'] for r in recommendations if r.get('score') is not None]
+        min_score_available = min(all_scores) if all_scores else 0.0
+        max_score_available = max(all_scores) if all_scores else 1.0
         
         # Advanced filters in expandable section
         with st.expander("Filters", expanded=False):
@@ -1047,7 +1081,7 @@ def recommendations_page(user: Dict):
             st.divider()
             
             # Manual date inputs
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             
             with col1:
                 date_from = st.date_input(
@@ -1067,48 +1101,51 @@ def recommendations_page(user: Dict):
                 if date_to:
                     st.session_state['rec_date_to'] = date_to
             
-            with col3:
-                min_score = st.slider("Minimum Score", 0.0, 1.0, 0.5, 0.01, key="rec_min_score")
-
-            if selected != "all":
-                # Get the profile's default top_x
-                selected_profile = next((p for p in profiles if str(p['id']) == selected), None)
-                default_top_x = selected_profile.get('top_x', 10) if selected_profile else 10
-                
-                st.slider(
-                    "Number of papers to show",
-                    min_value=5,
-                    max_value=500,
-                    value=100,
-                    step=5,
-                    key="rec_top_x_slider",
-                    help="Override profile's default max papers setting"
-                )
-            
-            
+            # Minimum score slider with dynamic range based on actual data
+            min_score = st.slider(
+                "Minimum Score", 
+                min_value=float(min_score_available),
+                max_value=float(max_score_available),
+                value=float(min_score_available),  # Default to showing all
+                step=0.01, 
+                key="rec_min_score",
+                help=f"Score range: {min_score_available:.3f} to {max_score_available:.3f}"
+            )
             
             # Keyword search
             keyword_search = st.text_input("Search in title/abstract", placeholder="Enter keywords...")
             
-            # Category filter
+            # Category filter - Show profile's categories as checkboxes
             st.write("**Filter by Categories**")
-            if "rec_cat_tree_selected" not in st.session_state:
-                st.session_state["rec_cat_tree_selected"] = []
             
-            rec_cat_selected = st_ant_tree(
-                treeData=ARXIV_CATEGORY_TREE,
-                treeCheckable=True,
-                allowClear=True,
-                showSearch=True,
-                placeholder="Any category",
-                defaultValue=st.session_state.get("rec_cat_tree_selected", []),
-                max_height=300,
-                only_children_select=True,
-                key="rec_cat_tree"
-            )
-            
-            if rec_cat_selected:
-                st.session_state["rec_cat_tree_selected"] = rec_cat_selected
+            if profile_categories:
+                # Initialize session state for category selections if not exists
+                if f"selected_cats_{selected}" not in st.session_state:
+                    st.session_state[f"selected_cats_{selected}"] = []
+                
+                # Create checkboxes for each category in the profile
+                selected_cats = []
+                
+                for cat in profile_categories:
+                    cat_label = ARXIV_CODE_TO_LABEL.get(cat, cat)
+                    is_checked = st.checkbox(
+                        cat_label,
+                        value=cat in st.session_state[f"selected_cats_{selected}"],
+                        key=f"cat_checkbox_{selected}_{cat}"
+                    )
+                    if is_checked:
+                        selected_cats.append(cat)
+                
+                # Update session state
+                st.session_state[f"selected_cats_{selected}"] = selected_cats
+                
+                # Add "Clear all" button if any categories are selected
+                if selected_cats:
+                    if st.button("Clear category filters", key=f"clear_cats_{selected}"):
+                        st.session_state[f"selected_cats_{selected}"] = []
+                        st.rerun()
+            else:
+                st.caption("No categories configured for this profile")
         
         # Apply filters
         filtered = recommendations
@@ -1161,21 +1198,18 @@ def recommendations_page(user: Dict):
                    keyword_lower in r.get('abstract', '').lower()
             ]
         
-        # Category filter
-        cat_codes = st.session_state.get("rec_cat_tree_selected", [])
-        if cat_codes:
+        # Category filter - use checkboxes selection
+        selected_cats = st.session_state.get(f"selected_cats_{selected}", [])
+        if selected_cats:
             # Filter by paper metadata categories
             filtered = [
                 r for r in filtered
                 if r.get('metadata') and 
-                   any(cat in r['metadata'].get('categories', []) for cat in cat_codes)
+                   any(cat in r['metadata'].get('categories', []) for cat in selected_cats)
             ]
         
-        # Apply top_x limit (only for specific profiles)
-        if selected != "all" and 'rec_top_x_slider' in st.session_state:
-            top_x_limit = st.session_state['rec_top_x_slider']
-            # Sort by score first, then take top X
-            filtered = sorted(filtered, key=lambda x: x['score'], reverse=True)[:top_x_limit]
+        # Sort by score (show ALL results, no limit)
+        filtered = sorted(filtered, key=lambda x: x['score'], reverse=True)
         
         st.write(f"Showing {len(filtered)} recommendations")
         
@@ -1227,8 +1261,24 @@ def recommendations_page(user: Dict):
         for date in sorted_dates:
             recs = sorted(grouped[date], key=lambda x: x['score'], reverse=True)
             
+            # Get total papers published on arXiv for this date
+            total_papers_for_date = 0
+            if recs and recs[0].get('_date_obj'):
+                date_obj = recs[0]['_date_obj']
+                date_str_iso = date_obj.strftime("%Y-%m-%d")
+                
+                try:
+                    stats = api.get_arxiv_stats_for_date(date_str_iso)
+                    total_papers_for_date = stats.get('total_papers', 0)
+                except Exception as e:
+                    pass
+            
+            # Display header with counts
             st.markdown(f"### {date}")
-            st.caption(f"{len(recs)} paper(s)")
+            if total_papers_for_date > 0:
+                st.caption(f"Recommended {len(recs)} out of {total_papers_for_date} papers published on arXiv this day")
+            else:
+                st.caption(f"{len(recs)} paper(s)")
             
             for rec in recs:
                 with st.container(border=True):
@@ -1238,7 +1288,20 @@ def recommendations_page(user: Dict):
                     with col2:
                         st.markdown(f"**{rec['score']:.3f}**")
                     
-                    st.caption(f"arXiv: {rec.get('arxiv_id', 'N/A')}")
+                    # GET CATEGORIES FROM METADATA
+                    metadata = rec.get('metadata', {})
+                    categories = metadata.get('categories', [])
+                    
+                    if categories:
+                        # Show only primary category 
+                        primary_cat = categories[0]
+                        primary_label = ARXIV_CODE_TO_LABEL.get(primary_cat, primary_cat)
+                        if len(categories) > 1:
+                            st.caption(f"**Category:** {primary_label} (+{len(categories) - 1} more)")
+                        else:
+                            st.caption(f"**Category:** {primary_label}")
+                    
+                    st.caption(f"**arXiv:** {rec.get('arxiv_id', 'N/A')}")
                     
                     # Show summary if available, otherwise truncated abstract
                     if rec.get('summary_text'):
@@ -1256,7 +1319,6 @@ def recommendations_page(user: Dict):
         import traceback
         with st.expander("Debug Info"):
             st.code(traceback.format_exc())
-
 
 def settings_page(user: Dict):
     """Settings page"""

@@ -166,3 +166,40 @@ async def delete_paper(paper_id: int):
         result = await conn.execute("DELETE FROM papers WHERE id = $1", paper_id)
         if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Paper not found")
+
+
+
+@router.post("/arxiv-stats")
+async def record_arxiv_stats(
+    submission_date: str = Query(...),
+    category: str = Query(...),
+    total_papers: int = Query(...)
+):
+    """Record daily arXiv statistics"""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO arxiv_daily_stats (submission_date, category, total_papers)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (submission_date, category) 
+            DO UPDATE SET total_papers = EXCLUDED.total_papers
+            """,
+            submission_date, category, total_papers
+        )
+    return {"status": "recorded"}
+
+@router.get("/arxiv-stats/date/{date}")
+async def get_arxiv_stats_for_date(date: str):
+    """Get total papers for a specific date across all categories"""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        total = await conn.fetchval(
+            """
+            SELECT SUM(total_papers) 
+            FROM arxiv_daily_stats 
+            WHERE submission_date = $1
+            """,
+            date
+        )
+        return {"date": date, "total_papers": total or 0}

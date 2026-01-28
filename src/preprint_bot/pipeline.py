@@ -95,7 +95,39 @@ async def fetch_and_store_arxiv(
         from .query_arxiv import get_daily_submission_window
         
         if isinstance(categories, list):
-            entries = get_daily_submission_window(categories, max_results=10000)
+            print(f"\nFetching from {len(categories)} categories...")
+            
+            for category in categories:
+                entries, total_available = get_arxiv_entries(
+                    category=category, 
+                    max_results=max_results_per_category
+                )
+                
+                all_entries.extend(entries)
+                
+                # Record the stats for this category
+                if entries:
+                    # Get the submission date from the first entry
+                    first_entry = entries[0]
+                    submission_date = getattr(first_entry, "published", "")
+                    if submission_date:
+                        # Parse date (format: 2026-01-20T14:00:00Z)
+                        from datetime import datetime
+                        date_obj = datetime.strptime(submission_date[:10], "%Y-%m-%d")
+                        date_str = date_obj.strftime("%Y-%m-%d")
+                        
+                        # Record stats
+                        try:
+                            await api_client.record_arxiv_stats(
+                                submission_date=date_str,
+                                category=category,
+                                total_papers=total_available
+                            )
+                            print(f"  Recorded stats: {total_available} papers for {category} on {date_str}")
+                        except Exception as e:
+                            print(f"  Warning: Could not record stats: {e}")
+                
+                time.sleep(3.0)  # Rate limiting
         else:
             print("Error: --daily-window requires categories (auto-fetched from profiles)")
             return None
