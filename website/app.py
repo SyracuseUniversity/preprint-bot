@@ -1042,7 +1042,7 @@ def recommendations_page(user: Dict):
             st.info("No profiles found. Create a profile first.")
             return
         
-        # Profile dropdown
+        # Profile dropdown - NO "All Profiles"
         profile_options = {}
         for p in profiles:
             profile_options[str(p['id'])] = p['name']
@@ -1050,17 +1050,19 @@ def recommendations_page(user: Dict):
         selected = st.selectbox(
             "Select Profile",
             options=list(profile_options.keys()),
-            format_func=lambda x: profile_options[x]
+            format_func=lambda x: profile_options[x],
+            index=0  # Default to first profile
         )
 
-        # Fetch recommendations with higher limit
-        if selected == "all":
-            recommendations = api.get_user_recommendations(user.get('id'), limit=5000)
-        else:
-            profile_id_int = int(selected)
-            recommendations = api.get_profile_recommendations(profile_id_int, limit=5000)  # ← Increase limit
+        # Get selected profile details
+        selected_profile = next((p for p in profiles if str(p['id']) == selected), None)
+        profile_categories = selected_profile.get('categories', []) if selected_profile else []
 
-        # DEDUPLICATE by arxiv_id - keep highest score (KEEP THIS CODE)
+        # Fetch recommendations for selected profile
+        profile_id_int = int(selected)
+        recommendations = api.get_profile_recommendations(profile_id_int, limit=5000)
+
+        # DEDUPLICATE by arxiv_id - keep highest score
         seen_arxiv_ids = {}
         for rec in recommendations:
             arxiv_id = rec.get('arxiv_id')
@@ -1075,6 +1077,11 @@ def recommendations_page(user: Dict):
         if not recommendations:
             st.info("No recommendations yet.")
             return
+        
+        # Calculate min and max scores from recommendations
+        all_scores = [r['score'] for r in recommendations if r.get('score') is not None]
+        min_score_available = min(all_scores) if all_scores else 0.0
+        max_score_available = max(all_scores) if all_scores else 1.0
         
         # Advanced filters in expandable section
         with st.expander("Filters", expanded=False):
@@ -1110,7 +1117,7 @@ def recommendations_page(user: Dict):
             st.divider()
             
             # Manual date inputs
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             
             with col1:
                 date_from = st.date_input(
@@ -1130,48 +1137,51 @@ def recommendations_page(user: Dict):
                 if date_to:
                     st.session_state['rec_date_to'] = date_to
             
-            with col3:
-                min_score = st.slider("Minimum Score", 0.0, 1.0, 0.5, 0.01, key="rec_min_score")
-
-            if selected != "all":
-                # Get the profile's default top_x
-                selected_profile = next((p for p in profiles if str(p['id']) == selected), None)
-                default_top_x = selected_profile.get('top_x', 10) if selected_profile else 10
-                
-                st.slider(
-                    "Number of papers to show",
-                    min_value=5,
-                    max_value=500,
-                    value=100,
-                    step=5,
-                    key="rec_top_x_slider",
-                    help="Override profile's default max papers setting"
-                )
-            
-            
+            # Minimum score slider with dynamic range
+            min_score = st.slider(
+                "Minimum Score", 
+                min_value=float(min_score_available),
+                max_value=float(max_score_available),
+                value=float(min_score_available),  # Default to lowest score (show all)
+                step=0.01, 
+                key="rec_min_score",
+                help=f"Score range: {min_score_available:.3f} to {max_score_available:.3f}"
+            )
             
             # Keyword search
             keyword_search = st.text_input("Search in title/abstract", placeholder="Enter keywords...")
             
-            # Category filter
+            # Category filter - Show profile's categories as checkboxes
             st.write("**Filter by Categories**")
-            if "rec_cat_tree_selected" not in st.session_state:
-                st.session_state["rec_cat_tree_selected"] = []
             
-            rec_cat_selected = st_ant_tree(
-                treeData=ARXIV_CATEGORY_TREE,
-                treeCheckable=True,
-                allowClear=True,
-                showSearch=True,
-                placeholder="Any category",
-                defaultValue=st.session_state.get("rec_cat_tree_selected", []),
-                max_height=300,
-                only_children_select=True,
-                key="rec_cat_tree"
-            )
-            
-            if rec_cat_selected:
-                st.session_state["rec_cat_tree_selected"] = rec_cat_selected
+            if profile_categories:
+                # Initialize session state for category selections if not exists
+                if f"selected_cats_{selected}" not in st.session_state:
+                    st.session_state[f"selected_cats_{selected}"] = []
+                
+                # Create checkboxes for each category in the profile
+                selected_cats = []
+                
+                for cat in profile_categories:
+                    cat_label = ARXIV_CODE_TO_LABEL.get(cat, cat)
+                    is_checked = st.checkbox(
+                        cat_label,
+                        value=cat in st.session_state[f"selected_cats_{selected}"],
+                        key=f"cat_checkbox_{selected}_{cat}"
+                    )
+                    if is_checked:
+                        selected_cats.append(cat)
+                
+                # Update session state
+                st.session_state[f"selected_cats_{selected}"] = selected_cats
+                
+                # Add "Clear all" button if any categories are selected
+                if selected_cats:
+                    if st.button("Clear category filters", key=f"clear_cats_{selected}"):
+                        st.session_state[f"selected_cats_{selected}"] = []
+                        st.rerun()
+            else:
+                st.caption("No categories configured for this profile")
         
         # Apply filters
         filtered = recommendations
@@ -1179,7 +1189,7 @@ def recommendations_page(user: Dict):
         # Score filter
         filtered = [r for r in filtered if r['score'] >= min_score]
         
-        # Date filters - NOW USING submitted_date DIRECTLY
+        # Date filters
         date_from = st.session_state.get('rec_date_from')
         date_to = st.session_state.get('rec_date_to')
 
@@ -1192,14 +1202,12 @@ def recommendations_page(user: Dict):
                 
                 if submitted_date:
                     try:
-                        # Parse submitted_date
                         if isinstance(submitted_date, str):
                             paper_date = datetime.fromisoformat(submitted_date.replace('Z', '').replace('+00:00', '')).date()
                         else:
                             paper_date = submitted_date.date() if hasattr(submitted_date, 'date') else None
                         
                         if paper_date:
-                            # Apply date filters
                             if date_from and paper_date < date_from:
                                 continue
                             if date_to and paper_date > date_to:
@@ -1207,10 +1215,8 @@ def recommendations_page(user: Dict):
                             
                             date_filtered.append(r)
                     except Exception as e:
-                        # If we can't parse date, include it
                         date_filtered.append(r)
                 else:
-                    # No submitted_date, include it
                     date_filtered.append(r)
             
             filtered = date_filtered
@@ -1225,16 +1231,15 @@ def recommendations_page(user: Dict):
             ]
         
         # Category filter
-        cat_codes = st.session_state.get("rec_cat_tree_selected", [])
-        if cat_codes:
-            # Filter by paper metadata categories
+        selected_cats = st.session_state.get(f"selected_cats_{selected}", [])
+        if selected_cats:
             filtered = [
                 r for r in filtered
                 if r.get('metadata') and 
-                   any(cat in r['metadata'].get('categories', []) for cat in cat_codes)
+                   any(cat in r['metadata'].get('categories', []) for cat in selected_cats)
             ]
         
-        # Sort by score (show ALL results, no limit)
+        # Sort by score
         filtered = sorted(filtered, key=lambda x: x['score'], reverse=True)
         
         # Group by submitted_date
@@ -1250,13 +1255,12 @@ def recommendations_page(user: Dict):
             
             if submitted_date:
                 try:
-                    # Parse submitted_date
                     if isinstance(submitted_date, str):
                         date_obj = datetime.fromisoformat(submitted_date.replace('Z', '').replace('+00:00', ''))
                     else:
                         date_obj = submitted_date
                     
-                    date_str = date_obj.strftime("%d %B %Y")  # "15 January 2026"
+                    date_str = date_obj.strftime("%d %B %Y")
                 except Exception as e:
                     date_str = "Unknown Date"
             
@@ -1277,94 +1281,20 @@ def recommendations_page(user: Dict):
         except Exception:
             sorted_dates = list(grouped.keys())
         
-        # Flatten papers for pagination (while maintaining date order)
-        all_papers_ordered = []
-        # Flatten papers for pagination (while maintaining date order)
+        # Flatten papers for pagination
         all_papers_ordered = []
         for date in sorted_dates:
             recs = sorted(grouped[date], key=lambda x: x['score'], reverse=True)
             for rec in recs:
-                rec['_display_date'] = date  # Store date for display
+                rec['_display_date'] = date
                 all_papers_ordered.append(rec)
         
         # PAGINATION - 20 papers per page
         PAPERS_PER_PAGE = 20
         total_papers = len(all_papers_ordered)
-        total_pages = (total_papers + PAPERS_PER_PAGE - 1) // PAPERS_PER_PAGE  # Ceiling division
+        total_pages = (total_papers + PAPERS_PER_PAGE - 1) // PAPERS_PER_PAGE
         
-        # Initialize page number in session state
-        if f'rec_page_{selected}' not in st.session_state:
-            st.session_state[f'rec_page_{selected}'] = 1
-        
-        current_page = st.session_state[f'rec_page_{selected}']
-        
-        # Ensure current page is valid
-        if current_page > total_pages and total_pages > 0:
-            current_page = total_pages
-            st.session_state[f'rec_page_{selected}'] = current_page
-        
-        # Calculate pagination indices
-        start_idx = (current_page - 1) * PAPERS_PER_PAGE
-        end_idx = min(start_idx + PAPERS_PER_PAGE, total_papers)
-        
-        # Get papers for current page
-        page_papers = all_papers_ordered[start_idx:end_idx]
-        
-        # Display info and pagination controls
-        col_info, col_pagination = st.columns([2, 1])
-        
-        with col_info:
-            st.write(f"Showing {start_idx + 1}-{end_idx} of {total_papers} recommendations")
-        
-        # Bottom pagination controls
-        if total_pages > 1:
-            col_prev2, col_page2, col_next2 = st.columns([1, 2, 1])
-            
-            with col_prev2:
-                if st.button("← Previous", disabled=(current_page == 1), key=f"prev_bottom_{selected}"):
-                    st.session_state[f'rec_page_{selected}'] = current_page - 1
-                    st.rerun()
-            
-            with col_page2:
-                st.write(f"Page {current_page} of {total_pages}")
-            
-            with col_next2:
-                if st.button("Next →", disabled=(current_page == total_pages), key=f"next_bottom_{selected}"):
-                    st.session_state[f'rec_page_{selected}'] = current_page + 1
-                    st.rerun()
-        
-        if not page_papers:
-            st.info("No recommendations match the filters.")
-            return
-        
-        # Re-group papers for current page by date for display
-        page_grouped = defaultdict(list)
-        for rec in page_papers:
-            date_str = rec.get('_display_date', 'Unknown Date')
-            page_grouped[date_str].append(rec)
-        
-        # Get unique dates in order they appear on this page
-        page_dates = []
-        seen = set()
-        for rec in page_papers:
-            date_str = rec.get('_display_date', 'Unknown Date')
-            if date_str not in seen:
-                page_dates.append(date_str)
-                seen.add(date_str)
-        
-        # Display by date (only for papers on current page)
-        for date in page_dates:
-            recs = page_grouped[date]
-            for rec in recs:
-                rec['_display_date'] = date  # Store date for display
-                all_papers_ordered.append(rec)
-        
-        # PAGINATION - 20 papers per page
-        PAPERS_PER_PAGE = 20
-        total_papers = len(all_papers_ordered)
-        total_pages = (total_papers + PAPERS_PER_PAGE - 1) // PAPERS_PER_PAGE  # Ceiling division
-        
-        # Initialize page number in session state
+        # Initialize page number
         if f'rec_page_{selected}' not in st.session_state:
             st.session_state[f'rec_page_{selected}'] = 1
         
@@ -1393,7 +1323,7 @@ def recommendations_page(user: Dict):
                 col_prev, col_page, col_next = st.columns([1, 2, 1])
                 
                 with col_prev:
-                    if st.button("← Prev", disabled=(current_page == 1), key=f"prev_{selected}"):
+                    if st.button("← Prev", disabled=(current_page == 1), key=f"prev_top_{selected}"):
                         st.session_state[f'rec_page_{selected}'] = current_page - 1
                         st.rerun()
                 
@@ -1401,7 +1331,7 @@ def recommendations_page(user: Dict):
                     st.write(f"Page {current_page} of {total_pages}")
                 
                 with col_next:
-                    if st.button("Next →", disabled=(current_page == total_pages), key=f"next_{selected}"):
+                    if st.button("Next →", disabled=(current_page == total_pages), key=f"next_top_{selected}"):
                         st.session_state[f'rec_page_{selected}'] = current_page + 1
                         st.rerun()
         
@@ -1409,13 +1339,13 @@ def recommendations_page(user: Dict):
             st.info("No recommendations match the filters.")
             return
         
-        # Re-group papers for current page by date for display
+        # Re-group papers for current page by date
         page_grouped = defaultdict(list)
         for rec in page_papers:
             date_str = rec.get('_display_date', 'Unknown Date')
             page_grouped[date_str].append(rec)
         
-        # Get unique dates in order they appear on this page
+        # Get unique dates in order
         page_dates = []
         seen = set()
         for rec in page_papers:
@@ -1424,22 +1354,10 @@ def recommendations_page(user: Dict):
                 page_dates.append(date_str)
                 seen.add(date_str)
         
-        # Display by date (only for papers on current page)
+        # Display by date
         for date in page_dates:
             recs = page_grouped[date]
             
-            # Get total papers published on arXiv for this date
-            total_papers_for_date = 0
-            if recs and recs[0].get('_date_obj'):
-                date_obj = recs[0]['_date_obj']
-                date_str_iso = date_obj.strftime("%Y-%m-%d")
-                
-                try:
-                    stats = api.get_arxiv_stats_for_date(date_str_iso)
-                    total_papers_for_date = stats.get('total_papers', 0)
-                except Exception as e:
-                    pass
-
             # Display header with counts
             st.markdown(f"### {date}")
 
@@ -1451,13 +1369,6 @@ def recommendations_page(user: Dict):
                 st.caption(f"Recommended {total_for_this_date} out of {total_fetched} papers fetched on this day")
             else:
                 st.caption(f"{total_for_this_date} paper(s)")
-
-
-            # Display single caption with all info
-            if total_papers_for_date > 0:
-                st.caption(f"Recommended {total_for_this_date} out of {total_papers_for_date} papers published on arXiv this day")
-            else:
-                st.caption(f"{total_for_this_date} paper(s)")
             
             for rec in recs:
                 with st.container(border=True):
@@ -1467,7 +1378,20 @@ def recommendations_page(user: Dict):
                     with col2:
                         st.markdown(f"**{rec['score']:.3f}**")
                     
-                    st.caption(f"arXiv: {rec.get('arxiv_id', 'N/A')}")
+                    # GET CATEGORIES FROM METADATA
+                    metadata = rec.get('metadata', {})
+                    categories = metadata.get('categories', [])
+                    
+                    if categories:
+                        # Show only primary category 
+                        primary_cat = categories[0]
+                        primary_label = ARXIV_CODE_TO_LABEL.get(primary_cat, primary_cat)
+                        if len(categories) > 1:
+                            st.caption(f"**Category:** {primary_label} (+{len(categories) - 1} more)")
+                        else:
+                            st.caption(f"**Category:** {primary_label}")
+                    
+                    st.caption(f"**arXiv:** {rec.get('arxiv_id', 'N/A')}")
                     
                     # Show summary if available, otherwise truncated abstract
                     if rec.get('summary_text'):
@@ -1485,7 +1409,7 @@ def recommendations_page(user: Dict):
             col_prev2, col_page2, col_next2 = st.columns([1, 2, 1])
             
             with col_prev2:
-                if st.button("← Previous", disabled=(current_page == 1), key=f"prev2_{selected}"):
+                if st.button("← Previous", disabled=(current_page == 1), key=f"prev_bottom_{selected}"):
                     st.session_state[f'rec_page_{selected}'] = current_page - 1
                     st.rerun()
             
@@ -1493,17 +1417,15 @@ def recommendations_page(user: Dict):
                 st.write(f"Page {current_page} of {total_pages}")
             
             with col_next2:
-                if st.button("Next →", disabled=(current_page == total_pages), key=f"next2_{selected}"):
+                if st.button("Next →", disabled=(current_page == total_pages), key=f"next_bottom_{selected}"):
                     st.session_state[f'rec_page_{selected}'] = current_page + 1
                     st.rerun()
-    
     
     except Exception as e:
         st.error(f"Error: {str(e)}")
         import traceback
         with st.expander("Debug Info"):
             st.code(traceback.format_exc())
-
 
 
 def settings_page(user: Dict):
