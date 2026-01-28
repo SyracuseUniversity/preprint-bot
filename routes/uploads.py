@@ -7,6 +7,7 @@ import shutil
 from database import get_db_pool
 from config import USER_PDF_DIR
 import asyncio
+from fastapi import Body
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
@@ -381,3 +382,56 @@ async def stream_processing_progress(user_id: int, profile_id: int):
             "X-Accel-Buffering": "no"
         }
     )
+
+
+@router.post("/arxiv/{user_id}/{profile_id}")
+async def add_paper_from_arxiv(
+    user_id: int,
+    profile_id: int,
+    background_tasks: BackgroundTasks,
+    arxiv_id: str = Body(..., embed=True)
+):
+    """Add a paper from arXiv by downloading it"""
+    import requests
+    from pathlib import Path
+    
+    try:
+        # Download PDF from arXiv
+        pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+        
+        print(f"Downloading paper {arxiv_id} from arXiv...")
+        response = requests.get(pdf_url, timeout=30)
+        response.raise_for_status()
+        
+        # Check if it's actually a PDF
+        content_type = response.headers.get('Content-Type', '')
+        if 'application/pdf' not in content_type.lower():
+            raise HTTPException(status_code=400, detail=f"Failed to download PDF for {arxiv_id}. arXiv may have returned an error page.")
+        
+        # Save to user's directory
+        user_pdf_dir = USER_PDF_DIR / str(user_id) / str(profile_id)
+        user_pdf_dir.mkdir(parents=True, exist_ok=True)
+        
+        pdf_path = user_pdf_dir / f"{arxiv_id}.pdf"
+        
+        with open(pdf_path, 'wb') as f:
+            f.write(response.content)
+        
+        print(f"Saved PDF to {pdf_path}")
+        
+        return {
+            "message": "Paper added successfully from arXiv",
+            "arxiv_id": arxiv_id,
+            "filename": f"{arxiv_id}.pdf",
+            "path": str(pdf_path),
+            "user_id": user_id,
+            "profile_id": profile_id,
+            "size_mb": round(len(response.content) / (1024 * 1024), 2)
+        }
+        
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Paper {arxiv_id} not found on arXiv")
+        raise HTTPException(status_code=400, detail=f"Failed to download paper: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error adding paper from arXiv: {str(e)}")
