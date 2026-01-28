@@ -284,22 +284,3 @@ class APIClient:
         )
         response.raise_for_status()
         return response.json() 
-
-    async def record_arxiv_stats(self, submission_date: str, category: str, total_papers: int):
-    """Record arXiv fetch statistics"""
-    response = await self.client.post(
-        f"{self.base_url}/papers/arxiv-stats",
-        params={
-            "submission_date": submission_date,
-            "category": category,
-            "total_papers": total_papers
-        }
-    )
-    response.raise_for_status()
-    return response.json()
-
-    async def get_arxiv_stats_for_date(self, date: str) -> Dict:
-        """Get total papers for a specific date"""
-        response = await self.client.get(f"{self.base_url}/papers/arxiv-stats/date/{date}")
-        response.raise_for_status()
-        return response.json()
