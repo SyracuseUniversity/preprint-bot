@@ -979,6 +979,8 @@ def profiles_page(user: Dict):
                             "top_x": top_x
                         }
                         st.session_state["show_profile_create_confirm"] = True
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
     
     # Creation confirmation panel
     if st.session_state.get("show_profile_create_confirm") and st.session_state.get("pending_profile_create"):
@@ -1041,7 +1043,7 @@ def recommendations_page(user: Dict):
             return
         
         # Profile dropdown
-        profile_options = {"all": "All Profiles"}
+        profile_options = {}
         for p in profiles:
             profile_options[str(p['id'])] = p['name']
         
@@ -1314,22 +1316,22 @@ def recommendations_page(user: Dict):
         with col_info:
             st.write(f"Showing {start_idx + 1}-{end_idx} of {total_papers} recommendations")
         
-        with col_pagination:
-            if total_pages > 1:
-                col_prev, col_page, col_next = st.columns([1, 2, 1])
-                
-                with col_prev:
-                    if st.button("← Prev", disabled=(current_page == 1), key=f"prev_{selected}"):
-                        st.session_state[f'rec_page_{selected}'] = current_page - 1
-                        st.rerun()
-                
-                with col_page:
-                    st.write(f"Page {current_page} of {total_pages}")
-                
-                with col_next:
-                    if st.button("Next →", disabled=(current_page == total_pages), key=f"next_{selected}"):
-                        st.session_state[f'rec_page_{selected}'] = current_page + 1
-                        st.rerun()
+        # Bottom pagination controls
+        if total_pages > 1:
+            col_prev2, col_page2, col_next2 = st.columns([1, 2, 1])
+            
+            with col_prev2:
+                if st.button("← Previous", disabled=(current_page == 1), key=f"prev_bottom_{selected}"):
+                    st.session_state[f'rec_page_{selected}'] = current_page - 1
+                    st.rerun()
+            
+            with col_page2:
+                st.write(f"Page {current_page} of {total_pages}")
+            
+            with col_next2:
+                if st.button("Next →", disabled=(current_page == total_pages), key=f"next_bottom_{selected}"):
+                    st.session_state[f'rec_page_{selected}'] = current_page + 1
+                    st.rerun()
         
         if not page_papers:
             st.info("No recommendations match the filters.")
@@ -1494,23 +1496,7 @@ def recommendations_page(user: Dict):
                 if st.button("Next →", disabled=(current_page == total_pages), key=f"next2_{selected}"):
                     st.session_state[f'rec_page_{selected}'] = current_page + 1
                     st.rerun()
-        
-        # Bottom pagination controls
-        if total_pages > 1:
-            col_prev2, col_page2, col_next2 = st.columns([1, 2, 1])
-            
-            with col_prev2:
-                if st.button("← Previous", disabled=(current_page == 1), key=f"prev2_{selected}"):
-                    st.session_state[f'rec_page_{selected}'] = current_page - 1
-                    st.rerun()
-            
-            with col_page2:
-                st.write(f"Page {current_page} of {total_pages}")
-            
-            with col_next2:
-                if st.button("Next →", disabled=(current_page == total_pages), key=f"next2_{selected}"):
-                    st.session_state[f'rec_page_{selected}'] = current_page + 1
-                    st.rerun()
+    
     
     except Exception as e:
         st.error(f"Error: {str(e)}")
