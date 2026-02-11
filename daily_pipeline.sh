@@ -17,7 +17,7 @@ echo "========================================" | tee -a "$LOG_FILE"
 TODAY=$(date +%Y-%m-%d)
 echo "Running pipeline for date: $TODAY" | tee -a "$LOG_FILE"
 
-python -m preprint_bot.date_pipeline \
+python date_pipeline.py \
     --date $TODAY \
     2>&1 | tee -a "$LOG_FILE"
 
