@@ -293,6 +293,12 @@ ARXIV_CODE_TO_LABEL: Dict[str, str] = _build_arxiv_code_to_label()
 
 def get_api_client() -> SyncWebAPIClient:
     """Get or create API client"""
+    
+    try:
+        nest_asyncio.apply()
+    except Exception:
+        pass
+    
     if 'api_client' not in st.session_state:
         st.session_state['api_client'] = SyncWebAPIClient()
     return st.session_state['api_client']
@@ -1503,10 +1509,44 @@ def main():
         unsafe_allow_html=True,
     )
     
-    st.title(" Preprint Bot")
+    # st.title(" Preprint Bot")
     
     # Check authentication
     user = get_current_user()
+    
+    if not user:
+        # Logged out
+        col_title, col_help = st.columns([6, 1])
+        
+        with col_title:
+            st.title("Preprint Bot")
+            
+        with col_help:
+            st.write("") 
+            st.write("") 
+            if st.button("Help", use_container_width=True):
+                open_new_tab("/help")
+                
+    else:
+        # Logged in
+        st.title("Preprint Bot")
+        
+        # The control row: [User Info] [Help] [Logout]
+        h_col1, h_col2, h_col3 = st.columns([6, 1, 1])
+        
+        with h_col1:
+            st.write(f"Logged in as: **{user.get('name') or user['email']}** (ID: {user.get('id')})")
+            
+        with h_col2:
+            if st.button("Help", use_container_width=True):
+                open_new_tab("/help")
+                
+        with h_col3:
+            if st.button("Logout", use_container_width=True):
+                logout()
+        
+        st.divider()
+    
     
     if not user:
         # Show appropriate auth page
@@ -1521,11 +1561,13 @@ def main():
         return
     
     # Logged in - show main app
-    with st.sidebar:
-        st.write(f"**{user.get('name') or user['email']}**")
-        st.caption(f"User ID: {user.get('id')}")
-        if st.button("Logout", use_container_width=True):
-            logout()
+    # with st.sidebar:
+    #     st.write(f"**{user.get('name') or user['email']}**")
+    #     st.caption(f"User ID: {user.get('id')}")
+    #     if st.button("Logout", use_container_width=True):
+    #         logout()
+    
+    col_user, col_help, col_logout = st.columns([6, 1, 1])
     
     # Main navigation
     tabs = st.tabs(["Dashboard", "Profiles", "Recommendations", "Settings"])
