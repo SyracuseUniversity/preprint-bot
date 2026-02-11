@@ -5,6 +5,8 @@ from st_ant_tree import st_ant_tree
 import sys
 from pathlib import Path
 import time 
+import streamlit.components.v1 as components
+import uuid
 # Add website directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -17,6 +19,22 @@ def auto_refresh_during_processing(api, user_id, profile_id, interval=3):
             st.rerun()
     except Exception:
         pass
+
+def open_new_tab(page_path="/help", window_name="help_tab"):
+    """Opens a new browser tab to the specified path"""
+    token = uuid.uuid4()
+    components.html(
+        f"""
+        <script>
+          const u = new URL(window.parent.location.href);
+          u.pathname = "{page_path}";
+          u.search = "v={token}";
+          window.open(u.toString(), "{window_name}");
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
 # ==================== ARXIV CATEGORY TREE ====================
 
@@ -1468,6 +1486,21 @@ def main():
         page_title="Preprint Bot",
         page_icon="",
         layout="wide"
+    )
+    
+    # CSS to hide sidebar
+    st.markdown(
+        """
+        <style>
+            [data-testid="stSidebar"] {
+                display: none;
+            }
+            [data-testid="stSidebarCollapsedControl"] {
+                display: none;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
     
     st.title(" Preprint Bot")
