@@ -7,6 +7,8 @@ from pathlib import Path
 import time 
 import streamlit.components.v1 as components
 import uuid
+import nest_asyncio
+nest_asyncio.apply()
 # Add website directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -292,16 +294,25 @@ ARXIV_CODE_TO_LABEL: Dict[str, str] = _build_arxiv_code_to_label()
 # ==================== SESSION STATE & API CLIENT ====================
 
 def get_api_client() -> SyncWebAPIClient:
-    """Get or create API client"""
+    """
+    Creates a fresh client for every run to prevent Event Loop crashes,
+    but manually restores the auth token so the user stays logged in.
+    """
+    # 1. Create a fresh client (starts with token=None)
+    # This attaches to the CURRENT thread's event loop automatically.
+    client = SyncWebAPIClient()
     
-    try:
-        nest_asyncio.apply()
-    except Exception:
-        pass
+    # 2. Check if we have a saved token in the session state
+    # (We will save this in login_page)
+    token = st.session_state.get('auth_token')
     
-    if 'api_client' not in st.session_state:
-        st.session_state['api_client'] = SyncWebAPIClient()
-    return st.session_state['api_client']
+    # 3. If we do, inject it into the internal async client
+    if token:
+        # Access the internal WebAPIClient via ._client and set the token
+        # This assumes your WebAPIClient has a .token attribute or uses .headers
+        client._client.token = token
+        
+    return client
 
 def get_current_user() -> Optional[Dict]:
     """Get currently logged in user"""
