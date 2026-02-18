@@ -71,13 +71,13 @@ isort>=5.13.0
 # Production Server
 gunicorn>=21.2.0
 
-# --- Website & UI Dependencies ---
+# Website Dependencies
 streamlit==1.50.0
 st-ant-tree
 streamlit-extras>=0.4.0
-nest-asyncio>=1.6.0  # CRITICAL: Fixes the event loop crash in app.py
+nest-asyncio>=1.6.0  # Fixes the event loop crash in app.py
 
-# --- Auth & Speed Improvements ---
+# Auth & Speed Improvements
 bcrypt==4.2.0
 python-multipart==0.0.12
 orjson==3.10.7
