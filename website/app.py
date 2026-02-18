@@ -5,6 +5,10 @@ from st_ant_tree import st_ant_tree
 import sys
 from pathlib import Path
 import time 
+import streamlit.components.v1 as components
+import uuid
+import nest_asyncio
+nest_asyncio.apply()
 # Add website directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -17,6 +21,22 @@ def auto_refresh_during_processing(api, user_id, profile_id, interval=3):
             st.rerun()
     except Exception:
         pass
+
+def open_new_tab(page_path="/help", window_name="help_tab"):
+    """Opens a new browser tab to the specified path"""
+    token = uuid.uuid4()
+    components.html(
+        f"""
+        <script>
+          const u = new URL(window.parent.location.href);
+          u.pathname = "{page_path}";
+          u.search = "v={token}";
+          window.open(u.toString(), "{window_name}");
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
 
 # ==================== ARXIV CATEGORY TREE ====================
 
@@ -274,10 +294,25 @@ ARXIV_CODE_TO_LABEL: Dict[str, str] = _build_arxiv_code_to_label()
 # ==================== SESSION STATE & API CLIENT ====================
 
 def get_api_client() -> SyncWebAPIClient:
-    """Get or create API client"""
-    if 'api_client' not in st.session_state:
-        st.session_state['api_client'] = SyncWebAPIClient()
-    return st.session_state['api_client']
+    """
+    Creates a fresh client for every run to prevent Event Loop crashes,
+    but manually restores the auth token so the user stays logged in.
+    """
+    # 1. Create a fresh client (starts with token=None)
+    # This attaches to the CURRENT thread's event loop automatically.
+    client = SyncWebAPIClient()
+    
+    # 2. Check if we have a saved token in the session state
+    # (We will save this in login_page)
+    token = st.session_state.get('auth_token')
+    
+    # 3. If we do, inject it into the internal async client
+    if token:
+        # Access the internal WebAPIClient via ._client and set the token
+        # This assumes your WebAPIClient has a .token attribute or uses .headers
+        client._client.token = token
+        
+    return client
 
 def get_current_user() -> Optional[Dict]:
     """Get currently logged in user"""
@@ -1470,10 +1505,59 @@ def main():
         layout="wide"
     )
     
-    st.title(" Preprint Bot")
+    # CSS to hide sidebar
+    st.markdown(
+        """
+        <style>
+            [data-testid="stSidebar"] {
+                display: none;
+            }
+            [data-testid="stSidebarCollapsedControl"] {
+                display: none;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    
+    # st.title(" Preprint Bot")
     
     # Check authentication
     user = get_current_user()
+    
+    if not user:
+        # Logged out
+        col_title, col_help = st.columns([6, 1])
+        
+        with col_title:
+            st.title("Preprint Bot")
+            
+        with col_help:
+            st.write("") 
+            st.write("") 
+            if st.button("Help", use_container_width=True):
+                open_new_tab("/help")
+                
+    else:
+        # Logged in
+        st.title("Preprint Bot")
+        
+        # The control row: [User Info] [Help] [Logout]
+        h_col1, h_col2, h_col3 = st.columns([6, 1, 1])
+        
+        with h_col1:
+            st.write(f"Logged in as: **{user.get('name') or user['email']}** (ID: {user.get('id')})")
+            
+        with h_col2:
+            if st.button("Help", use_container_width=True):
+                open_new_tab("/help")
+                
+        with h_col3:
+            if st.button("Logout", use_container_width=True):
+                logout()
+        
+        st.divider()
+    
     
     if not user:
         # Show appropriate auth page
@@ -1488,11 +1572,13 @@ def main():
         return
     
     # Logged in - show main app
-    with st.sidebar:
-        st.write(f"**{user.get('name') or user['email']}**")
-        st.caption(f"User ID: {user.get('id')}")
-        if st.button("Logout", use_container_width=True):
-            logout()
+    # with st.sidebar:
+    #     st.write(f"**{user.get('name') or user['email']}**")
+    #     st.caption(f"User ID: {user.get('id')}")
+    #     if st.button("Logout", use_container_width=True):
+    #         logout()
+    
+    col_user, col_help, col_logout = st.columns([6, 1, 1])
     
     # Main navigation
     tabs = st.tabs(["Dashboard", "Profiles", "Recommendations", "Settings"])
