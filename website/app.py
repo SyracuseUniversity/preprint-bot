@@ -736,7 +736,9 @@ def profiles_page(user: Dict):
 
         st.markdown("### Profiles")
 
-        view = st.radio("View", ["List", "Create/Edit"], horizontal=True)
+        default_view_idx = 0 if st.session_state.get("profiles_view", "List") == "List" else 1
+        view = st.radio("View", ["List", "Create/Edit"], horizontal=True, index=default_view_idx)
+        st.session_state["profiles_view"] = view
 
         if view == "List":
             try:
@@ -748,7 +750,15 @@ def profiles_page(user: Dict):
                     for profile in profiles:
                         try:
                             with st.container(border=True):
-                                st.subheader(profile['name'])
+                                header_col, edit_col = st.columns([5, 1])
+                                with header_col:
+                                    st.subheader(profile['name'])
+                                with edit_col:
+                                    if st.button("✏️ Edit", key=f"edit_btn_{profile['id']}"):
+                                        st.session_state["profiles_view"] = "Create/Edit"
+                                        st.session_state["profile_mode"] = "Edit existing"
+                                        st.session_state["edit_profile_name"] = profile['name']
+                                        st.rerun()
 
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
@@ -995,7 +1005,14 @@ def profiles_page(user: Dict):
                     return
 
                 profile_options = {p['name']: p['id'] for p in profiles}
-                selected_name = st.selectbox("Choose profile to edit", ["— Select —"] + list(profile_options.keys()))
+                preset_name = st.session_state.pop("edit_profile_name", "— Select —")
+                default_edit_idx = (["— Select —"] + list(profile_options.keys())).index(preset_name) if preset_name in profile_options else 0
+
+                selected_name = st.selectbox(
+                    "Choose profile to edit",
+                    ["— Select —"] + list(profile_options.keys()),
+                    index=default_edit_idx
+                )
 
                 if selected_name != "— Select —":
                     selected_profile_id = profile_options[selected_name]
@@ -1203,10 +1220,12 @@ def profiles_page(user: Dict):
                                     st.session_state.pop("pending_profile_create", None)
                                     st.session_state.pop("show_profile_create_confirm", None)
                                     st.session_state["profile_cat_tree_selected"] = []
+                                    st.session_state["profiles_view"] = "List"
 
-                                    st.success("Profile created successfully! Go to 'List' view to upload papers.")
+                                    st.toast(f"Profile '{data['name']}' created successfully!", icon="✅")
                                     logger.info(f"Successfully created profile: {data['name']}")
                                     st.rerun()
+
                                 except Exception as e:
                                     log_error("profiles_page.confirm_create", e, {"profile_data": data})
                                     st.error(f"Error creating profile: {str(e)}")
