@@ -1,7 +1,9 @@
 #!/bin/bash
 set -e  # Exit on any error
 
-cd /home/ugaikwad/preprint-bot
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 source venv/bin/activate
 
 LOG_DIR="logs/cron"
@@ -18,7 +20,7 @@ TODAY=$(date +%Y-%m-%d)
 echo "Running pipeline for date: $TODAY" | tee -a "$LOG_FILE"
 
 python date_pipeline.py \
-    --date $TODAY \
+    --date "$TODAY" \
     2>&1 | tee -a "$LOG_FILE"
 
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
