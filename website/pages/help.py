@@ -54,7 +54,7 @@ with st.expander("Dashboard", expanded=True):
     st.write("""
     The Dashboard is your home base. It provides a quick overview of your account activity:
     * **Stats:** Shows how many profiles you manage and the size of your paper corpus.
-    * **Today's Top Picks:** Automatically displays the highest-scoring papers from *today's* arXiv dump across all your profiles.
+    * **Today’s Recommendations:** Automatically displays the highest-scoring papers from *today's* arXiv dump across all your profiles.
     """)
 
 with st.expander("Profiles (Configuration)", expanded=True):
@@ -101,10 +101,12 @@ with st.expander("I’m not seeing any recommendations", expanded=True):
     
     1.  **Is your profile new?** The bot runs periodically. If you just created a profile, wait for the next scheduled run (usually nightly) or check back in 24 hours.
     
-    2.  **Are your settings too strict?** * **Threshold:** If set to "High", try lowering it to "Medium" or "Low".
+    2.  **Are your settings too strict?** 
+        * **Threshold:** If set to "High", try lowering it to "Medium" or "Low".
         * **Categories:** Ensure you have selected categories that actually receive frequent submissions (e.g., *cs.CL* is very active, while *cs.OS* is slower).
     
-    3.  **Is the Corpus populated?** Ensure the backend system is running and has successfully fetched the latest arXiv data.
+    3.  **Is the Corpus populated?** Ensure you have uploaded papers.
+    4.  **If you are still having trouble, please contact us (below).
     """)
 
 st.divider()
