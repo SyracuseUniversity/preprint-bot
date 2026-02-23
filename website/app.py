@@ -1071,7 +1071,7 @@ def profiles_page(user: Dict):
                             value=THRESHOLD_VALUES.get(default_threshold, 0.6),
                             step=0.01,
                             label_visibility="collapsed",
-                            help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.5) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers."
+                            help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.4) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers."
                         )
 
                         if threshold_val <= 0.49:
