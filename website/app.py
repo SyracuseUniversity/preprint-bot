@@ -1008,7 +1008,11 @@ def profiles_page(user: Dict):
                     default_threshold = profile['threshold']
                     default_top_x = profile.get('top_x', 999)
                     default_keywords = ', '.join(profile['keywords'])
-                    st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
+
+                    if st.session_state.get("_loaded_profile_id") != selected_profile_id:
+                        st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
+                        st.session_state["_loaded_profile_id"] = selected_profile_id
+                        st.rerun()
                 except Exception as e:
                     log_error("profiles_page.load_profile_defaults", e, {"profile_id": selected_profile_id})
                     st.error(f"Error loading profile: {str(e)}")
@@ -1038,7 +1042,10 @@ def profiles_page(user: Dict):
                         placeholder="machine learning, neural networks, optimization"
                     )
 
-                    st.write("**Select arXiv Categories** (optional)")
+                    st.write("**Select arXiv Categories**")
+                    if selected_profile_id and st.session_state.get("profile_cat_tree_selected"):
+                        cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in st.session_state["profile_cat_tree_selected"]]
+                        st.caption("Currently selected: " + ", ".join(cat_labels))
                     try:
                         selected_cats = st_ant_tree(
                             treeData=ARXIV_CATEGORY_TREE,
