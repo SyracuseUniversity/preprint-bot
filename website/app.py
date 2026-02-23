@@ -1054,11 +1054,32 @@ def profiles_page(user: Dict):
                         selected_cats = []
 
                     with st.expander("⚙️ Advanced Options"):
-                        threshold = st.selectbox(
+                        THRESHOLD_VALUES = {"low": 0.4, "medium": 0.575, "high": 0.75}
+
+                        col_low, col_med, col_high = st.columns([1, 1, 1])
+                        with col_low:
+                            st.markdown("**Low**")
+                        with col_med:
+                            st.markdown("<div style='text-align: center'><b>Medium</b></div>", unsafe_allow_html=True)
+                        with col_high:
+                            st.markdown("<div style='text-align: right'><b>High</b></div>", unsafe_allow_html=True)
+
+                        threshold_val = st.slider(
                             "Threshold",
-                            ["low", "medium", "high"],
-                            index=["low", "medium", "high"].index(default_threshold) if default_threshold in ["low", "medium", "high"] else 1
+                            min_value=0.40,
+                            max_value=0.75,
+                            value=THRESHOLD_VALUES.get(default_threshold, 0.6),
+                            step=0.01,
+                            label_visibility="collapsed",
+                            help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.5) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers."
                         )
+
+                        if threshold_val <= 0.49:
+                            threshold = "low"
+                        elif threshold_val <= 0.66:
+                            threshold = "medium"
+                        else:
+                            threshold = "high"
 
                         top_x = st.slider(
                             "Maximum recommendations to show",
