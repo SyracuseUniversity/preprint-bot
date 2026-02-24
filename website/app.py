@@ -723,7 +723,7 @@ def profiles_page(user: Dict):
                             # Upload new papers - WITH TABS
                             with st.expander("Upload Papers", expanded=False):
                                 # Create tabs for different upload methods
-                                upload_tab, arxiv_tab = st.tabs(["Upload PDF", "Add from arXiv"])
+                                upload_tab, arxiv_tab, search_tab = st.tabs(["Upload PDF", "Add by ID", "Search arXiv"])
                                 
                                 # TAB 1: Upload PDF files
                                 with upload_tab:
@@ -839,6 +839,84 @@ def profiles_page(user: Dict):
                                                 
                                                 if success_count > 0:
                                                     st.rerun()
+                                # TAB 3: Search arXiv
+                                with search_tab:
+                                    st.write("**Search arXiv to find and add papers**")
+                                    col_s1, col_s2 = st.columns(2)
+                                    
+                                    with col_s1:
+                                        search_title = st.text_input("Title", key=f"s_title_{profile['id']}")
+                                    with col_s2:
+                                        search_author = st.text_input("Author", key=f"s_author_{profile['id']}")
+                                    
+                                    # Unique key to store results in session state so they don't disappear on click
+                                    search_key = f"search_results_{profile['id']}"
+
+                                    if st.button("Search", key=f"search_btn_{profile['id']}", type="primary"):
+                                        if not search_title.strip() and not search_author.strip():
+                                            st.error("Please enter a title or author to search.")
+                                        else:
+                                            # Format the search query for the arxiv API
+                                            query_parts = []
+                                            if search_title.strip():
+                                                # Quotes ensure the title phrase is matched together
+                                                query_parts.append(f'ti:"{search_title.strip()}"')
+
+                                            if search_author.strip():
+                                                # Quotes ensure the exact FIRST and LAST name are matched as a single unit
+                                                query_parts.append(f'au:"{search_author.strip()}"')
+
+                                            query_string = " AND ".join(query_parts)
+
+                                            with st.spinner("Searching arXiv..."):
+                                                try:
+                                                    import arxiv
+                                                    client = arxiv.Client()
+                                                    search = arxiv.Search(
+                                                        query=query_string,
+                                                        max_results=10,
+                                                        sort_by=arxiv.SortCriterion.SubmittedDate,
+                                                        sort_order=arxiv.SortOrder.Descending
+                                                    )
+                                                    results = list(client.results(search))
+                                                    
+                                                    if not results:
+                                                        st.session_state[search_key] = []
+                                                    else:
+                                                        # Save to session state so it survives re-runs
+                                                        st.session_state[search_key] = [
+                                                            {
+                                                                "title": p.title,
+                                                                "authors": ", ".join([a.name for a in p.authors]),
+                                                                "published": p.published.strftime('%Y-%m-%d'),
+                                                                "id": p.get_short_id().split('v')[0] # Get clean ID
+                                                            } for p in results
+                                                        ]
+                                                except ImportError:
+                                                    st.error("The 'arxiv' library is not installed. Run `pip install arxiv` in your terminal.")
+                                                except Exception as e:
+                                                    st.error(f"Search failed: {str(e)}")
+
+                                    # Display results if they exist in session state
+                                    if search_key in st.session_state:
+                                        if not st.session_state[search_key]:
+                                            st.info("No papers found matching your query.")
+                                        else:
+                                            st.write("---")
+                                            for paper in st.session_state[search_key]:
+                                                with st.container(border=True):
+                                                    st.markdown(f"**{paper['title']}**")
+                                                    st.caption(f"**Authors:** {paper['authors']}")
+                                                    st.caption(f"**Published:** {paper['published']} | **arXiv ID:** {paper['id']}")
+                                                    
+                                                    # The magic button to add the paper
+                                                    if st.button("➕ Add to Profile", key=f"add_s_{paper['id']}_{profile['id']}"):
+                                                        try:
+                                                            with st.spinner(f"Adding {paper['id']}..."):
+                                                                api.add_paper_from_arxiv(user.get('id'), profile['id'], paper['id'])
+                                                            st.success(f"Successfully added {paper['id']}!")
+                                                        except Exception as e:
+                                                            st.error(f"Failed to add: {str(e)}")
                         
                         except Exception as e:
                             st.error(f"Error managing papers: {str(e)}")
@@ -967,6 +1045,7 @@ def profiles_page(user: Dict):
                 st.error("At least one keyword is required")
             else:
                 try:
+                    clean_name = name.strip()
                     kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
                     
                     # Extract selected categories from tree
