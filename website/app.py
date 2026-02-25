@@ -9,12 +9,14 @@ import traceback
 import logging
 from datetime import datetime, date, timedelta
 
+LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
+
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('streamlit_app.log'),
+        logging.FileHandler(LOG_FILE_PATH),
         logging.StreamHandler()
     ]
 )
@@ -410,7 +412,7 @@ def login_page():
         
         with st.form("login_form"):
             email = st.text_input("Email", placeholder="you@example.com")
-            password = st.text_input("Password", type="password", placeholder="********")
+            password = st.text_input("Password", type="password", placeholder="••••••••")
             
             col1, col2 = st.columns(2)
             with col1:
@@ -424,7 +426,7 @@ def login_page():
                 return
             
             try:
-                logger.info(f"Login attempt for: {email}")
+                logger.info(f"Login attempt for: {email[:3]}***@{email.split('@')[-1]}")
                 api = get_api_client()
                 result = api.login(email, password)
                 set_current_user(result)
@@ -433,8 +435,8 @@ def login_page():
                 st.rerun()
             except Exception as e:
                 log_error("login_page.submit", e, {"email": email})
-                st.error(f"Login failed: {str(e)}")
-                with st.expander("Error Details"):
+                st.error("Login failed. Please check your credentials.")
+                logger.error("Login error", exc_info=True)
                     st.code(traceback.format_exc())
         
         if signup:
@@ -815,8 +817,10 @@ def profiles_page(user: Dict):
                                                     log_error("profiles_page.display_paper", e, {"paper": paper})
                                     else:
                                         st.caption("No papers uploaded yet")
-
-                                    with st.expander("📤 Upload Papers", expanded=False):
+                                    
+                                    # Upload new papers - WITH TABS
+                                    with st.expander("Upload Papers", expanded=False):
+                                        # Create tabs for different upload methods
                                         upload_tab, arxiv_tab = st.tabs(["Upload PDF", "Add from arXiv"])
 
                                         with upload_tab:
@@ -1820,18 +1824,16 @@ def settings_page(user: Dict):
                         st.error("New passwords don't match")
                     else:
                         try:
-                            logger.info(f"Password change request for: {user.get('email')}")
-                            # Note: You'll need to implement this endpoint in your API
-                            # api.change_password(user.get('id'), current_password, new_password)
-                            st.success("Password changed successfully!")
-                            logger.info(f"Password changed for: {user.get('email')}")
+                            masked = f"{user.get('email', '')[:3]}***@{user.get('email', '').split('@')[-1]}"
+                            logger.info(f"Password change request for: {masked}")
+                            # TODO: implement api.change_password() endpoint
+                            st.info("Password change is not yet available. Please use the reset password flow.")
                         except Exception as e:
                             log_error("settings_page.change_password", e, {
                                 "user_id": user.get('id')
                             })
-                            st.error(f"Password change failed: {str(e)}")
-                            with st.expander("Error Details"):
-                                st.code(traceback.format_exc())
+                            st.error("Password change failed. Please try again later.")
+                            logger.error("Password change error", exc_info=True)
         
         except Exception as e:
             log_error("settings_page.system_info", e)
