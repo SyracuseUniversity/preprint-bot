@@ -7,6 +7,7 @@ from typing import List, Dict
 from sklearn.metrics.pairwise import cosine_similarity
 import faiss
 from datetime import datetime, timedelta
+from .config import DEFAULT_THRESHOLD
 
 
 async def run_similarity_matching(
@@ -16,7 +17,7 @@ async def run_similarity_matching(
     arxiv_corpus_id: int,
     profile_id: int = None,
     target_date: datetime = None,  
-    threshold: str = "medium",
+    threshold: float = 0.6,
     method: str = "cosine",
     model_name: str = "all-MiniLM-L6-v2",
     top_k: int = 50,
@@ -27,11 +28,10 @@ async def run_similarity_matching(
     If target_date is provided, only compare against papers from that specific arXiv day.
     If profile_id is provided, filter arXiv papers by profile's categories.
     """
-    from .config import SIMILARITY_THRESHOLDS
     from datetime import datetime, timedelta, timezone
     import json
     
-    threshold_value = SIMILARITY_THRESHOLDS.get(threshold, 0.6)
+    threshold_value = float(threshold) if threshold is not None else DEFAULT_THRESHOLD
     
     print(f"\nSimilarity Matching Configuration:")
     print(f"  Method: {method}")

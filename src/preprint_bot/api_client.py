@@ -44,7 +44,7 @@ class APIClient:
     async def create_profile(self, user_id: int, name: str, keywords: List[str],
                         categories: List[str] = None,  # ADD THIS PARAMETER
                         email_notify: bool = True, frequency: str = "weekly",
-                        threshold: str = "medium", top_x: int = 10) -> Dict:
+                        threshold: float = 0.6, top_x: int = 10) -> Dict:
         response = await self.client.post(
             f"{self.base_url}/profiles/",
             json={
