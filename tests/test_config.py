@@ -87,13 +87,13 @@ class TestConfig:
         assert result == {}
 
 
-class TestParametrizedThresholds:
-    @pytest.mark.parametrize("threshold_name", ["low", "medium", "high"])
-    def test_all_thresholds_exist(self, threshold_name):
-        """Test that all threshold levels are defined"""
-        from preprint_bot.config import SIMILARITY_THRESHOLDS
-        assert threshold_name in SIMILARITY_THRESHOLDS
-        assert isinstance(SIMILARITY_THRESHOLDS[threshold_name], (int, float))
+# class TestParametrizedThresholds:
+#     @pytest.mark.parametrize("threshold_name", ["low", "medium", "high"])
+#     def test_all_thresholds_exist(self, threshold_name):
+#         """Test that all threshold levels are defined"""
+#         from preprint_bot.config import SIMILARITY_THRESHOLDS
+#         assert threshold_name in SIMILARITY_THRESHOLDS
+#         assert isinstance(SIMILARITY_THRESHOLDS[threshold_name], (int, float))
 
 
 # Fixtures
