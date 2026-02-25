@@ -437,7 +437,7 @@ def login_page():
                 log_error("login_page.submit", e, {"email": email})
                 st.error("Login failed. Please check your credentials.")
                 logger.error("Login error", exc_info=True)
-                    st.code(traceback.format_exc())
+                st.code(traceback.format_exc())
         
         if signup:
             st.session_state['show_signup'] = True
@@ -1053,8 +1053,8 @@ def profiles_page(user: Dict):
 
                     freq = st.selectbox(
                         "Email Frequency",
-                        ["daily", "weekly", "biweekly", "monthly"],
-                        index=["daily", "weekly", "biweekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "biweekly", "monthly"] else 1
+                        ["daily", "weekly", "monthly"],
+                        index=["daily", "weekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "monthly"] else 1
                     )
 
                     keywords = st.text_input(
@@ -1082,8 +1082,6 @@ def profiles_page(user: Dict):
                         selected_cats = []
 
                     with st.expander("⚙️ Advanced Options"):
-                        THRESHOLD_VALUES = {"low": 0.4, "medium": 0.575, "high": 0.75}
-
                         col_low, col_med, col_high = st.columns([1, 1, 1])
                         with col_low:
                             st.markdown("**Low**")
@@ -1096,18 +1094,11 @@ def profiles_page(user: Dict):
                             "Threshold",
                             min_value=0.40,
                             max_value=0.75,
-                            value=THRESHOLD_VALUES.get(default_threshold, 0.6),
+                            value=float(default_threshold) if isinstance(default_threshold, (int, float)) else 0.575,
                             step=0.01,
                             label_visibility="collapsed",
                             help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.4) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers."
                         )
-
-                        if threshold_val <= 0.49:
-                            threshold = "low"
-                        elif threshold_val <= 0.66:
-                            threshold = "medium"
-                        else:
-                            threshold = "high"
 
                         top_x = st.slider(
                             "Maximum recommendations to show",
@@ -1162,7 +1153,7 @@ def profiles_page(user: Dict):
                                         keywords=kw_list,
                                         categories=categories_list,
                                         frequency=freq,
-                                        threshold=threshold,
+                                        threshold=threshold_val,
                                         top_x=top_x
                                     )
                                     st.success("Profile updated successfully!")
@@ -1179,7 +1170,7 @@ def profiles_page(user: Dict):
                                     "keywords": kw_list,
                                     "categories": categories_list,
                                     "frequency": freq,
-                                    "threshold": threshold,
+                                    "threshold": threshold_val,
                                     "top_x": top_x
                                 }
                                 st.session_state["show_profile_create_confirm"] = True

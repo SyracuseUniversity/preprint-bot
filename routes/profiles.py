@@ -19,7 +19,7 @@ async def create_profile(profile: ProfileCreate):
                 RETURNING id, user_id, name, keywords, categories, email_notify, frequency, threshold, top_x, created_at, updated_at
                 """,
                 profile.user_id, profile.name, profile.keywords, profile.categories,
-                profile.email_notify, profile.frequency.value, profile.threshold.value, profile.top_x
+                profile.email_notify, profile.frequency.value, profile.threshold, profile.top_x
             )
             return dict(row)
     except Exception as e:
@@ -75,7 +75,7 @@ async def update_profile(profile_id: int, profile: ProfileUpdate):
         idx += 1
     if profile.threshold is not None:
         updates.append(f"threshold = ${idx}")
-        values.append(profile.threshold.value)
+        values.append(profile.threshold)
         idx += 1
     if profile.top_x is not None:
         updates.append(f"top_x = ${idx}")
