@@ -1058,12 +1058,12 @@ def profiles_page(user: Dict):
                     )
 
                     keywords = st.text_input(
-                        "Keywords (comma-separated)",
+                        "Keywords (comma-separated, optional)",
                         value=default_keywords,
                         placeholder="machine learning, neural networks, optimization"
                     )
 
-                    st.write("**Select arXiv Categories**")
+                    st.write("**Select arXiv Categories** (required)")
                     if selected_profile_id and st.session_state.get("profile_cat_tree_selected"):
                         cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in st.session_state["profile_cat_tree_selected"]]
                         st.caption("Currently selected: " + ", ".join(cat_labels))
@@ -1114,8 +1114,6 @@ def profiles_page(user: Dict):
                 if submit:
                     if not name:
                         st.error("Profile name is required")
-                    elif not keywords:
-                        st.error("At least one keyword is required")
                     else:
                         try:
                             clean_name = name.strip()
@@ -1144,7 +1142,11 @@ def profiles_page(user: Dict):
                                     log_error("profiles_page.extract_categories", e, {"selected_cats": selected_cats})
                                     st.warning("Error processing categories, proceeding without them")
                                     categories_list = []
-
+                            
+                            if not categories_list:
+                                st.error("Please select at least one arXiv category")
+                                return
+                                
                             if selected_profile_id:
                                 try:
                                     api.update_profile(
@@ -1212,13 +1214,13 @@ def profiles_page(user: Dict):
                                         top_x=data['top_x']
                                     )
 
+                                    st.toast(f"Profile '{data['name']}' created successfully!", icon="✅")
+                                    logger.info(f"Successfully created profile: {data['name']}")
                                     st.session_state.pop("pending_profile_create", None)
                                     st.session_state.pop("show_profile_create_confirm", None)
                                     st.session_state["profile_cat_tree_selected"] = []
                                     st.session_state["profiles_view"] = "List"
-
-                                    st.toast(f"Profile '{data['name']}' created successfully!", icon="✅")
-                                    logger.info(f"Successfully created profile: {data['name']}")
+                                    time.sleep(1)
                                     st.rerun()
 
                                 except Exception as e:
