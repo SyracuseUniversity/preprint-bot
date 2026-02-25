@@ -106,7 +106,8 @@ with st.expander("I’m not seeing any recommendations", expanded=True):
         * **Categories:** Ensure you have selected categories that actually receive frequent submissions (e.g., *cs.CL* is very active, while *cs.OS* is slower).
     
     3.  **Is the Corpus populated?** Ensure you have uploaded papers.
-    4.  **If you are still having trouble, please contact us (below).
+    
+    4.  **If you are still having trouble, please contact us below**.
     """)
 
 st.divider()
