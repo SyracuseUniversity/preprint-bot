@@ -738,8 +738,11 @@ def profiles_page(user: Dict):
 
         st.markdown("### Profiles")
 
-        default_view_idx = 0 if st.session_state.get("profiles_view", "List") == "List" else 1
-        view = st.radio("View", ["List", "Create/Edit"], horizontal=True, index=default_view_idx)
+        default_view = st.session_state.get("profiles_view", "List")
+        view = st.segmented_control("", ["List", "Create/Edit"], default=default_view)
+        if view != st.session_state.get("profiles_view"):
+            st.session_state["profiles_view"] = view
+            st.rerun()
         st.session_state["profiles_view"] = view
 
         if view == "List":
@@ -1146,7 +1149,7 @@ def profiles_page(user: Dict):
                             if not categories_list:
                                 st.error("Please select at least one arXiv category")
                                 return
-                                
+
                             if selected_profile_id:
                                 try:
                                     api.update_profile(
