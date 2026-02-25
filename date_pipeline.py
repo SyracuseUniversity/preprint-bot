@@ -111,7 +111,7 @@ async def fetch_and_store_arxiv(
     target_date: datetime,
     skip_download: bool = False,
     skip_parse: bool = False
-):
+) -> tuple[int, List[Dict]]:
     """
     Fetch arXiv papers for a specific date and store in database.
     """
@@ -434,13 +434,15 @@ async def run_pipeline(args):
             print("\n" + "="*60)
             print("STEP 3: Generating Embeddings")
             print("="*60)
-            await embed_and_store_papers(
-                api_client,
-                corpus_id=corpus_id,
-                processed_folder=str(PROCESSED_TEXT_DIR),
-                model_name=args.model,
-                store_sections=True
-            )
+            
+            if not args.skip_embed:
+                await embed_and_store_papers(
+                    api_client,
+                    corpus_id=corpus_id,
+                    processed_folder=str(PROCESSED_TEXT_DIR),
+                    model_name=args.model,
+                    store_sections=True
+                )
             
             # STEP 4: Generate summaries
             print("\n" + "="*60)
