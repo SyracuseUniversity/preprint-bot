@@ -752,7 +752,7 @@ def profiles_page(user: Dict):
                     for profile in profiles:
                         try:
                             with st.container(border=True):
-                                header_col, edit_col = st.columns([5, 1])
+                                header_col, edit_col = st.columns([18, 1])
                                 with header_col:
                                     st.subheader(profile['name'])
                                 with edit_col:
