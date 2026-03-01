@@ -11,11 +11,14 @@ from datetime import datetime, date, timedelta
 
 LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
 
+LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
+
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
+        logging.FileHandler(LOG_FILE_PATH),
         logging.FileHandler(LOG_FILE_PATH),
         logging.StreamHandler()
     ]
@@ -717,13 +720,17 @@ def dashboard_page(user: Dict):
             st.code(traceback.format_exc())
 
 def profiles_page(user: Dict):
+    """Profiles management page with integrated paper upload"""
     try:
         logger.info(f"Loading profiles page for user: {user.get('email')}")
         api = get_api_client()
-
+        
+        # Check for any running processing tasks and auto-refresh
         try:
             user_id = user.get('id') or user.get('user_id')
+            logger.debug(f"Checking for running processing tasks for user_id: {user_id}")
             profiles = api.get_user_profiles(user_id)
+            
             for profile in profiles:
                 try:
                     progress = api.get_processing_progress(user_id, profile['id'])
@@ -732,10 +739,13 @@ def profiles_page(user: Dict):
                         time.sleep(3)
                         st.rerun()
                 except Exception as e:
-                    log_error("profiles_page.check_progress", e, {"user_id": user_id, "profile_id": profile['id']})
+                    log_error("profiles_page.check_progress", e, {
+                        "user_id": user_id,
+                        "profile_id": profile['id']
+                    })
         except Exception as e:
             log_error("profiles_page.check_processing", e, {"user_id": user.get('id')})
-
+            
         st.markdown("### Profiles")
 
         default_view = st.session_state.get("profiles_view", "List")
@@ -747,11 +757,13 @@ def profiles_page(user: Dict):
 
         if view == "List":
             try:
+                logger.debug("Loading profiles list view")
                 profiles = api.get_user_profiles(user.get('id'))
-
+                
                 if not profiles:
                     st.info("No profiles yet. Switch to **Create/Edit** to add one.")
                 else:
+                    logger.debug(f"Displaying {len(profiles)} profiles")
                     for profile in profiles:
                         try:
                             with st.container(border=True):
@@ -767,54 +779,70 @@ def profiles_page(user: Dict):
 
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
-                                    st.write("**Email Frequency**")
+                                    st.write("**Frequency**")
                                     st.write(profile['frequency'])
                                 with col2:
                                     st.write("**Threshold**")
                                     st.write(profile['threshold'])
                                 with col3:
                                     st.write("**Max Papers**")
-                                    top_x_val = profile.get('top_x', 999)
-                                    st.write("Unlimited" if top_x_val >= 999 else str(top_x_val))
+                                    st.write(str(profile.get('top_x', 10)))
                                 with col4:
                                     st.write("**Keywords**")
                                     keywords_display = ', '.join(profile['keywords'][:3])
                                     if len(profile['keywords']) > 3:
                                         keywords_display += f" (+{len(profile['keywords']) - 3} more)"
                                     st.write(keywords_display)
-
+                                
+                                # Categories display
                                 if profile.get('categories'):
                                     st.write("**Categories**")
                                     cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in profile['categories']]
                                     st.caption(", ".join(cat_labels))
-
+                                
                                 st.divider()
-
+                                
+                                # ============ PAPER UPLOAD SECTION ============
                                 st.markdown("#### 📄 Papers")
-
+                                
+                                # Show uploaded papers
                                 try:
+                                    logger.debug(f"Fetching papers for profile {profile['id']}")
                                     papers_data = api.list_uploaded_papers(user.get('id'), profile['id'])
                                     papers = papers_data.get('papers', [])
-
+                                    
                                     if papers:
                                         st.write(f"**{len(papers)} paper(s) uploaded**")
-
+                                        
+                                        # Show papers in expandable section
                                         with st.expander("View Papers", expanded=False):
                                             for paper in papers:
                                                 try:
                                                     paper_col1, paper_col2, paper_col3 = st.columns([3, 1, 1])
+                                                    
                                                     with paper_col1:
                                                         st.write(f"📄 {paper['filename']}")
                                                     with paper_col2:
                                                         st.caption(f"{paper['size_mb']} MB")
                                                     with paper_col3:
-                                                        if st.button("🗑️", key=f"del_{profile['id']}_{paper['filename']}", help="Delete this paper"):
+                                                        if st.button("🗑️", key=f"del_{profile['id']}_{paper['filename']}", 
+                                                                    help="Delete this paper"):
                                                             try:
-                                                                api.delete_uploaded_paper(user.get('id'), profile['id'], paper['filename'])
+                                                                logger.info(f"Deleting paper: {paper['filename']}")
+                                                                api.delete_uploaded_paper(
+                                                                    user.get('id'),
+                                                                    profile['id'],
+                                                                    paper['filename']
+                                                                )
                                                                 st.success(f"Deleted {paper['filename']}")
+                                                                logger.info(f"Successfully deleted: {paper['filename']}")
                                                                 st.rerun()
                                                             except Exception as e:
-                                                                log_error("profiles_page.delete_paper", e, {"user_id": user.get('id'), "profile_id": profile['id'], "filename": paper['filename']})
+                                                                log_error("profiles_page.delete_paper", e, {
+                                                                    "user_id": user.get('id'),
+                                                                    "profile_id": profile['id'],
+                                                                    "filename": paper['filename']
+                                                                })
                                                                 st.error(f"Delete failed: {str(e)}")
                                                 except Exception as e:
                                                     log_error("profiles_page.display_paper", e, {"paper": paper})
@@ -825,7 +853,8 @@ def profiles_page(user: Dict):
                                     with st.expander("Upload Papers", expanded=False):
                                         # Create tabs for different upload methods
                                         upload_tab, arxiv_tab = st.tabs(["Upload PDF", "Add from arXiv"])
-
+                                        
+                                        # TAB 1: Upload PDF files
                                         with upload_tab:
                                             uploaded_files = st.file_uploader(
                                                 "Choose PDF files",
@@ -834,130 +863,165 @@ def profiles_page(user: Dict):
                                                 key=f"upload_{profile['id']}",
                                                 help="Upload one or more PDF papers for this profile"
                                             )
-
+                                            
                                             if uploaded_files:
                                                 if st.button("Upload Files", key=f"upload_btn_{profile['id']}", type="primary"):
                                                     try:
+                                                        logger.info(f"Starting upload of {len(uploaded_files)} files")
                                                         progress_bar = st.progress(0)
                                                         status_text = st.empty()
+                                                        
                                                         uploaded_count = 0
                                                         total_files = len(uploaded_files)
-
+                                                        
                                                         for i, uploaded_file in enumerate(uploaded_files):
                                                             try:
                                                                 status_text.text(f"Uploading {uploaded_file.name}...")
+                                                                logger.debug(f"Uploading file {i+1}/{total_files}: {uploaded_file.name}")
+                                                                
                                                                 file_bytes = uploaded_file.read()
-                                                                api.upload_paper_bytes(user.get('id'), profile['id'], uploaded_file.name, file_bytes)
+                                                                
+                                                                api.upload_paper_bytes(
+                                                                    user.get('id'),
+                                                                    profile['id'],
+                                                                    uploaded_file.name,
+                                                                    file_bytes
+                                                                )
+                                                                
                                                                 uploaded_count += 1
                                                                 progress_bar.progress((i + 1) / total_files)
+                                                                logger.info(f"Successfully uploaded: {uploaded_file.name}")
+                                                                
                                                             except Exception as e:
-                                                                log_error("profiles_page.upload_file", e, {"filename": uploaded_file.name, "user_id": user.get('id'), "profile_id": profile['id']})
+                                                                log_error("profiles_page.upload_file", e, {
+                                                                    "filename": uploaded_file.name,
+                                                                    "user_id": user.get('id'),
+                                                                    "profile_id": profile['id']
+                                                                })
                                                                 st.error(f"Failed to upload {uploaded_file.name}: {str(e)}")
-
+                                                        
                                                         status_text.text("")
                                                         progress_bar.empty()
-
+                                                        
                                                         if uploaded_count > 0:
                                                             st.success(f"Successfully uploaded {uploaded_count} file(s)!")
                                                             logger.info(f"Upload complete: {uploaded_count}/{total_files} files")
                                                             st.rerun()
                                                     except Exception as e:
-                                                        log_error("profiles_page.upload_files", e, {"user_id": user.get('id'), "profile_id": profile['id'], "file_count": len(uploaded_files)})
+                                                        log_error("profiles_page.upload_files", e, {
+                                                            "user_id": user.get('id'),
+                                                            "profile_id": profile['id'],
+                                                            "file_count": len(uploaded_files)
+                                                        })
                                                         st.error(f"Upload failed: {str(e)}")
                                                         with st.expander("Error Details"):
                                                             st.code(traceback.format_exc())
-
+                                        
+                                        # TAB 2: Add from arXiv
                                         with arxiv_tab:
                                             st.write("**Add papers from arXiv**")
                                             st.caption("Enter arXiv IDs (one per line or comma-separated)")
-
+                                            
                                             arxiv_input = st.text_area(
                                                 "arXiv IDs",
                                                 placeholder="2301.12345\n2302.67890\nor\n2301.12345, 2302.67890",
                                                 key=f"arxiv_input_{profile['id']}",
                                                 height=100
                                             )
-
-                                            if st.button("Add Papers", key=f"arxiv_btn_{profile['id']}", type="primary"):
+                                            
+                                            if st.button("Add from arXiv", key=f"arxiv_btn_{profile['id']}", type="primary"):
                                                 if not arxiv_input.strip():
-                                                    st.warning("Please enter at least one arXiv ID")
+                                                    st.error("Please enter at least one arXiv ID")
                                                 else:
                                                     try:
-                                                        arxiv_ids = [x.strip() for x in arxiv_input.replace(',', '\n').splitlines() if x.strip()]
-
-                                                        logger.info(f"Adding {len(arxiv_ids)} papers from arXiv: {arxiv_ids}")
-                                                        st.info(f"Adding {len(arxiv_ids)} paper(s) from arXiv...")
-
-                                                        progress_bar = st.progress(0)
-                                                        status_text = st.empty()
-                                                        success_count = 0
-                                                        failed_papers = []
-
-                                                        for i, arxiv_id in enumerate(arxiv_ids):
-                                                            try:
-                                                                status_text.text(f"Fetching {arxiv_id}...")
-                                                                api.add_paper_from_arxiv(user.get('id'), profile['id'], arxiv_id)
-                                                                success_count += 1
-                                                                progress_bar.progress((i + 1) / len(arxiv_ids))
-                                                            except Exception as e:
-                                                                log_error("profiles_page.add_arxiv_paper", e, {"arxiv_id": arxiv_id, "user_id": user.get('id'), "profile_id": profile['id']})
-                                                                failed_papers.append(f"{arxiv_id}: {str(e)}")
-                                                                progress_bar.progress((i + 1) / len(arxiv_ids))
-
-                                                        status_text.text("")
-                                                        progress_bar.empty()
-
-                                                        if success_count > 0:
-                                                            st.success(f"Successfully added {success_count} paper(s) from arXiv!")
-                                                            logger.info(f"arXiv import complete: {success_count}/{len(arxiv_ids)} papers")
-
-                                                        if failed_papers:
-                                                            with st.expander("❌ Failed papers"):
-                                                                for failure in failed_papers:
-                                                                    st.error(failure)
-
-                                                        if success_count > 0:
-                                                            st.rerun()
+                                                        logger.info("Processing arXiv IDs input")
+                                                        # Parse arXiv IDs
+                                                        arxiv_ids = []
+                                                        
+                                                        # Handle both newline and comma separation
+                                                        for line in arxiv_input.split('\n'):
+                                                            for arxiv_id in line.split(','):
+                                                                arxiv_id = arxiv_id.strip()
+                                                                if arxiv_id:
+                                                                    # Remove version suffix if present (e.g., v1, v2)
+                                                                    if 'v' in arxiv_id:
+                                                                        arxiv_id = arxiv_id.split('v')[0]
+                                                                    arxiv_ids.append(arxiv_id)
+                                                        
+                                                        if not arxiv_ids:
+                                                            st.error("No valid arXiv IDs found")
+                                                        else:
+                                                            logger.info(f"Adding {len(arxiv_ids)} papers from arXiv: {arxiv_ids}")
+                                                            st.info(f"Adding {len(arxiv_ids)} paper(s) from arXiv...")
+                                                            
+                                                            progress_bar = st.progress(0)
+                                                            status_text = st.empty()
+                                                            
+                                                            success_count = 0
+                                                            failed_papers = []
+                                                            
+                                                            for i, arxiv_id in enumerate(arxiv_ids):
+                                                                try:
+                                                                    status_text.text(f"Fetching {arxiv_id}...")
+                                                                    logger.debug(f"Fetching arXiv paper {i+1}/{len(arxiv_ids)}: {arxiv_id}")
+                                                                    
+                                                                    # Call backend API to add paper from arXiv
+                                                                    result = api.add_paper_from_arxiv(
+                                                                        user.get('id'),
+                                                                        profile['id'],
+                                                                        arxiv_id
+                                                                    )
+                                                                    
+                                                                    success_count += 1
+                                                                    progress_bar.progress((i + 1) / len(arxiv_ids))
+                                                                    logger.info(f"Successfully added arXiv paper: {arxiv_id}")
+                                                                    
+                                                                except Exception as e:
+                                                                    log_error("profiles_page.add_arxiv_paper", e, {
+                                                                        "arxiv_id": arxiv_id,
+                                                                        "user_id": user.get('id'),
+                                                                        "profile_id": profile['id']
+                                                                    })
+                                                                    failed_papers.append(f"{arxiv_id}: {str(e)}")
+                                                                    progress_bar.progress((i + 1) / len(arxiv_ids))
+                                                            
+                                                            status_text.text("")
+                                                            progress_bar.empty()
+                                                            
+                                                            if success_count > 0:
+                                                                st.success(f"Successfully added {success_count} paper(s) from arXiv!")
+                                                                logger.info(f"arXiv import complete: {success_count}/{len(arxiv_ids)} papers")
+                                                            
+                                                            if failed_papers:
+                                                                with st.expander("❌ Failed papers"):
+                                                                    for failure in failed_papers:
+                                                                        st.error(failure)
+                                                            
+                                                            if success_count > 0:
+                                                                st.rerun()
                                                     except Exception as e:
-                                                        log_error("profiles_page.arxiv_import", e, {"user_id": user.get('id'), "profile_id": profile['id'], "input": arxiv_input})
+                                                        log_error("profiles_page.arxiv_import", e, {
+                                                            "user_id": user.get('id'),
+                                                            "profile_id": profile['id'],
+                                                            "input": arxiv_input
+                                                        })
                                                         st.error(f"arXiv import failed: {str(e)}")
                                                         with st.expander("Error Details"):
                                                             st.code(traceback.format_exc())
-
-                                    if papers:
-                                        st.divider()
-                                        progress = api.get_processing_progress(user.get('id'), profile['id'])
-                                        status = progress.get('status') if progress else 'not_started'
-
-                                        if status == 'running':
-                                            current = progress.get('current_step', 0)
-                                            total = progress.get('total_steps', 1)
-                                            current_file = progress.get('current_file', '')
-                                            st.info(f"Processing: {current}/{total} — {current_file}")
-                                            st.progress(current / total if total > 0 else 0)
-                                        elif status == 'completed':
-                                            st.success("Processing complete!")
-                                        elif status == 'failed':
-                                            st.error(f"Processing failed: {progress.get('error', 'Unknown error')}")
-
-                                        if status not in ['running']:
-                                            if st.button("⚙️ Process Papers", key=f"process_{profile['id']}", type="primary"):
-                                                try:
-                                                    api.trigger_processing(user.get('id'), profile['id'])
-                                                    st.info("Processing started...")
-                                                    st.rerun()
-                                                except Exception as e:
-                                                    log_error("profiles_page.trigger_processing", e, {"user_id": user.get('id'), "profile_id": profile['id']})
-                                                    st.error(f"Failed to start processing: {str(e)}")
-
+                                
                                 except Exception as e:
-                                    log_error("profiles_page.paper_management", e, {"user_id": user.get('id'), "profile_id": profile['id']})
+                                    log_error("profiles_page.paper_management", e, {
+                                        "user_id": user.get('id'),
+                                        "profile_id": profile['id']
+                                    })
                                     st.error(f"Error managing papers: {str(e)}")
                                     with st.expander("Error Details"):
                                         st.code(traceback.format_exc())
-
+                                
                                 st.divider()
-
+                                
+                                # ============ DELETE PROFILE SECTION ============
+                                # Delete button with confirmation
                                 confirm_key = f"confirm_delete_{profile['id']}"
                                 if st.session_state.get(confirm_key):
                                     st.warning("⚠️ Are you sure? This will delete the profile and all uploaded papers. This cannot be undone.")
@@ -965,12 +1029,16 @@ def profiles_page(user: Dict):
                                     with col_yes:
                                         if st.button("Yes, delete", key=f"yes_{profile['id']}", type="primary"):
                                             try:
+                                                logger.info(f"Deleting profile: {profile['id']}")
                                                 api.delete_profile(profile['id'])
                                                 st.session_state.pop(confirm_key)
                                                 st.success("Profile deleted")
+                                                logger.info(f"Successfully deleted profile: {profile['id']}")
                                                 st.rerun()
                                             except Exception as e:
-                                                log_error("profiles_page.delete_profile", e, {"profile_id": profile['id']})
+                                                log_error("profiles_page.delete_profile", e, {
+                                                    "profile_id": profile['id']
+                                                })
                                                 st.error(f"Error: {str(e)}")
                                                 with st.expander("Error Details"):
                                                     st.code(traceback.format_exc())
@@ -982,84 +1050,102 @@ def profiles_page(user: Dict):
                                     if st.button("🗑️ Delete Profile", key=f"del_{profile['id']}"):
                                         st.session_state[confirm_key] = True
                                         st.rerun()
-
+                        
                         except Exception as e:
-                            log_error("profiles_page.display_profile", e, {"profile_id": profile.get('id'), "profile_name": profile.get('name')})
+                            log_error("profiles_page.display_profile", e, {
+                                "profile_id": profile.get('id'),
+                                "profile_name": profile.get('name')
+                            })
                             st.error(f"Error displaying profile {profile.get('name')}: {str(e)}")
                             with st.expander("Error Details"):
                                 st.code(traceback.format_exc())
-
+            
             except Exception as e:
                 log_error("profiles_page.list_view", e, {"user_id": user.get('id')})
                 st.error(f"Error loading profiles: {str(e)}")
                 with st.expander("Error Details"):
                     st.code(traceback.format_exc())
-
-            return
-
+            
+            return  # End of List view
+        
+        # ==================== CREATE / EDIT VIEW ====================
+        
         try:
+            logger.debug("Loading Create/Edit view")
+            
+            # Mode selector
             mode = st.radio("Mode", ["Create new", "Edit existing"], horizontal=True, key="profile_mode")
-
+            
+            # Initialize session keys
             if "profile_cat_tree_selected" not in st.session_state:
                 st.session_state["profile_cat_tree_selected"] = []
-
+            
+            # Get existing profiles for edit mode
             profiles = api.get_user_profiles(user.get('id'))
-
+            
             selected_profile_id = None
             if mode == "Edit existing":
                 if not profiles:
                     st.info("No profiles to edit. Create one first.")
                     return
-
+                
                 profile_options = {p['name']: p['id'] for p in profiles}
-                preset_name = st.session_state.pop("edit_profile_name", "— Select —")
-                default_edit_idx = (["— Select —"] + list(profile_options.keys())).index(preset_name) if preset_name in profile_options else 0
-
-                selected_name = st.selectbox(
-                    "Choose profile to edit",
-                    ["— Select —"] + list(profile_options.keys()),
-                    index=default_edit_idx
-                )
-
+                selected_name = st.selectbox("Choose profile to edit", ["— Select —"] + list(profile_options.keys()))
+                
                 if selected_name != "— Select —":
                     selected_profile_id = profile_options[selected_name]
-
+            
+            # Set defaults based on mode
             if selected_profile_id:
                 try:
                     profile = next(p for p in profiles if p['id'] == selected_profile_id)
                     default_name = profile['name']
                     default_freq = profile['frequency']
                     default_threshold = profile['threshold']
-                    default_top_x = profile.get('top_x', 999)
+                    default_top_x = profile.get('top_x', 10)
                     default_keywords = ', '.join(profile['keywords'])
-
-                    if st.session_state.get("_loaded_profile_id") != selected_profile_id:
-                        st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
-                        st.session_state["_loaded_profile_id"] = selected_profile_id
-                        st.rerun()
+                    st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
                 except Exception as e:
-                    log_error("profiles_page.load_profile_defaults", e, {"profile_id": selected_profile_id})
+                    log_error("profiles_page.load_profile_defaults", e, {
+                        "profile_id": selected_profile_id
+                    })
                     st.error(f"Error loading profile: {str(e)}")
                     return
             else:
                 default_name = ""
                 default_freq = "weekly"
                 default_threshold = "medium"
-                default_top_x = 999
+                default_top_x = 10
                 default_keywords = ""
                 if mode == "Create new":
                     st.session_state["profile_cat_tree_selected"] = []
-
+            
+            # Profile form
             if mode == "Create new" or selected_profile_id:
                 with st.form("profile_form", enter_to_submit=True):
                     name = st.text_input("Profile Name", value=default_name)
-
+                    
                     freq = st.selectbox(
                         "Email Frequency",
                         ["daily", "weekly", "monthly"],
                         index=["daily", "weekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "monthly"] else 1
                     )
+                    
+                    threshold = st.selectbox(
+                        "Threshold",
+                        ["low", "medium", "high"],
+                        index=["low", "medium", "high"].index(default_threshold) if default_threshold in ["low", "medium", "high"] else 1
+                    )
 
+                    top_x = st.slider(
+                        "Maximum recommendations to show",
+                        min_value=5,
+                        max_value=50,
+                        value=default_top_x if selected_profile_id else 10,
+                        step=5,
+                        help="Number of top papers to show for this profile"
+                    )
+                    
                     keywords = st.text_input(
                         "Keywords (comma-separated, optional)",
                         value=default_keywords,
@@ -1113,20 +1199,25 @@ def profiles_page(user: Dict):
                         )
 
                     submit = st.form_submit_button("Create Profile" if mode == "Create new" else "Update Profile")
-
+                
                 if submit:
                     if not name:
                         st.error("Profile name is required")
                     else:
                         try:
+                            logger.info(f"Processing profile form submission: {name}")
+                            
+                            # Clean and validate name
                             clean_name = name.strip()
-
+                            
+                            # Check for duplicate names
                             if check_duplicate_profile_name(api, user.get('id'), clean_name, selected_profile_id):
                                 st.error(f"Profile name '{clean_name}' already exists. Please choose a different name.")
                                 return
-
+                            
                             kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
-
+                            
+                            # Extract selected categories from tree
                             categories_list = []
                             if selected_cats:
                                 try:
@@ -1139,10 +1230,16 @@ def profiles_page(user: Dict):
                                                 if isinstance(val, list):
                                                     categories_list = val
                                                 break
+                                    
+                                    # Filter out parent nodes (keep only leaf categories with dots)
                                     if categories_list:
                                         categories_list = [cat for cat in categories_list if '.' in cat]
+                                    
+                                    logger.debug(f"Extracted categories: {categories_list}")
                                 except Exception as e:
-                                    log_error("profiles_page.extract_categories", e, {"selected_cats": selected_cats})
+                                    log_error("profiles_page.extract_categories", e, {
+                                        "selected_cats": selected_cats
+                                    })
                                     st.warning("Error processing categories, proceeding without them")
                                     categories_list = []
                             
@@ -1151,7 +1248,9 @@ def profiles_page(user: Dict):
                                 return
 
                             if selected_profile_id:
+                                # EDIT MODE: Save immediately
                                 try:
+                                    logger.info(f"Updating profile: {selected_profile_id}")
                                     api.update_profile(
                                         selected_profile_id,
                                         name=clean_name,
@@ -1165,11 +1264,16 @@ def profiles_page(user: Dict):
                                     logger.info(f"Successfully updated profile: {selected_profile_id}")
                                     st.rerun()
                                 except Exception as e:
-                                    log_error("profiles_page.update_profile", e, {"profile_id": selected_profile_id, "name": clean_name})
+                                    log_error("profiles_page.update_profile", e, {
+                                        "profile_id": selected_profile_id,
+                                        "name": clean_name
+                                    })
                                     st.error(f"Error updating profile: {str(e)}")
                                     with st.expander("Error Details"):
                                         st.code(traceback.format_exc())
                             else:
+                                # CREATE MODE: Stage for confirmation
+                                logger.debug("Staging profile for creation confirmation")
                                 st.session_state["pending_profile_create"] = {
                                     "name": clean_name,
                                     "keywords": kw_list,
@@ -1180,28 +1284,33 @@ def profiles_page(user: Dict):
                                 }
                                 st.session_state["show_profile_create_confirm"] = True
                                 st.rerun()
-
+                        
                         except Exception as e:
-                            log_error("profiles_page.form_submit", e, {"name": name, "mode": mode})
+                            log_error("profiles_page.form_submit", e, {
+                                "name": name,
+                                "mode": mode
+                            })
                             st.error(f"Error: {str(e)}")
                             with st.expander("Error Details"):
                                 st.code(traceback.format_exc())
-
+            
+            # Creation confirmation panel
             if st.session_state.get("show_profile_create_confirm") and st.session_state.get("pending_profile_create"):
                 try:
                     data = st.session_state["pending_profile_create"]
-
+                    
                     with st.container(border=True):
                         st.warning("Create this profile?")
+                        
                         st.write(f"**Name:** {data['name']}")
                         st.write(f"**Frequency:** {data['frequency']}")
                         st.write(f"**Threshold:** {data['threshold']}")
-                        st.write(f"**Max Papers:** {'Unlimited' if data['top_x'] >= 999 else data['top_x']}")
+                        st.write(f"**Max Papers:** {data['top_x']}")
                         st.write(f"**Keywords:** {', '.join(data['keywords'])}")
                         if data.get('categories'):
                             cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in data['categories']]
                             st.write(f"**Categories:** {', '.join(cat_labels)}")
-
+                        
                         col1, col2 = st.columns(2)
                         with col1:
                             if st.button("Confirm Create", key="confirm_profile_create", type="primary"):
@@ -1225,13 +1334,12 @@ def profiles_page(user: Dict):
                                     st.session_state["profiles_view"] = "List"
                                     time.sleep(1)
                                     st.rerun()
-
                                 except Exception as e:
                                     log_error("profiles_page.confirm_create", e, {"profile_data": data})
                                     st.error(f"Error creating profile: {str(e)}")
                                     with st.expander("Error Details"):
                                         st.code(traceback.format_exc())
-
+                        
                         with col2:
                             if st.button("Cancel", key="cancel_profile_create"):
                                 st.session_state.pop("pending_profile_create", None)
@@ -1239,19 +1347,19 @@ def profiles_page(user: Dict):
                                 st.session_state["profile_cat_tree_selected"] = []
                                 st.info("Creation cancelled")
                                 st.rerun()
-
+                
                 except Exception as e:
                     log_error("profiles_page.confirmation_panel", e)
                     st.error(f"Error in confirmation panel: {str(e)}")
                     with st.expander("Error Details"):
                         st.code(traceback.format_exc())
-
+        
         except Exception as e:
             log_error("profiles_page.create_edit_view", e, {"user_id": user.get('id')})
             st.error(f"Error in Create/Edit view: {str(e)}")
             with st.expander("Error Details"):
                 st.code(traceback.format_exc())
-
+    
     except Exception as e:
         log_error("profiles_page", e, {"user": user})
         st.error(f"Profiles page error: {str(e)}")
