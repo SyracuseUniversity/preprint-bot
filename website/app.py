@@ -11,11 +11,14 @@ from datetime import datetime, date, timedelta
 
 LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
 
+LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
+
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
+        logging.FileHandler(LOG_FILE_PATH),
         logging.FileHandler(LOG_FILE_PATH),
         logging.StreamHandler()
     ]
@@ -436,8 +439,8 @@ def login_page():
             except Exception as e:
                 log_error("login_page.submit", e, {"email": email})
                 st.error("Login failed. Please check your credentials.")
-                logger.error("Login error", exc_info=True)
-                    st.code(traceback.format_exc())
+                with st.expander("Error Details"):
+                        st.code(traceback.format_exc())
         
         if signup:
             st.session_state['show_signup'] = True
@@ -744,9 +747,23 @@ def profiles_page(user: Dict):
             log_error("profiles_page.check_processing", e, {"user_id": user.get('id')})
             
         st.markdown("### Profiles")
-        
-        view = st.radio("View", ["List", "Create/Edit"], horizontal=True)
-        
+
+        default_view = st.session_state.get("profiles_view", "List")
+        view = st.segmented_control("", ["List", "Create/Edit"], default=default_view)
+        if view != st.session_state.get("profiles_view"):
+            st.session_state["profiles_view"] = view
+            st.rerun()
+        st.session_state["profiles_view"] = view
+
+        if view != st.session_state.get("_prev_view"):
+            # View just changed
+            if view == "Create/Edit" and st.session_state.get("profiles_view_source") != "edit_button":
+                st.session_state.pop("edit_profile_name", None)
+                st.session_state.pop("profiles_view_source", None)
+            elif view == "List":
+                st.session_state.pop("profiles_view_source", None)
+        st.session_state["_prev_view"] = view
+
         if view == "List":
             try:
                 logger.debug("Loading profiles list view")
@@ -759,9 +776,17 @@ def profiles_page(user: Dict):
                     for profile in profiles:
                         try:
                             with st.container(border=True):
-                                st.subheader(profile['name'])
-                                
-                                # Profile info in 4 columns
+                                header_col, edit_col = st.columns([18, 1])
+                                with header_col:
+                                    st.subheader(profile['name'])
+                                with edit_col:
+                                    if st.button("✏️ Edit", key=f"edit_btn_{profile['id']}"):
+                                        st.session_state["profiles_view"] = "Create/Edit"
+                                        st.session_state["profile_mode"] = "Edit existing"
+                                        st.session_state["edit_profile_name"] = profile['name']
+                                        st.session_state["profiles_view_source"] = "edit_button"
+                                        st.rerun()
+
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
                                     st.write("**Frequency**")
@@ -1059,8 +1084,7 @@ def profiles_page(user: Dict):
             logger.debug("Loading Create/Edit view")
             
             # Mode selector
-            mode = st.radio("Mode", ["Create new", "Edit existing"], horizontal=True, key="profile_mode")
-            
+            mode = st.segmented_control("Mode", ["Create new", "Edit existing"], key="profile_mode", default=st.session_state.get("profile_mode", "Create new"))            
             # Initialize session keys
             if "profile_cat_tree_selected" not in st.session_state:
                 st.session_state["profile_cat_tree_selected"] = []
@@ -1075,7 +1099,12 @@ def profiles_page(user: Dict):
                     return
                 
                 profile_options = {p['name']: p['id'] for p in profiles}
-                selected_name = st.selectbox("Choose profile to edit", ["— Select —"] + list(profile_options.keys()))
+                selected_name = st.selectbox(
+                    "Choose profile to edit",
+                    ["— Select —"] + list(profile_options.keys()),
+                    index=(["— Select —"] + list(profile_options.keys())).index(st.session_state.get("edit_profile_name", "— Select —"))
+                    if st.session_state.get("edit_profile_name") in profile_options else 0
+                )
                 
                 if selected_name != "— Select —":
                     selected_profile_id = profile_options[selected_name]
@@ -1089,7 +1118,9 @@ def profiles_page(user: Dict):
                     default_threshold = profile['threshold']
                     default_top_x = profile.get('top_x', 10)
                     default_keywords = ', '.join(profile['keywords'])
-                    st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
+                    if st.session_state.get("loaded_profile_id") != selected_profile_id:
+                        st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
+                        st.session_state["loaded_profile_id"] = selected_profile_id
                 except Exception as e:
                     log_error("profiles_page.load_profile_defaults", e, {
                         "profile_id": selected_profile_id
@@ -1105,147 +1136,117 @@ def profiles_page(user: Dict):
                 if mode == "Create new":
                     st.session_state["profile_cat_tree_selected"] = []
             
-            # Profile form
+            # Outside form - category tree
             if mode == "Create new" or selected_profile_id:
-                with st.form("profile_form", enter_to_submit=True):
-                    name = st.text_input("Profile Name", value=default_name)
-                    
-                    freq = st.selectbox(
-                        "Frequency",
-                        ["daily", "weekly", "biweekly", "monthly"],
-                        index=["daily", "weekly", "biweekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "biweekly", "monthly"] else 1
+                if "profile_cat_tree_selected" not in st.session_state:
+                    st.session_state["profile_cat_tree_selected"] = []
+
+                name = st.text_input("Profile Name", value=default_name)
+
+                freq = st.selectbox(
+                    "Email Frequency",
+                    ["daily", "weekly", "monthly"],
+                    index=["daily", "weekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "monthly"] else 1
+                )
+
+                st.write("**Select arXiv Categories** (required)")
+                if st.session_state.get("profile_cat_tree_selected"):
+                    cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in st.session_state["profile_cat_tree_selected"]]
+                    st.caption("Currently selected: " + ", ".join(cat_labels))
+                tree_key = f"cat_tree_{selected_profile_id or 'new'}"
+                try:
+                    selected_cats = st_ant_tree(
+                        treeData=ARXIV_CATEGORY_TREE,
+                        treeCheckable=True,
+                        showSearch=True,
+                        placeholder="Select categories",
+                        max_height=300,
+                        only_children_select=True,
+                        defaultValue=st.session_state["profile_cat_tree_selected"],
+                        key=tree_key
                     )
+                    if selected_cats:
+                        st.session_state["profile_cat_tree_selected"] = [c for c in selected_cats if '.' in c]
+                except Exception as e:
+                    log_error("profiles_page.category_tree", e)
+                    st.error("Error loading category tree")
                     
-                    threshold = st.selectbox(
+                keywords = st.text_input(
+                    "Keywords (comma-separated, optional)",
+                    value=default_keywords,
+                    placeholder="machine learning, neural networks, optimization"
+                )
+
+                with st.expander("⚙️ Advanced Options"):
+                    threshold_val = st.slider(
                         "Threshold",
-                        ["low", "medium", "high"],
-                        index=["low", "medium", "high"].index(default_threshold) if default_threshold in ["low", "medium", "high"] else 1
+                        min_value=0.1,
+                        max_value=0.9,
+                        value=float(default_threshold) if isinstance(default_threshold, (int, float)) else 0.5,
+                        step=0.01,
+                        help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.1) casts a wider net. High (0.9) is stricter."
                     )
 
                     top_x = st.slider(
                         "Maximum recommendations to show",
                         min_value=5,
-                        max_value=50,
-                        value=default_top_x if selected_profile_id else 10,
+                        max_value=999,
+                        value=default_top_x if selected_profile_id else 999,
                         step=5,
-                        help="Number of top papers to show for this profile"
+                        help="Set to 999 for unlimited. If unsure, leave as is."
                     )
-                    
-                    keywords = st.text_input(
-                        "Keywords (comma-separated)",
-                        value=default_keywords,
-                        placeholder="machine learning, neural networks, optimization"
-                    )
-                    
-                    st.write("**Select arXiv Categories** (optional)")
-                    try:
-                        selected_cats = st_ant_tree(
-                            treeData=ARXIV_CATEGORY_TREE,
-                            treeCheckable=True,
-                            showSearch=True,
-                            placeholder="Select categories",
-                            max_height=300,
-                            only_children_select=True
-                        )
-                    except Exception as e:
-                        log_error("profiles_page.category_tree", e)
-                        st.error("Error loading category tree")
-                        selected_cats = []
-                    
-                    submit = st.form_submit_button("Create Profile" if mode == "Create new" else "Update Profile")
-                
+
+                submit = st.button("Create Profile" if mode == "Create new" else "Update Profile", type="primary")
+
                 if submit:
                     if not name:
                         st.error("Profile name is required")
-                    elif not keywords:
-                        st.error("At least one keyword is required")
                     else:
                         try:
-                            logger.info(f"Processing profile form submission: {name}")
-                            
-                            # Clean and validate name
                             clean_name = name.strip()
-                            
-                            # Check for duplicate names
+
                             if check_duplicate_profile_name(api, user.get('id'), clean_name, selected_profile_id):
                                 st.error(f"Profile name '{clean_name}' already exists. Please choose a different name.")
                                 return
-                            
+
                             kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
-                            
-                            # Extract selected categories from tree
-                            categories_list = []
-                            if selected_cats:
-                                try:
-                                    if isinstance(selected_cats, list):
-                                        categories_list = selected_cats
-                                    elif isinstance(selected_cats, dict):
-                                        for key in ['checked', 'selected', 'value', 'checkedKeys', 'halfCheckedKeys']:
-                                            if key in selected_cats:
-                                                val = selected_cats[key]
-                                                if isinstance(val, list):
-                                                    categories_list = val
-                                                break
-                                    
-                                    # Filter out parent nodes (keep only leaf categories with dots)
-                                    if categories_list:
-                                        categories_list = [cat for cat in categories_list if '.' in cat]
-                                    
-                                    logger.debug(f"Extracted categories: {categories_list}")
-                                except Exception as e:
-                                    log_error("profiles_page.extract_categories", e, {
-                                        "selected_cats": selected_cats
-                                    })
-                                    st.warning("Error processing categories, proceeding without them")
-                                    categories_list = []
-                            
+                            categories_list = st.session_state.get("profile_cat_tree_selected", [])
+
+                            if not categories_list:
+                                st.error("Please select at least one arXiv category")
+                                return
+
                             if selected_profile_id:
-                                # EDIT MODE: Save immediately
-                                try:
-                                    logger.info(f"Updating profile: {selected_profile_id}")
-                                    api.update_profile(
-                                        selected_profile_id,
-                                        name=clean_name,
-                                        keywords=kw_list,
-                                        categories=categories_list,
-                                        frequency=freq,
-                                        threshold=threshold,
-                                        top_x=top_x
-                                    )
-                                    st.success("Profile updated successfully!")
-                                    logger.info(f"Successfully updated profile: {selected_profile_id}")
-                                    st.rerun()
-                                except Exception as e:
-                                    log_error("profiles_page.update_profile", e, {
-                                        "profile_id": selected_profile_id,
-                                        "name": clean_name
-                                    })
-                                    st.error(f"Error updating profile: {str(e)}")
-                                    with st.expander("Error Details"):
-                                        st.code(traceback.format_exc())
+                                st.session_state["pending_profile_update"] = {
+                                    "profile_id": selected_profile_id,
+                                    "name": clean_name,
+                                    "keywords": kw_list,
+                                    "categories": categories_list,
+                                    "frequency": freq,
+                                    "threshold": threshold_val,
+                                    "top_x": top_x
+                                }
+                                st.session_state["show_profile_update_confirm"] = True
+                                st.rerun()
+
                             else:
-                                # CREATE MODE: Stage for confirmation
-                                logger.debug("Staging profile for creation confirmation")
                                 st.session_state["pending_profile_create"] = {
                                     "name": clean_name,
                                     "keywords": kw_list,
                                     "categories": categories_list,
                                     "frequency": freq,
-                                    "threshold": threshold,
+                                    "threshold": threshold_val,
                                     "top_x": top_x
                                 }
                                 st.session_state["show_profile_create_confirm"] = True
                                 st.rerun()
-                        
+
                         except Exception as e:
-                            log_error("profiles_page.form_submit", e, {
-                                "name": name,
-                                "mode": mode
-                            })
+                            log_error("profiles_page.form_submit", e, {"name": name, "mode": mode})
                             st.error(f"Error: {str(e)}")
                             with st.expander("Error Details"):
                                 st.code(traceback.format_exc())
-            
+
             # Creation confirmation panel
             if st.session_state.get("show_profile_create_confirm") and st.session_state.get("pending_profile_create"):
                 try:
@@ -1277,13 +1278,13 @@ def profiles_page(user: Dict):
                                         threshold=data['threshold'],
                                         top_x=data['top_x']
                                     )
-                                    
+                                    st.toast(f"Profile '{data['name']}' created successfully!", icon="✅")
+                                    logger.info(f"Successfully created profile: {data['name']}")
                                     st.session_state.pop("pending_profile_create", None)
                                     st.session_state.pop("show_profile_create_confirm", None)
                                     st.session_state["profile_cat_tree_selected"] = []
-                                    
-                                    st.success("Profile created successfully! Go to 'List' view to upload papers.")
-                                    logger.info(f"Successfully created profile: {data['name']}")
+                                    st.session_state["profiles_view"] = "List"
+                                    time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
                                     log_error("profiles_page.confirm_create", e, {"profile_data": data})
@@ -1304,13 +1305,71 @@ def profiles_page(user: Dict):
                     st.error(f"Error in confirmation panel: {str(e)}")
                     with st.expander("Error Details"):
                         st.code(traceback.format_exc())
+
+            # Update confirmation panel
+            if st.session_state.get("show_profile_update_confirm") and st.session_state.get("pending_profile_update"):
+                try:
+                    data = st.session_state["pending_profile_update"]
+                    
+                    with st.container(border=True):
+                        st.warning("Update this profile?")
+                        
+                        st.write(f"**Name:** {data['name']}")
+                        st.write(f"**Frequency:** {data['frequency']}")
+                        st.write(f"**Threshold:** {data['threshold']}")
+                        st.write(f"**Max Papers:** {data['top_x']}")
+                        st.write(f"**Keywords:** {', '.join(data['keywords'])}")
+                        if data.get('categories'):
+                            cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in data['categories']]
+                            st.write(f"**Categories:** {', '.join(cat_labels)}")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("Confirm Update", key="confirm_profile_update", type="primary"):
+                                try:
+                                    api.update_profile(
+                                        data['profile_id'],
+                                        name=data['name'],
+                                        keywords=data['keywords'],
+                                        categories=data['categories'],
+                                        frequency=data['frequency'],
+                                        threshold=data['threshold'],
+                                        top_x=data['top_x']
+                                    )
+                                    st.toast(f"Profile '{data['name']}' updated successfully!", icon="✅")
+                                    st.session_state.pop("pending_profile_update", None)
+                                    st.session_state.pop("show_profile_update_confirm", None)
+                                    st.session_state["profile_cat_tree_selected"] = []
+                                    st.session_state["profiles_view"] = "List"
+                                    st.session_state.pop("edit_profile_name", None)
+                                    st.session_state.pop("profiles_view_source", None)
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    log_error("profiles_page.confirm_update", e, {"profile_data": data})
+                                    st.error(f"Error updating profile: {str(e)}")
+                                    with st.expander("Error Details"):
+                                        st.code(traceback.format_exc())
+                        
+                        with col2:
+                            if st.button("Cancel", key="cancel_profile_update"):
+                                st.session_state.pop("pending_profile_update", None)
+                                st.session_state.pop("show_profile_update_confirm", None)
+                                st.info("Update cancelled")
+                                st.rerun()
+                
+                except Exception as e:
+                    log_error("profiles_page.update_confirmation_panel", e)
+                    st.error(f"Error in confirmation panel: {str(e)}")
+                    with st.expander("Error Details"):
+                        st.code(traceback.format_exc())
         
         except Exception as e:
             log_error("profiles_page.create_edit_view", e, {"user_id": user.get('id')})
             st.error(f"Error in Create/Edit view: {str(e)}")
             with st.expander("Error Details"):
                 st.code(traceback.format_exc())
-    
+
     except Exception as e:
         log_error("profiles_page", e, {"user": user})
         st.error(f"Profiles page error: {str(e)}")

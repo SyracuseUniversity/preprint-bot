@@ -10,21 +10,21 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src" / "preprint_bot"))
 
 class TestConfig:
-    def test_similarity_thresholds(self):
-        """Test that similarity thresholds are properly defined"""
-        from preprint_bot.config import SIMILARITY_THRESHOLDS
+    # def test_similarity_thresholds(self):
+    #     """Test that similarity thresholds are properly defined"""
+    #     from preprint_bot.config import SIMILARITY_THRESHOLDS
         
-        assert "low" in SIMILARITY_THRESHOLDS
-        assert "medium" in SIMILARITY_THRESHOLDS
-        assert "high" in SIMILARITY_THRESHOLDS
+    #     assert "low" in SIMILARITY_THRESHOLDS
+    #     assert "medium" in SIMILARITY_THRESHOLDS
+    #     assert "high" in SIMILARITY_THRESHOLDS
         
-        # Thresholds should be increasing
-        assert SIMILARITY_THRESHOLDS["low"] < SIMILARITY_THRESHOLDS["medium"]
-        assert SIMILARITY_THRESHOLDS["medium"] < SIMILARITY_THRESHOLDS["high"]
+    #     # Thresholds should be increasing
+    #     assert SIMILARITY_THRESHOLDS["low"] < SIMILARITY_THRESHOLDS["medium"]
+    #     assert SIMILARITY_THRESHOLDS["medium"] < SIMILARITY_THRESHOLDS["high"]
         
-        # All should be between 0 and 1
-        for threshold in SIMILARITY_THRESHOLDS.values():
-            assert 0.0 <= threshold <= 1.0
+    #     # All should be between 0 and 1
+    #     for threshold in SIMILARITY_THRESHOLDS.values():
+    #         assert 0.0 <= threshold <= 1.0
     
     def test_arxiv_categories_not_empty(self):
         """Test that arXiv categories are defined"""
@@ -87,13 +87,13 @@ class TestConfig:
         assert result == {}
 
 
-class TestParametrizedThresholds:
-    @pytest.mark.parametrize("threshold_name", ["low", "medium", "high"])
-    def test_all_thresholds_exist(self, threshold_name):
-        """Test that all threshold levels are defined"""
-        from preprint_bot.config import SIMILARITY_THRESHOLDS
-        assert threshold_name in SIMILARITY_THRESHOLDS
-        assert isinstance(SIMILARITY_THRESHOLDS[threshold_name], (int, float))
+# class TestParametrizedThresholds:
+#     @pytest.mark.parametrize("threshold_name", ["low", "medium", "high"])
+#     def test_all_thresholds_exist(self, threshold_name):
+#         """Test that all threshold levels are defined"""
+#         from preprint_bot.config import SIMILARITY_THRESHOLDS
+#         assert threshold_name in SIMILARITY_THRESHOLDS
+#         assert isinstance(SIMILARITY_THRESHOLDS[threshold_name], (int, float))
 
 
 # Fixtures
