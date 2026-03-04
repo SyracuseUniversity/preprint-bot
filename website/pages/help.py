@@ -64,8 +64,8 @@ with st.expander("Profiles (Configuration)", expanded=True):
         <li><b>Frequency:</b> Controls how often you receive email notifications about new papers found for this profile (e.g., <i>Daily vs Weekly</i>).</li>
         <li><b>Threshold:</b> Determines how strict the matching algorithm is.
             <ul style="margin-top: 0; margin-bottom: 0;">
-                <li><b>High (0.75):</b> Only recommends papers that are a very strong match.</li>
-                <li><b>Medium (0.6):</b> Balanced (Recommended).</li>
+                <li><b>High (0.8):</b> Only recommends papers that are a very strong match.</li>
+                <li><b>Medium (0.7):</b> Balanced (Recommended).</li>
                 <li><b>Low (0.5):</b> Shows a broader range of papers, but may include some less relevant results.</li>
             </ul>
         </li>

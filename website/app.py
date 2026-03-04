@@ -634,7 +634,6 @@ def profiles_page(user: Dict):
                 if progress and progress.get('status') == 'running':
                     # Show a banner at the top
                     st.info(f"Processing papers for profile '{profile['name']}'... Auto-refreshing every 3 seconds.")
-                    import time
                     time.sleep(3)
                     st.rerun()
             except:
@@ -849,32 +848,28 @@ def profiles_page(user: Dict):
                                     with col_s2:
                                         search_author = st.text_input("Author", key=f"s_author_{profile['id']}")
                                     
-                                    # Unique key to store results in session state so they don't disappear on click
+                                    # Unique key to store results in session state
                                     search_key = f"search_results_{profile['id']}"
 
                                     if st.button("Search", key=f"search_btn_{profile['id']}", type="primary"):
                                         if not search_title.strip() and not search_author.strip():
                                             st.error("Please enter a title or author to search.")
                                         else:
-                                            # Format the search query for the arxiv API
+                                            # Format the search query
                                             query_parts = []
                                             if search_title.strip():
-                                                # Quotes ensure the title phrase is matched together
                                                 query_parts.append(f'ti:"{search_title.strip()}"')
-
                                             if search_author.strip():
-                                                # Quotes ensure the exact FIRST and LAST name are matched as a single unit
                                                 query_parts.append(f'au:"{search_author.strip()}"')
-
                                             query_string = " AND ".join(query_parts)
-
+                                            
                                             with st.spinner("Searching arXiv..."):
                                                 try:
                                                     import arxiv
                                                     client = arxiv.Client()
                                                     search = arxiv.Search(
                                                         query=query_string,
-                                                        max_results=10,
+                                                        max_results=25, # Increased slightly since it's scrollable now
                                                         sort_by=arxiv.SortCriterion.SubmittedDate,
                                                         sort_order=arxiv.SortOrder.Descending
                                                     )
@@ -883,40 +878,154 @@ def profiles_page(user: Dict):
                                                     if not results:
                                                         st.session_state[search_key] = []
                                                     else:
-                                                        # Save to session state so it survives re-runs
                                                         st.session_state[search_key] = [
                                                             {
                                                                 "title": p.title,
                                                                 "authors": ", ".join([a.name for a in p.authors]),
                                                                 "published": p.published.strftime('%Y-%m-%d'),
-                                                                "id": p.get_short_id().split('v')[0] # Get clean ID
+                                                                "id": p.get_short_id().split('v')[0]
                                                             } for p in results
                                                         ]
-                                                except ImportError:
-                                                    st.error("The 'arxiv' library is not installed. Run `pip install arxiv` in your terminal.")
+                                                        
+                                                        # Reset all checkboxes to unchecked for the new search
+                                                        for p in st.session_state[search_key]:
+                                                            st.session_state[f"chk_{profile['id']}_{p['id']}"] = False
+                                                            
                                                 except Exception as e:
                                                     st.error(f"Search failed: {str(e)}")
 
                                     # Display results if they exist in session state
                                     if search_key in st.session_state:
-                                        if not st.session_state[search_key]:
+                                        current_results = st.session_state[search_key]
+                                        
+                                        if not current_results:
                                             st.info("No papers found matching your query.")
                                         else:
                                             st.write("---")
-                                            for paper in st.session_state[search_key]:
-                                                with st.container(border=True):
-                                                    st.markdown(f"**{paper['title']}**")
-                                                    st.caption(f"**Authors:** {paper['authors']}")
-                                                    st.caption(f"**Published:** {paper['published']} | **arXiv ID:** {paper['id']}")
+                                            
+                                            # Create a set of already added arXiv IDs for quick lookup
+                                            # We strip out '.pdf' from the filename to match the arxiv_id format
+                                            existing_arxiv_ids = {p['filename'].replace('.pdf', '') for p in papers}
+                                            
+                                            # Select All / Deselect All Controls
+                                            col_sel1, col_sel2, _ = st.columns([1, 1, 2])
+                                            with col_sel1:
+                                                if st.button("Select All", key=f"sel_all_{profile['id']}"):
+                                                    for paper in current_results:
+                                                        # Only select papers that haven't been added yet
+                                                        if paper['id'] not in existing_arxiv_ids:
+                                                            st.session_state[f"chk_{profile['id']}_{paper['id']}"] = True
+                                                    st.rerun()
+                                            with col_sel2:
+                                                if st.button("Deselect All", key=f"desel_all_{profile['id']}"):
+                                                    for paper in current_results:
+                                                        if paper['id'] not in existing_arxiv_ids:
+                                                            st.session_state[f"chk_{profile['id']}_{paper['id']}"] = False
+                                                    st.rerun()
+                                            
+                                            # SCROLLABLE CONTAINER
+                                            with st.container(height=500, border=True):
+                                                
+                                                # Inject CSS once for the seamless inline dropdowns
+                                                st.markdown("""
+                                                    <style>
+                                                    .inline-details { font-size: 0.875rem; opacity: 0.8; }
+                                                    .inline-details summary { 
+                                                        display: inline; 
+                                                        cursor: pointer; 
+                                                        list-style: none; 
+                                                    }
+                                                    .inline-details summary::-webkit-details-marker { display: none; }
+                                                    .inline-details summary::before {
+                                                        content: "► ";
+                                                        font-size: 0.8em;
+                                                        margin-right: 0.2em;
+                                                    }
+                                                    .inline-details[open] summary::before {
+                                                        content: "▼ ";
+                                                    }
+                                                    .inline-details[open] .hide-when-open { display: none; }
+                                                    .inline-details:not([open]) .show-when-open { display: none; }
+                                                    </style>
+                                                """, unsafe_allow_html=True)
+                                                
+                                                for paper in current_results:
+                                                    c_chk, c_info = st.columns([1, 15])
                                                     
-                                                    # The magic button to add the paper
-                                                    if st.button("➕ Add to Profile", key=f"add_s_{paper['id']}_{profile['id']}"):
+                                                    # Check if it's already in the profile
+                                                    is_already_added = paper['id'] in existing_arxiv_ids
+                                                    
+                                                    with c_chk:
+                                                        if is_already_added:
+                                                            # Show a disabled, checked box to indicate it's already there
+                                                            st.checkbox(" ", value=True, disabled=True, key=f"chk_dis_{profile['id']}_{paper['id']}", label_visibility="collapsed", help="Already added to this profile")
+                                                        else:
+                                                            # The Normal Checkbox
+                                                            st.checkbox(" ", key=f"chk_{profile['id']}_{paper['id']}", label_visibility="collapsed")
+                                                        
+                                                    with c_info:
+                                                        # Title as a clickable link
+                                                        st.markdown(f"**[{paper['title']}](https://arxiv.org/abs/{paper['id']})**")
+                                                        
+                                                        # Seamless Inline Collapsible Author List
+                                                        author_text = paper['authors']
+                                                        authors_list = author_text.split(", ")
+                                                        
+                                                        if len(authors_list) > 6:
+                                                            visible_authors = ", ".join(authors_list[:6])
+                                                            hidden_authors = ", ".join(authors_list[6:])
+                                                            
+                                                            details_html = f"""
+                                                            <div style="margin-bottom: 0.5rem;">
+                                                                <details class="inline-details">
+                                                                    <summary>
+                                                                        <b>Authors:</b> {visible_authors}<span class="hide-when-open">...</span><span class="show-when-open">, </span>
+                                                                    </summary>
+                                                                    <span>{hidden_authors}</span>
+                                                                </details>
+                                                            </div>
+                                                            """
+                                                            st.markdown(details_html, unsafe_allow_html=True)
+                                                        else:
+                                                            st.caption(f"**Authors:** {author_text}")
+                                                            
+                                                        st.caption(f"**Published:** {paper['published']} | **arXiv ID:** {paper['id']}")
+                                                    st.divider()
+
+                                            # Bulk Add Button at the bottom
+                                            if st.button("Add Selected to Profile", type="primary", key=f"add_bulk_{profile['id']}"):
+                                                # Find all papers where the checkbox is True (and ignore already added ones)
+                                                selected_papers = [
+                                                    p for p in current_results 
+                                                    if p['id'] not in existing_arxiv_ids and st.session_state.get(f"chk_{profile['id']}_{p['id']}")
+                                                ]
+                                                
+                                                if not selected_papers:
+                                                    st.warning("Please check at least one paper to add.")
+                                                else:
+                                                    progress_bar = st.progress(0)
+                                                    status_text = st.empty()
+                                                    success_count = 0
+                                                    
+                                                    for i, paper in enumerate(selected_papers):
                                                         try:
-                                                            with st.spinner(f"Adding {paper['id']}..."):
-                                                                api.add_paper_from_arxiv(user.get('id'), profile['id'], paper['id'])
-                                                            st.success(f"Successfully added {paper['id']}!")
+                                                            status_text.text(f"Adding {paper['id']}...")
+                                                            api.add_paper_from_arxiv(user.get('id'), profile['id'], paper['id'])
+                                                            success_count += 1
                                                         except Exception as e:
-                                                            st.error(f"Failed to add: {str(e)}")
+                                                            st.error(f"Failed {paper['id']}: {str(e)}")
+                                                            
+                                                        progress_bar.progress((i + 1) / len(selected_papers))
+                                                    
+                                                    status_text.text("")
+                                                    progress_bar.empty()
+                                                    
+                                                    if success_count > 0:
+                                                        st.success(f"Successfully added {success_count} paper(s)!")
+                                                        # We no longer remove them from the list!
+                                                        # The rerun will automatically turn them into disabled checkmarks.
+                                                        time.sleep(1)
+                                                        st.rerun()
                         
                         except Exception as e:
                             st.error(f"Error managing papers: {str(e)}")
