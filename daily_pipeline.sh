@@ -13,7 +13,6 @@ source venv/bin/activate
 # Read config values from config.py
 NOTIFY_EMAIL="ugaikwad@syr.edu"
 LOG_RETENTION_DAYS=30
-PIPELINE_SCRIPT="date_pipeline.py"
 LOG_DIR="logs/cron"
 
 mkdir -p "$LOG_DIR"
@@ -27,7 +26,7 @@ echo "========================================" | tee -a "$LOG_FILE"
 TODAY=$(date +%Y-%m-%d)
 echo "Running pipeline for date: $TODAY" | tee -a "$LOG_FILE"
 
-python "$PIPELINE_SCRIPT" \
+preprint_bot \
     --date "$TODAY" \
     2>&1 | tee -a "$LOG_FILE"
 

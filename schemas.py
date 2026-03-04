@@ -204,6 +204,7 @@ class RecommendationRunCreate(BaseModel):
     ref_corpus_id: int
     threshold: Optional[float] = None
     method: Optional[str] = None
+    total_papers_fetched: Optional[int] = 0
 
 class RecommendationRunResponse(BaseModel):
     id: int

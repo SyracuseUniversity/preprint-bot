@@ -27,7 +27,7 @@ For GPU support (RTX 5070 Ti), install PyTorch with CUDA first, then manually in
     pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu124
     pip install faiss-gpu
     pip install -e ".[all]"
-
+ 
 Post-installation steps:
     python -m spacy download en_core_web_sm
     python -c "import nltk; nltk.download('punkt')"

@@ -19,7 +19,9 @@ async def create_embedding(embedding: EmbeddingCreate):
                 """
                 INSERT INTO embeddings (paper_id, section_id, embedding, type, model_name)
                 VALUES ($1, $2, $3::vector, $4, $5)
-                RETURNING id, paper_id, section_id, type, model_name, created_at
+                ON CONFLICT (paper_id, type, model_name) WHERE section_id IS NULL 
+                DO UPDATE SET embedding = EXCLUDED.embedding
+                RETURNING id, paper_id, section_id, embedding, type, model_name, created_at
                 """,
                 embedding.paper_id,
                 embedding.section_id,
