@@ -1,4 +1,4 @@
-"""Unit tests for schema enums"""
+"""Unit tests for schema enums and threshold validation"""
 import pytest
 
 
@@ -11,13 +11,14 @@ class TestEnums:
         assert FrequencyEnum.weekly.value == "weekly"
         assert FrequencyEnum.monthly.value == "monthly"
     
-    def test_threshold_enum_values(self):
-        """Test that threshold enum has expected values"""
-        from schemas import ThresholdEnum
+    def test_threshold_is_float(self):
+        """Test that threshold is now a float field not an enum"""
+        from schemas import ProfileCreate
+        import inspect
         
-        assert ThresholdEnum.low.value == "low"
-        assert ThresholdEnum.medium.value == "medium"
-        assert ThresholdEnum.high.value == "high"
+        fields = ProfileCreate.model_fields
+        assert 'threshold' in fields
+        assert fields['threshold'].default == 0.6
     
     def test_source_enum_values(self):
         """Test that source enum has expected values"""
@@ -48,10 +49,50 @@ class TestEnums:
         assert StatusEnum.failed.value == "failed"
 
 
+class TestThreshold:
+    def test_threshold_default_value(self):
+        """Test that threshold defaults to 0.6"""
+        from schemas import ProfileCreate
+        profile = ProfileCreate(
+            user_id=1,
+            name="test",
+            keywords=["ml"],
+            categories=["cs.LG"],
+            frequency="weekly"
+        )
+        assert profile.threshold == 0.6
+
+    def test_threshold_accepts_float(self):
+        """Test that threshold accepts a float value"""
+        from schemas import ProfileCreate
+        profile = ProfileCreate(
+            user_id=1,
+            name="test",
+            keywords=["ml"],
+            categories=["cs.LG"],
+            frequency="weekly",
+            threshold=0.55
+        )
+        assert profile.threshold == 0.55
+
+    def test_threshold_range(self):
+        """Test threshold values across expected range"""
+        from schemas import ProfileCreate
+        for val in [0.4, 0.5, 0.6, 0.75]:
+            profile = ProfileCreate(
+                user_id=1,
+                name="test",
+                keywords=["ml"],
+                categories=["cs.LG"],
+                frequency="weekly",
+                threshold=val
+            )
+            assert profile.threshold == val
+
+
 class TestEnumMembership:
     @pytest.mark.parametrize("enum_class,expected_members", [
         ("FrequencyEnum", ["daily", "weekly", "monthly"]),
-        ("ThresholdEnum", ["low", "medium", "high"]),
         ("SourceEnum", ["user", "arxiv"]),
         ("ModeEnum", ["abstract", "full"]),
         ("TypeEnum", ["abstract", "section"]),

@@ -9,10 +9,10 @@ class FrequencyEnum(str, Enum):
     weekly = "weekly"
     monthly = "monthly"
 
-class ThresholdEnum(str, Enum):
-    low = "low"
-    medium = "medium"
-    high = "high"
+# class ThresholdEnum(str, Enum):
+#     low = "low"
+#     medium = "medium"
+#     high = "high"
 
 class SourceEnum(str, Enum):
     user = "user"
@@ -53,7 +53,7 @@ class ProfileCreate(BaseModel):
     categories: List[str] = []
     email_notify: bool = True
     frequency: FrequencyEnum
-    threshold: ThresholdEnum = ThresholdEnum.medium
+    threshold: float = 0.6
     top_x: Optional[int] = None
 
 class ProfileUpdate(BaseModel):
@@ -62,7 +62,7 @@ class ProfileUpdate(BaseModel):
     categories: Optional[List[str]] = None
     email_notify: Optional[bool] = None
     frequency: Optional[FrequencyEnum] = None
-    threshold: Optional[ThresholdEnum] = None
+    threshold: Optional[float] = None
     top_x: Optional[int] = None
 
 class ProfileResponse(BaseModel):
@@ -73,7 +73,7 @@ class ProfileResponse(BaseModel):
     categories: List[str]
     email_notify: bool
     frequency: str
-    threshold: str
+    threshold: float
     top_x: Optional[int]
     created_at: datetime
     updated_at: datetime
@@ -202,9 +202,8 @@ class RecommendationRunCreate(BaseModel):
     user_id: int
     user_corpus_id: int
     ref_corpus_id: int
-    threshold: Optional[str] = None
+    threshold: Optional[float] = None
     method: Optional[str] = None
-    total_papers_fetched: Optional[int] = 0  # ADD THIS LINE
 
 class RecommendationRunResponse(BaseModel):
     id: int
@@ -212,9 +211,8 @@ class RecommendationRunResponse(BaseModel):
     user_id: int
     user_corpus_id: int
     ref_corpus_id: int
-    threshold: Optional[str]
+    threshold: Optional[float]
     method: Optional[str]
-    total_papers_fetched: Optional[int]  # ADD THIS LINE
     created_at: datetime
 
 # Recommendation Schemas

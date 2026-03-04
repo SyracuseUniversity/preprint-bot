@@ -18,10 +18,12 @@ ARXIV_CATEGORIES = [
 ]
 
 # Predefined similarity thresholds for filtering paper recommendations
+DEFAULT_THRESHOLD = 0.6
+
 SIMILARITY_THRESHOLDS = {
     "low": 0.5,
-    "medium": 0.6,
-    "high": 0.75
+    "medium": 0.7,
+    "high": 0.9
 }
 
 # Maximum number of results to retrieve per query from arXiv

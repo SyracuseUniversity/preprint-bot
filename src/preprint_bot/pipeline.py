@@ -12,7 +12,7 @@ from typing import List
 from .config import (
     DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS,
     PDF_DIR, PROCESSED_TEXT_DIR, USER_PDF_DIR, USER_PROCESSED_DIR,
-    SYSTEM_USER_EMAIL, SYSTEM_USER_NAME, ARXIV_CORPUS_NAME,
+    SYSTEM_USER_EMAIL, SYSTEM_USER_NAME, ARXIV_CORPUS_NAME, DEFAULT_THRESHOLD,
     get_user_profile_structure
 )
 from .api_client import APIClient
@@ -457,7 +457,7 @@ def main():
         help="Use single combined query instead of separate queries"
     )
     
-    parser.add_argument("--threshold", default="medium", choices=["low", "medium", "high"])
+    parser.add_argument("--threshold", default=DEFAULT_THRESHOLD, type=float)    
     parser.add_argument("--model", default=DEFAULT_MODEL_NAME)
     parser.add_argument("--method", default="faiss", choices=["faiss", "cosine", "qdrant"])
     parser.add_argument("--skip-download", action="store_true")

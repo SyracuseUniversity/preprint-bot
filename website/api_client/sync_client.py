@@ -61,7 +61,7 @@ class SyncWebAPIClient:
     # Profiles
     def create_profile(self, user_id: int, name: str, keywords: list, 
                     categories: list = None, frequency: str = "weekly",
-                    threshold: str = "medium", top_x: int = 10):  # ADD top_x
+                    threshold: float = 0.6, top_x: int = 10):  # ADD top_x
         """Create a new profile"""
         return self._run_async(
             self._client.create_profile(
