@@ -11,10 +11,10 @@ exec 2>>"$FALLBACK_LOG"
 source venv/bin/activate
 
 # Read config values from config.py
-NOTIFY_EMAIL=$(python -c "from src.preprint_bot.config import NOTIFY_EMAIL; print(NOTIFY_EMAIL)")
-LOG_RETENTION_DAYS=$(python -c "from src.preprint_bot.config import LOG_RETENTION_DAYS; print(LOG_RETENTION_DAYS)")
-PIPELINE_SCRIPT=$(python -c "from src.preprint_bot.config import PIPELINE_SCRIPT; print(PIPELINE_SCRIPT)")
-LOG_DIR=$(python -c "from src.preprint_bot.config import LOG_DIR; print(LOG_DIR)")
+NOTIFY_EMAIL="ugaikwad@syr.edu"
+LOG_RETENTION_DAYS=30
+PIPELINE_SCRIPT="date_pipeline.py"
+LOG_DIR="logs/cron"
 
 mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
