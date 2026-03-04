@@ -1216,23 +1216,18 @@ def profiles_page(user: Dict):
                                 return
 
                             if selected_profile_id:
-                                try:
-                                    api.update_profile(
-                                        selected_profile_id,
-                                        name=clean_name,
-                                        keywords=kw_list,
-                                        categories=categories_list,
-                                        frequency=freq,
-                                        threshold=threshold_val,
-                                        top_x=top_x
-                                    )
-                                    st.success("Profile updated successfully!")
-                                    st.rerun()
-                                except Exception as e:
-                                    log_error("profiles_page.update_profile", e, {"profile_id": selected_profile_id})
-                                    st.error(f"Error updating profile: {str(e)}")
-                                    with st.expander("Error Details"):
-                                        st.code(traceback.format_exc())
+                                st.session_state["pending_profile_update"] = {
+                                    "profile_id": selected_profile_id,
+                                    "name": clean_name,
+                                    "keywords": kw_list,
+                                    "categories": categories_list,
+                                    "frequency": freq,
+                                    "threshold": threshold_val,
+                                    "top_x": top_x
+                                }
+                                st.session_state["show_profile_update_confirm"] = True
+                                st.rerun()
+
                             else:
                                 st.session_state["pending_profile_create"] = {
                                     "name": clean_name,
@@ -1282,7 +1277,6 @@ def profiles_page(user: Dict):
                                         threshold=data['threshold'],
                                         top_x=data['top_x']
                                     )
-
                                     st.toast(f"Profile '{data['name']}' created successfully!", icon="✅")
                                     logger.info(f"Successfully created profile: {data['name']}")
                                     st.session_state.pop("pending_profile_create", None)
@@ -1310,13 +1304,71 @@ def profiles_page(user: Dict):
                     st.error(f"Error in confirmation panel: {str(e)}")
                     with st.expander("Error Details"):
                         st.code(traceback.format_exc())
+
+            # Update confirmation panel
+            if st.session_state.get("show_profile_update_confirm") and st.session_state.get("pending_profile_update"):
+                try:
+                    data = st.session_state["pending_profile_update"]
+                    
+                    with st.container(border=True):
+                        st.warning("Update this profile?")
+                        
+                        st.write(f"**Name:** {data['name']}")
+                        st.write(f"**Frequency:** {data['frequency']}")
+                        st.write(f"**Threshold:** {data['threshold']}")
+                        st.write(f"**Max Papers:** {data['top_x']}")
+                        st.write(f"**Keywords:** {', '.join(data['keywords'])}")
+                        if data.get('categories'):
+                            cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in data['categories']]
+                            st.write(f"**Categories:** {', '.join(cat_labels)}")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("Confirm Update", key="confirm_profile_update", type="primary"):
+                                try:
+                                    api.update_profile(
+                                        data['profile_id'],
+                                        name=data['name'],
+                                        keywords=data['keywords'],
+                                        categories=data['categories'],
+                                        frequency=data['frequency'],
+                                        threshold=data['threshold'],
+                                        top_x=data['top_x']
+                                    )
+                                    st.toast(f"Profile '{data['name']}' updated successfully!", icon="✅")
+                                    st.session_state.pop("pending_profile_update", None)
+                                    st.session_state.pop("show_profile_update_confirm", None)
+                                    st.session_state["profile_cat_tree_selected"] = []
+                                    st.session_state["profiles_view"] = "List"
+                                    st.session_state.pop("edit_profile_name", None)
+                                    st.session_state.pop("profiles_view_source", None)
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    log_error("profiles_page.confirm_update", e, {"profile_data": data})
+                                    st.error(f"Error updating profile: {str(e)}")
+                                    with st.expander("Error Details"):
+                                        st.code(traceback.format_exc())
+                        
+                        with col2:
+                            if st.button("Cancel", key="cancel_profile_update"):
+                                st.session_state.pop("pending_profile_update", None)
+                                st.session_state.pop("show_profile_update_confirm", None)
+                                st.info("Update cancelled")
+                                st.rerun()
+                
+                except Exception as e:
+                    log_error("profiles_page.update_confirmation_panel", e)
+                    st.error(f"Error in confirmation panel: {str(e)}")
+                    with st.expander("Error Details"):
+                        st.code(traceback.format_exc())
         
         except Exception as e:
             log_error("profiles_page.create_edit_view", e, {"user_id": user.get('id')})
             st.error(f"Error in Create/Edit view: {str(e)}")
             with st.expander("Error Details"):
                 st.code(traceback.format_exc())
-    
+
     except Exception as e:
         log_error("profiles_page", e, {"user": user})
         st.error(f"Profiles page error: {str(e)}")
