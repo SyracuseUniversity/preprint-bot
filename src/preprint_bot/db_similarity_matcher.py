@@ -7,7 +7,7 @@ from typing import List, Dict
 from sklearn.metrics.pairwise import cosine_similarity
 import faiss
 from datetime import datetime, timedelta
-from .config import SIMILARITY_THRESHOLDS, DEFAULT_THRESHOLD
+from .config import DEFAULT_THRESHOLD
 
 async def run_similarity_matching(
     api_client,
@@ -30,8 +30,7 @@ async def run_similarity_matching(
     from datetime import datetime, timedelta, timezone
     import json
     
-    threshold_value = SIMILARITY_THRESHOLDS.get(threshold, DEFAULT_THRESHOLD) if isinstance(threshold, str) else float(threshold)
-    
+    threshold_value = {'low': 0.4, 'medium': 0.6, 'high': 0.8}.get(threshold, 0.6) if isinstance(threshold, str) else float(threshold)    
     print(f"\nSimilarity Matching Configuration:")
     print(f"  Method: {method}")
     print(f"  Threshold: {threshold} ({threshold_value})")
