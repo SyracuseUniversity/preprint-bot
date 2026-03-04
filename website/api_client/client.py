@@ -140,6 +140,7 @@ class WebAPIClient:
         return [p for p in profiles if p['user_id'] == user_id]
     
     async def update_profile(self, profile_id: int, **kwargs) -> Dict:
+        print("UPDATE PAYLOAD:", kwargs)
         response = await self.client.put(
             f"{self.base_url}/profiles/{profile_id}",
             json=kwargs,
