@@ -4,6 +4,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+FALLBACK_LOG="/home/ugaikwad/preprint-bot/logs/cron/startup_error.log"
+mkdir -p "$(dirname "$FALLBACK_LOG")"
+exec 2>>"$FALLBACK_LOG"
+
 source venv/bin/activate
 
 # Read config values from config.py
