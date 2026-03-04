@@ -1113,12 +1113,15 @@ def profiles_page(user: Dict):
             if selected_profile_id:
                 try:
                     profile = next(p for p in profiles if p['id'] == selected_profile_id)
+                    st.write("PROFILE CATS:", profile.get('categories', []))
                     default_name = profile['name']
                     default_freq = profile['frequency']
                     default_threshold = profile['threshold']
                     default_top_x = profile.get('top_x', 10)
                     default_keywords = ', '.join(profile['keywords'])
-                    st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
+                    if st.session_state.get("loaded_profile_id") != selected_profile_id:
+                        st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
+                        st.session_state["loaded_profile_id"] = selected_profile_id
                 except Exception as e:
                     log_error("profiles_page.load_profile_defaults", e, {
                         "profile_id": selected_profile_id
@@ -1148,9 +1151,15 @@ def profiles_page(user: Dict):
                 )
 
                 st.write("**Select arXiv Categories** (required)")
+
+                if selected_profile_id:
+                    st.caption("⚠️ Please reselect your categories below — previously saved categories will be preserved if you don't change anything.")
+                    if st.session_state.get("loaded_profile_id") != selected_profile_id:
+                        st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
+                        st.session_state["loaded_profile_id"] = selected_profile_id
+
                 if st.session_state.get("profile_cat_tree_selected"):
-                    cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in st.session_state["profile_cat_tree_selected"]]
-                    st.caption("Currently selected: " + ", ".join(cat_labels))
+                    st.caption("Currently saved: " + ", ".join([ARXIV_CODE_TO_LABEL.get(c, c) for c in st.session_state["profile_cat_tree_selected"]]))
 
                 tree_key = f"cat_tree_{selected_profile_id or 'new'}"
                 try:
@@ -1161,15 +1170,21 @@ def profiles_page(user: Dict):
                         placeholder="Select categories",
                         max_height=300,
                         only_children_select=True,
-                        defaultValue=st.session_state["profile_cat_tree_selected"],
+                        defaultValue=[],
                         key=tree_key
                     )
+                    
                     if selected_cats:
-                        st.session_state["profile_cat_tree_selected"] = [c for c in selected_cats if '.' in c]
+                        new_cats = [c for c in selected_cats if '.' in c]
+                        previous = st.session_state.get("cat_tree_last_selection", [])
+                        merged = list(set(previous + new_cats))
+                        st.session_state["profile_cat_tree_selected"] = merged
+                        st.session_state["cat_tree_last_selection"] = merged
+                
                 except Exception as e:
                     log_error("profiles_page.category_tree", e)
                     st.error("Error loading category tree")
-
+                    
                 keywords = st.text_input(
                     "Keywords (comma-separated, optional)",
                     value=default_keywords,
@@ -1195,6 +1210,7 @@ def profiles_page(user: Dict):
                         help="Set to 999 for unlimited. If unsure, leave as is."
                     )
 
+                st.write("SESSION CATS AT SUBMIT:", st.session_state.get("profile_cat_tree_selected"))
                 submit = st.button("Create Profile" if mode == "Create new" else "Update Profile", type="primary")
 
                 if submit:
