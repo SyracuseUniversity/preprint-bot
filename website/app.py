@@ -755,6 +755,15 @@ def profiles_page(user: Dict):
             st.rerun()
         st.session_state["profiles_view"] = view
 
+        if view != st.session_state.get("_prev_view"):
+            # View just changed
+            if view == "Create/Edit" and st.session_state.get("profiles_view_source") != "edit_button":
+                st.session_state.pop("edit_profile_name", None)
+                st.session_state.pop("profiles_view_source", None)
+            elif view == "List":
+                st.session_state.pop("profiles_view_source", None)
+        st.session_state["_prev_view"] = view
+
         if view == "List":
             try:
                 logger.debug("Loading profiles list view")
@@ -775,6 +784,7 @@ def profiles_page(user: Dict):
                                         st.session_state["profiles_view"] = "Create/Edit"
                                         st.session_state["profile_mode"] = "Edit existing"
                                         st.session_state["edit_profile_name"] = profile['name']
+                                        st.session_state["profiles_view_source"] = "edit_button"
                                         st.rerun()
 
                                 col1, col2, col3, col4 = st.columns(4)
@@ -1074,8 +1084,7 @@ def profiles_page(user: Dict):
             logger.debug("Loading Create/Edit view")
             
             # Mode selector
-            mode = st.segmented_control("Mode", ["Create new", "Edit existing"], key="profile_mode", default="Create new")
-            
+            mode = st.segmented_control("Mode", ["Create new", "Edit existing"], key="profile_mode", default=st.session_state.get("profile_mode", "Create new"))            
             # Initialize session keys
             if "profile_cat_tree_selected" not in st.session_state:
                 st.session_state["profile_cat_tree_selected"] = []
@@ -1090,7 +1099,12 @@ def profiles_page(user: Dict):
                     return
                 
                 profile_options = {p['name']: p['id'] for p in profiles}
-                selected_name = st.selectbox("Choose profile to edit", ["— Select —"] + list(profile_options.keys()))
+                selected_name = st.selectbox(
+                    "Choose profile to edit",
+                    ["— Select —"] + list(profile_options.keys()),
+                    index=(["— Select —"] + list(profile_options.keys())).index(st.session_state.get("edit_profile_name", "— Select —"))
+                    if st.session_state.get("edit_profile_name") in profile_options else 0
+                )
                 
                 if selected_name != "— Select —":
                     selected_profile_id = profile_options[selected_name]
@@ -1122,10 +1136,22 @@ def profiles_page(user: Dict):
             
             # Outside form - category tree
             if mode == "Create new" or selected_profile_id:
+                if "profile_cat_tree_selected" not in st.session_state:
+                    st.session_state["profile_cat_tree_selected"] = []
+
+                name = st.text_input("Profile Name", value=default_name)
+
+                freq = st.selectbox(
+                    "Email Frequency",
+                    ["daily", "weekly", "monthly"],
+                    index=["daily", "weekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "monthly"] else 1
+                )
+
                 st.write("**Select arXiv Categories** (required)")
                 if st.session_state.get("profile_cat_tree_selected"):
                     cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in st.session_state["profile_cat_tree_selected"]]
                     st.caption("Currently selected: " + ", ".join(cat_labels))
+
                 tree_key = f"cat_tree_{selected_profile_id or 'new'}"
                 try:
                     selected_cats = st_ant_tree(
@@ -1144,50 +1170,32 @@ def profiles_page(user: Dict):
                     log_error("profiles_page.category_tree", e)
                     st.error("Error loading category tree")
 
-                with st.form("profile_form", enter_to_submit=True):
-                    name = st.text_input("Profile Name", value=default_name)
+                keywords = st.text_input(
+                    "Keywords (comma-separated, optional)",
+                    value=default_keywords,
+                    placeholder="machine learning, neural networks, optimization"
+                )
 
-                    freq = st.selectbox(
-                        "Email Frequency",
-                        ["daily", "weekly", "monthly"],
-                        index=["daily", "weekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "monthly"] else 1
+                with st.expander("⚙️ Advanced Options"):
+                    threshold_val = st.slider(
+                        "Threshold",
+                        min_value=0.1,
+                        max_value=0.9,
+                        value=float(default_threshold) if isinstance(default_threshold, (int, float)) else 0.5,
+                        step=0.01,
+                        help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.1) casts a wider net. High (0.9) is stricter."
                     )
 
-                    keywords = st.text_input(
-                        "Keywords (comma-separated, optional)",
-                        value=default_keywords,
-                        placeholder="machine learning, neural networks, optimization"
+                    top_x = st.slider(
+                        "Maximum recommendations to show",
+                        min_value=5,
+                        max_value=999,
+                        value=default_top_x if selected_profile_id else 999,
+                        step=5,
+                        help="Set to 999 for unlimited. If unsure, leave as is."
                     )
 
-                    with st.expander("⚙️ Advanced Options"):
-                        col_low, col_med, col_high = st.columns([1, 1, 1])
-                        with col_low:
-                            st.markdown("**Low**")
-                        with col_med:
-                            st.markdown("<div style='text-align: center'><b>Medium</b></div>", unsafe_allow_html=True)
-                        with col_high:
-                            st.markdown("<div style='text-align: right'><b>High</b></div>", unsafe_allow_html=True)
-
-                        threshold_val = st.slider(
-                            "Threshold",
-                            min_value=0.40,
-                            max_value=0.75,
-                            value=float(default_threshold) if isinstance(default_threshold, (int, float)) else 0.575,
-                            step=0.01,
-                            label_visibility="collapsed",
-                            help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.4) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers."
-                        )
-
-                        top_x = st.slider(
-                            "Maximum recommendations to show",
-                            min_value=5,
-                            max_value=999,
-                            value=default_top_x if selected_profile_id else 999,
-                            step=5,
-                            help="Set to 999 for unlimited. If unsure, leave as is."
-                        )
-
-                    submit = st.form_submit_button("Create Profile" if mode == "Create new" else "Update Profile")
+                submit = st.button("Create Profile" if mode == "Create new" else "Update Profile", type="primary")
 
                 if submit:
                     if not name:
@@ -1242,7 +1250,7 @@ def profiles_page(user: Dict):
                             st.error(f"Error: {str(e)}")
                             with st.expander("Error Details"):
                                 st.code(traceback.format_exc())
-            
+
             # Creation confirmation panel
             if st.session_state.get("show_profile_create_confirm") and st.session_state.get("pending_profile_create"):
                 try:
