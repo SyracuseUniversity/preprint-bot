@@ -439,8 +439,8 @@ def login_page():
             except Exception as e:
                 log_error("login_page.submit", e, {"email": email})
                 st.error("Login failed. Please check your credentials.")
-                logger.error("Login error", exc_info=True)
-                st.code(traceback.format_exc())
+                with st.expander("Error Details"):
+                        st.code(traceback.format_exc())
         
         if signup:
             st.session_state['show_signup'] = True
