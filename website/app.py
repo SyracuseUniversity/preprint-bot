@@ -904,8 +904,11 @@ def profiles_page(user: Dict):
                                             st.write("---")
                                             
                                             # Create a set of already added arXiv IDs for quick lookup
-                                            # We strip out '.pdf' from the filename to match the arxiv_id format
-                                            existing_arxiv_ids = {p['filename'].replace('.pdf', '') for p in papers}
+                                            # Normalize filenames to match the arxiv_id format (strip '.pdf' and any version suffix)
+                                            existing_arxiv_ids = {
+                                                p['filename'].replace('.pdf', '').split('v')[0]
+                                                for p in papers
+                                            }
                                             
                                             # Select All / Deselect All Controls
                                             col_sel1, col_sel2, _ = st.columns([1, 1, 2])
