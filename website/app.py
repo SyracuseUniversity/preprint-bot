@@ -1307,8 +1307,8 @@ def profiles_page(user: Dict):
 
             # Update confirmation panel
             if st.session_state.get("show_profile_update_confirm") and st.session_state.get("pending_profile_update"):
-                st.write("DEBUG PAYLOAD:", data)
                 try:
+                st.write("DEBUG PAYLOAD:", data)
                     data = st.session_state["pending_profile_update"]
                     
                     with st.container(border=True):
