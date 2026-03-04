@@ -1074,7 +1074,7 @@ def profiles_page(user: Dict):
             logger.debug("Loading Create/Edit view")
             
             # Mode selector
-            mode = st.radio("Mode", ["Create new", "Edit existing"], horizontal=True, key="profile_mode")
+            mode = st.segmented_control("Mode", ["Create new", "Edit existing"], key="profile_mode", default="Create new")
             
             # Initialize session keys
             if "profile_cat_tree_selected" not in st.session_state:
