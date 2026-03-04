@@ -295,23 +295,23 @@ ARXIV_CODE_TO_LABEL: Dict[str, str] = _build_arxiv_code_to_label()
 
 def get_api_client() -> SyncWebAPIClient:
     """
-    Creates a fresh client for every run to prevent Event Loop crashes,
-    but manually restores the auth token so the user stays logged in.
+    Get or create a session-scoped API client and ensure its auth token
+    is synchronized with Streamlit's session_state.
     """
-    # 1. Create a fresh client (starts with token=None)
-    # This attaches to the CURRENT thread's event loop automatically.
-    client = SyncWebAPIClient()
-    
-    # 2. Check if we have a saved token in the session state
-    # (We will save this in login_page)
-    token = st.session_state.get('auth_token')
-    
-    # 3. If we do, inject it into the internal async client
+    # Reuse a single client per Streamlit session to avoid leaking
+    # underlying httpx.AsyncClient instances.
+    client: Optional[SyncWebAPIClient] = st.session_state.get("api_client")
+
+    if client is None:
+        # Create a fresh client (starts with token=None)
+        client = SyncWebAPIClient()
+        st.session_state["api_client"] = client
+
+    # Always sync the token from session state into the client
+    token = st.session_state.get("auth_token")
     if token:
-        # Access the internal WebAPIClient via ._client and set the token
-        # This assumes your WebAPIClient has a .token attribute or uses .headers
         client._client.token = token
-        
+
     return client
 
 def get_current_user() -> Optional[Dict]:
@@ -354,6 +354,8 @@ def logout():
     """Logout current user"""
     if 'user' in st.session_state:
         del st.session_state['user']
+    st.session_state.pop('auth_token', None)
+    st.session_state.pop('api_client', None)
     
     # Clear from URL
     st.query_params.clear()
@@ -398,6 +400,8 @@ def login_page():
         try:
             api = get_api_client()
             result = api.login(email, password)
+            if result.get('access_token'):
+                st.session_state['auth_token'] = result['access_token']
             set_current_user(result)
             st.success("Logged in successfully!")
             st.rerun()
@@ -440,6 +444,8 @@ def signup_page():
             try:
                 api = get_api_client()
                 result = api.register(email, password, name or None)
+                if result.get('access_token'):
+                    st.session_state['auth_token'] = result['access_token']
                 set_current_user(result)
                 st.success("Account created successfully!")
                 st.rerun()
