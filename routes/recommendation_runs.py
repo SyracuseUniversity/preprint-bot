@@ -13,7 +13,7 @@ async def create_recommendation_run(run: RecommendationRunCreate):
             row = await conn.fetchrow(
                 """
                 INSERT INTO recommendation_runs (profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                VALUES ($1, $2, $3, $4, $5::float , $6)
                 RETURNING id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, created_at
                 """,
                 run.profile_id, run.user_id, run.user_corpus_id, run.ref_corpus_id, run.threshold, run.method
