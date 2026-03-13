@@ -371,15 +371,18 @@ async def run_pipeline(args):
             print("\n" + "="*60)
             print("STEP 4: Generating Summaries")
             print("="*60)
-            if args.summarizer == "llama":
-                if not Path(args.llm_model).exists():
-                    print(f"Warning: LLM model not found at {args.llm_model}. Skipping summarization.")
+            if not args.skip_summarize:
+                if args.summarizer == "llama":
+                    if not Path(args.llm_model).exists():
+                        print(f"Warning: LLM model not found at {args.llm_model}. Skipping summarization.")
+                    else:
+                        summarizer = LlamaSummarizer(model_path=args.llm_model)
+                        await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract")
                 else:
-                    summarizer = LlamaSummarizer(model_path=args.llm_model)
+                    summarizer = TransformerSummarizer()
                     await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract")
             else:
-                summarizer = TransformerSummarizer()
-                await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract")
+                print("Skipping summarization.")
 
         print("\n" + "="*60)
         print("STEP 5: Processing User Papers")
@@ -429,6 +432,7 @@ def main():
     parser.add_argument("--skip-download", action="store_true", help="Skip PDF download")
     parser.add_argument("--skip-parse", action="store_true", help="Skip GROBID parsing")
     parser.add_argument("--skip-embed", action="store_true", help="Skip embedding generation")
+    parser.add_argument("--skip-summarize", action="store_true", help="Skip summarization")
     parser.add_argument("--summarizer", default="llama", choices=["transformer", "llama"], help="Summarizer to use")
     parser.add_argument("--llm-model", default="models/llama-3.2-3b-instruct-q4_k_m.gguf", help="Path to LLM model")
 
