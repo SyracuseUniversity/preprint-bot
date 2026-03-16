@@ -7,7 +7,7 @@ from typing import List, Dict
 from sklearn.metrics.pairwise import cosine_similarity
 import faiss
 from datetime import datetime, timedelta
-from .config import DEFAULT_THRESHOLD
+from .config import SIMILARITY_THRESHOLDS, DEFAULT_THRESHOLD
 
 async def run_similarity_matching(
     api_client,
