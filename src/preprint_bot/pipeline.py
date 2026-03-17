@@ -8,10 +8,12 @@ import asyncio
 import sys
 from pathlib import Path
 from typing import List, Dict
-from datetime import datetime, timedelta, date as date_type
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import time
 import requests
 import feedparser
+import httpx
 
 from .config import (
     DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS,
@@ -45,8 +47,21 @@ async def get_all_profile_categories(api_client: APIClient) -> List[str]:
 
 
 async def fetch_papers_for_arxiv_day(target_date, categories):
-    start_datetime = target_date.replace(hour=14, minute=0, second=0) - timedelta(days=1) + timedelta(hours=5)
-    end_datetime = target_date.replace(hour=14, minute=0, second=0) + timedelta(hours=5)
+    eastern = ZoneInfo("America/New_York")
+    # arXiv "day": papers submitted between 2 PM Eastern the previous calendar day
+    # and 2 PM Eastern on target_date. Convert this local window to UTC for the API.
+    local_end = datetime(
+        year=target_date.year,
+        month=target_date.month,
+        day=target_date.day,
+        hour=14,
+        minute=0,
+        second=0,
+        tzinfo=eastern,
+    )
+    local_start = local_end - timedelta(days=1)
+    start_datetime = local_start.astimezone(timezone.utc)
+    end_datetime = local_end.astimezone(timezone.utc)
     start = start_datetime.strftime("%Y%m%d%H%M")
     end = end_datetime.strftime("%Y%m%d%H%M")
     all_entries = []
@@ -56,30 +71,31 @@ async def fetch_papers_for_arxiv_day(target_date, categories):
     print(f"Time window: {start_datetime} to {end_datetime} (UTC)")
     print(f"Categories: {categories}")
 
-    for cat in categories:
-        query = f"cat:{cat}+AND+submittedDate:[{start}+TO+{end}]"
-        url = (
-            "http://export.arxiv.org/api/query?"
-            f"search_query={query}"
-            f"&start=0&max_results=100"
-            "&sortBy=submittedDate&sortOrder=descending"
-        )
-        try:
-            resp = requests.get(url, timeout=30)
-            resp.raise_for_status()
-            feed = feedparser.parse(resp.text)
-            new_count = 0
-            for entry in feed.entries:
-                arxiv_id = entry.id.split('/')[-1]
-                if arxiv_id not in seen_ids:
-                    seen_ids.add(arxiv_id)
-                    all_entries.append(entry)
-                    new_count += 1
-            print(f"  {cat}: {new_count} new papers")
-            time.sleep(3)
-        except Exception as e:
-            print(f"  Error fetching {cat}: {e}")
-            continue
+    async with httpx.AsyncClient(timeout=30) as client:
+        for cat in categories:
+            query = f"cat:{cat}+AND+submittedDate:[{start}+TO+{end}]"
+            url = (
+                "http://export.arxiv.org/api/query?"
+                f"search_query={query}"
+                f"&start=0&max_results=100"
+                "&sortBy=submittedDate&sortOrder=descending"
+            )
+            try:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                feed = feedparser.parse(resp.text)
+                new_count = 0
+                for entry in feed.entries:
+                    arxiv_id = entry.id.split('/')[-1]
+                    if arxiv_id not in seen_ids:
+                        seen_ids.add(arxiv_id)
+                        all_entries.append(entry)
+                        new_count += 1
+                print(f"  {cat}: {new_count} new papers")
+                await asyncio.sleep(3)
+            except Exception as e:
+                print(f"  Error fetching {cat}: {e}")
+                continue
 
     print(f"Total papers for {target_date.strftime('%Y-%m-%d')}: {len(all_entries)}")
     return all_entries
