@@ -8,7 +8,8 @@ import asyncio
 import sys
 from pathlib import Path
 from typing import List, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import time
 import requests
 import feedparser
@@ -46,8 +47,21 @@ async def get_all_profile_categories(api_client: APIClient) -> List[str]:
 
 
 async def fetch_papers_for_arxiv_day(target_date, categories):
-    start_datetime = target_date.replace(hour=14, minute=0, second=0) - timedelta(days=1) + timedelta(hours=5)
-    end_datetime = target_date.replace(hour=14, minute=0, second=0) + timedelta(hours=5)
+    eastern = ZoneInfo("America/New_York")
+    # arXiv "day": papers submitted between 2 PM Eastern the previous calendar day
+    # and 2 PM Eastern on target_date. Convert this local window to UTC for the API.
+    local_end = datetime(
+        year=target_date.year,
+        month=target_date.month,
+        day=target_date.day,
+        hour=14,
+        minute=0,
+        second=0,
+        tzinfo=eastern,
+    )
+    local_start = local_end - timedelta(days=1)
+    start_datetime = local_start.astimezone(timezone.utc)
+    end_datetime = local_end.astimezone(timezone.utc)
     start = start_datetime.strftime("%Y%m%d%H%M")
     end = end_datetime.strftime("%Y%m%d%H%M")
     all_entries = []
