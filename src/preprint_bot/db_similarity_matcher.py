@@ -30,8 +30,10 @@ async def run_similarity_matching(
     from datetime import datetime, timedelta, timezone
     import json
     
-    threshold_value = SIMILARITY_THRESHOLDS.get(threshold, DEFAULT_THRESHOLD) if isinstance(threshold, str) else float(threshold)
-    
+    if isinstance(threshold, str):
+        threshold_value = SIMILARITY_THRESHOLDS.get(threshold, DEFAULT_THRESHOLD)
+    else:
+        threshold_value = float(threshold) if threshold is not None else DEFAULT_THRESHOLD
     print(f"\nSimilarity Matching Configuration:")
     print(f"  Method: {method}")
     print(f"  Threshold: {threshold} ({threshold_value})")

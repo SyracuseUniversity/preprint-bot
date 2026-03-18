@@ -4,13 +4,16 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+FALLBACK_LOG="/home/preprint-bot/logs/cron/startup_error.log"
+mkdir -p "$(dirname "$FALLBACK_LOG")"
+exec 2>>"$FALLBACK_LOG"
+
 source venv/bin/activate
 
 # Read config values from config.py
-NOTIFY_EMAIL=$(python -c "from src.preprint_bot.config import NOTIFY_EMAIL; print(NOTIFY_EMAIL)")
-LOG_RETENTION_DAYS=$(python -c "from src.preprint_bot.config import LOG_RETENTION_DAYS; print(LOG_RETENTION_DAYS)")
-PIPELINE_SCRIPT=$(python -c "from src.preprint_bot.config import PIPELINE_SCRIPT; print(PIPELINE_SCRIPT)")
-LOG_DIR=$(python -c "from src.preprint_bot.config import LOG_DIR; print(LOG_DIR)")
+NOTIFY_EMAIL="ugaikwad@syr.edu"
+LOG_RETENTION_DAYS=30
+LOG_DIR="logs/cron"
 
 mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -23,7 +26,7 @@ echo "========================================" | tee -a "$LOG_FILE"
 TODAY=$(date +%Y-%m-%d)
 echo "Running pipeline for date: $TODAY" | tee -a "$LOG_FILE"
 
-python "$PIPELINE_SCRIPT" \
+preprint_bot \
     --date "$TODAY" \
     2>&1 | tee -a "$LOG_FILE"
 

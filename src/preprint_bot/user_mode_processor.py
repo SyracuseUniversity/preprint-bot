@@ -154,13 +154,12 @@ async def process_profile_directory(
     print(f"  Stored {stored_count} papers")
     
     # Store sections
-    if stored_count > 0:
-        print(f"  Extracting sections...")
-        sections_count = await store_sections_for_corpus(api_client, corpus["id"], profile_processed_dir)
-        print(f"  Stored {sections_count} sections")
+    print(f"  Extracting sections...")
+    sections_count = await store_sections_for_corpus(api_client, corpus["id"], profile_processed_dir)
+    print(f"  Stored {sections_count} sections")
     
     # Generate embeddings
-    if not skip_embed and stored_count > 0:
+    if not skip_embed:
         print(f"  Generating embeddings...")
         try:
             await embed_and_store_papers(

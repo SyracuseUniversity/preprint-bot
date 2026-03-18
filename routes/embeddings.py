@@ -11,24 +11,40 @@ async def create_embedding(embedding: EmbeddingCreate):
     """Store a single embedding"""
     pool = await get_db_pool()
     try:
-        # Convert list to pgvector format
         embedding_str = f"[{','.join(map(str, embedding.embedding))}]"
         
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO embeddings (paper_id, section_id, embedding, type, model_name)
-                VALUES ($1, $2, $3::vector, $4, $5)
-                RETURNING id, paper_id, section_id, type, model_name, created_at
-                """,
-                embedding.paper_id,
-                embedding.section_id,
-                embedding_str,
-                embedding.type.value,
-                embedding.model_name
-            )
+            if embedding.section_id is None:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO embeddings (paper_id, section_id, embedding, type, model_name)
+                    VALUES ($1, $2, $3::vector, $4, $5)
+                    ON CONFLICT (paper_id, type, model_name) WHERE section_id IS NULL
+                    DO UPDATE SET embedding = EXCLUDED.embedding
+                    RETURNING id, paper_id, section_id, embedding, type, model_name, created_at
+                    """,
+                    embedding.paper_id,
+                    embedding.section_id,
+                    embedding_str,
+                    embedding.type.value,
+                    embedding.model_name
+                )
+            else:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO embeddings (paper_id, section_id, embedding, type, model_name)
+                    VALUES ($1, $2, $3::vector, $4, $5)
+                    ON CONFLICT (paper_id, section_id, type, model_name) WHERE section_id IS NOT NULL
+                    DO UPDATE SET embedding = EXCLUDED.embedding
+                    RETURNING id, paper_id, section_id, embedding, type, model_name, created_at
+                    """,
+                    embedding.paper_id,
+                    embedding.section_id,
+                    embedding_str,
+                    embedding.type.value,
+                    embedding.model_name
+                )
             result = dict(row)
-            # Add embedding back to result for response
             result['embedding'] = embedding.embedding
             return result
     except Exception as e:

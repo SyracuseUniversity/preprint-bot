@@ -163,9 +163,12 @@ async def embed_and_store_papers(
         arxiv_id = p["arxiv_id"]
         normalized_id = normalize_arxiv_id(arxiv_id)
         paper_map[normalized_id] = p
-        # Also store with full ID for exact matches
         paper_map[arxiv_id] = p
-    
+        # Also map by processed text filename stem
+        if p.get("processed_text_path"):
+            stem = Path(p["processed_text_path"]).name.replace("_output.txt", "")
+            paper_map[stem] = p
+        
     # Embed abstracts
     print(f"\nEmbedding abstracts...")
     try:
