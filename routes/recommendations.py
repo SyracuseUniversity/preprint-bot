@@ -85,6 +85,20 @@ async def create_recommendation(rec: RecommendationCreate):
                 """,
                 rec.run_id, rec.paper_id, rec.score, rec.rank, rec.summary
             )
+            rec_id = row['id']
+            run = await conn.fetchrow(
+                "SELECT profile_id FROM recommendation_runs WHERE id = $1",
+                rec.run_id
+            )
+            if run and run['profile_id']:
+                await conn.execute(
+                    """
+                    INSERT INTO profile_recommendations (profile_id, recommendation_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    run['profile_id'], rec_id
+                )
             return dict(row)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
