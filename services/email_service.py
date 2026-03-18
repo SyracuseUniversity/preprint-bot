@@ -60,6 +60,9 @@ def send_email(to_address: str, subject: str, html_body: str) -> bool:
         msg.attach(MIMEText(html_body, "html"))
 
         with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT, timeout=30) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
             server.sendmail(EMAIL_FROM_ADDRESS, to_address, msg.as_string())
         return True
     except Exception as e:
