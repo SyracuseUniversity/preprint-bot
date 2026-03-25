@@ -1487,7 +1487,7 @@ def profiles_page(user: Dict):
                     key="profile_submit_btn"
                 )
 
-                    submit = st.form_submit_button("Create Profile" if mode == "Create new" else "Update Profile")
+                
                 
                 if submit:
                     if not name:
