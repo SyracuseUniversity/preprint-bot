@@ -15,6 +15,8 @@ from datetime import datetime, date, timedelta
 
 LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
 
+LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
+
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -1440,6 +1442,49 @@ def profiles_page(user: Dict):
                         key="profile_top_x_input",
                         help="Set to 999 for unlimited. If unsure, leave as is."
                     )
+                    
+                    keywords = st.text_input(
+                        "Keywords (comma-separated, optional)",
+                        value=default_keywords,
+                        placeholder="machine learning, neural networks, optimization"
+                    )
+
+                    st.write("**Select arXiv Categories** (required)")
+                    if selected_profile_id and st.session_state.get("profile_cat_tree_selected"):
+                        cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in st.session_state["profile_cat_tree_selected"]]
+                        st.caption("Currently selected: " + ", ".join(cat_labels))
+                    try:
+                        selected_cats = st_ant_tree(
+                            treeData=ARXIV_CATEGORY_TREE,
+                            treeCheckable=True,
+                            showSearch=True,
+                            placeholder="Select categories",
+                            max_height=300,
+                            only_children_select=True
+                        )
+                    except Exception as e:
+                        log_error("profiles_page.category_tree", e)
+                        st.error("Error loading category tree")
+                        selected_cats = []
+
+                    with st.expander("⚙️ Advanced Options"):
+                        col_low, col_med, col_high = st.columns([1, 1, 1])
+                        with col_low:
+                            st.markdown("**Low**")
+                        with col_med:
+                            st.markdown("<div style='text-align: center'><b>Medium</b></div>", unsafe_allow_html=True)
+                        with col_high:
+                            st.markdown("<div style='text-align: right'><b>High</b></div>", unsafe_allow_html=True)
+
+                        threshold_val = st.slider(
+                            "Threshold",
+                            min_value=0.40,
+                            max_value=0.75,
+                            value=float(default_threshold) if isinstance(default_threshold, (int, float)) else 0.575,
+                            step=0.01,
+                            label_visibility="collapsed",
+                            help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.4) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers."
+                        )
 
                 submit = st.button(
                     "Create Profile" if mode == "Create new" else "Update Profile",
@@ -1447,6 +1492,8 @@ def profiles_page(user: Dict):
                     key="profile_submit_btn"
                 )
 
+                    submit = st.form_submit_button("Create Profile" if mode == "Create new" else "Update Profile")
+                
                 if submit:
                     if not name:
                         st.error("Profile name is required")
@@ -1530,6 +1577,7 @@ def profiles_page(user: Dict):
                                         threshold=data['threshold'],
                                         top_x=data['top_x']
                                     )
+
                                     st.toast(f"Profile '{data['name']}' created successfully!", icon="✅")
                                     logger.info(f"Successfully created profile: {data['name']}")
                                     st.session_state.pop("pending_profile_create", None)
