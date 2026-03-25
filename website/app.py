@@ -9,6 +9,7 @@ import streamlit.components.v1 as components
 import uuid
 import nest_asyncio
 nest_asyncio.apply()
+import extra_streamlit_components as stx
 import traceback
 import logging
 from datetime import datetime, date, timedelta
@@ -332,40 +333,39 @@ ARXIV_CODE_TO_LABEL: Dict[str, str] = _build_arxiv_code_to_label()
 
 def get_api_client() -> SyncWebAPIClient:
     """
-    Creates a fresh client for every run to prevent Event Loop crashes,
-    but manually restores the auth token so the user stays logged in.
+    Creates a fresh client and restores the token securely from cookies.
     """
     logger.info("Creating new API client")
-    # 1. Create a fresh client (starts with token=None)
-    # This attaches to the CURRENT thread's event loop automatically.
     client = SyncWebAPIClient()
     
-    # 2. Check if we have a saved token in the session state
-    # (We will save this in login_page)
+    # 1. Try to get token from session state first
     token = st.session_state.get('auth_token')
     
-    # 3. If we do, inject it into the internal async client
+    # 2. If it's empty (page refreshed), check the secure cookie!
+    if not token:
+        token = cookie_manager.get('auth_token')
+        if token:
+            st.session_state['auth_token'] = token
+            
+    # 3. Inject into client
     if token:
-        # Access the internal WebAPIClient via ._client and set the token
-        # This assumes your WebAPIClient has a .token attribute or uses .headers
         client._client.token = token
         
     return client
 
 def get_current_user() -> Optional[Dict]:
-    """Get currently logged in user"""
+    """Get currently logged in user safely via cookies"""
     try:
         # Try session first
         if 'user' in st.session_state and st.session_state.get('user'):
             logger.debug(f"User from session: {st.session_state['user'].get('email')}")
             return st.session_state['user']
         
-        # Try to restore from query params
-        query_params = st.query_params
-        user_id = query_params.get('user_id')
+        # Read the ID from the secure cookie (NOT the URL!)
+        user_id = cookie_manager.get('user_id')
         
         if user_id:
-            logger.info(f"Attempting to restore user from query params: {user_id}")
+            logger.info(f"Attempting to restore user from cookie: {user_id}")
             try:
                 api = get_api_client()
                 user = api.get_user(int(user_id))
@@ -373,7 +373,7 @@ def get_current_user() -> Optional[Dict]:
                 logger.info(f"User restored: {user.get('email')}")
                 return user
             except Exception as e:
-                log_error("get_current_user.restore_from_params", e, {"user_id": user_id})
+                log_error("get_current_user.restore_from_cookie", e, {"user_id": user_id})
         
         logger.debug("No user found")
         return None
@@ -382,11 +382,11 @@ def get_current_user() -> Optional[Dict]:
         return None
 
 def set_current_user(user: Dict):
-    """Set current user in session"""
+    """Set current user in session and securely save to cookies"""
     try:
         logger.info(f"Setting current user: {user.get('email')}")
         
-        # Normalize - make sure both 'id' and 'user_id' exist
+        # Normalize
         if 'user_id' in user and 'id' not in user:
             user['id'] = user['user_id']
         elif 'id' in user and 'user_id' not in user:
@@ -394,22 +394,36 @@ def set_current_user(user: Dict):
         
         st.session_state['user'] = user
         
-        # Add to URL for persistence
+        # Save to cookies instead of URL (Expires in 1 day / 86400 seconds)
         user_id = user.get('user_id') or user.get('id')
         if user_id:
-            st.query_params['user_id'] = str(user_id)
-            logger.debug(f"Added user_id to query params: {user_id}")
+            cookie_manager.set('user_id', str(user_id), max_age=86400)
+            
+        # Save token to cookies if it exists
+        if 'token' in user:
+            st.session_state['auth_token'] = user['token']
+            cookie_manager.set('auth_token', user['token'], max_age=86400)
+            
+        # Clean the URL to be safe
+        st.query_params.clear()
+        
     except Exception as e:
         log_error("set_current_user", e, {"user": user})
 
 def logout():
-    """Logout current user"""
+    """Logout current user and destroy cookies"""
     try:
         logger.info("Logging out user")
         if 'user' in st.session_state:
             del st.session_state['user']
+        if 'auth_token' in st.session_state:
+            del st.session_state['auth_token']
         
-        # Clear from URL
+        # Destroy the cookies in the browser
+        cookie_manager.delete('user_id')
+        cookie_manager.delete('auth_token')
+        
+        # Clear URL
         st.query_params.clear()
         
         st.success("Logged out successfully")
