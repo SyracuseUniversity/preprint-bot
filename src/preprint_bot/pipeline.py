@@ -75,7 +75,7 @@ async def fetch_papers_for_arxiv_day(target_date, categories):
         for cat in categories:
             query = f"cat:{cat}+AND+submittedDate:[{start}+TO+{end}]"
             url = (
-                "http://export.arxiv.org/api/query?"
+                "https://export.arxiv.org/api/query?"
                 f"search_query={query}"
                 f"&start=0&max_results=100"
                 "&sortBy=submittedDate&sortOrder=descending"
