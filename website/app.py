@@ -18,6 +18,8 @@ LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
 
 LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
 
+cookie_manager = stx.CookieManager()
+
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
