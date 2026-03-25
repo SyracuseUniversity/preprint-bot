@@ -356,11 +356,13 @@ async def send_all_digests(api_client: APIClient, run_date: str = None):
         profile_id = profile["id"]
         user_id = profile["user_id"]
 
+        resp = None
         try:
             resp = await api_client.client.post(
                 f"{api_client.base_url}/emails/send-digest",
                 json={"user_id": user_id, "profile_id": profile_id, "run_date": run_date}
             )
+            resp.raise_for_status()
             result = resp.json()
             status = result.get("status")
             if status == "sent":
@@ -368,7 +370,13 @@ async def send_all_digests(api_client: APIClient, run_date: str = None):
             else:
                 print(f"  - [{profile['name']}] skipped: {result.get('reason')}")
         except Exception as e:
-            print(f"  ✗ [{profile['name']}] failed: {e}")
+            if resp is not None:
+                print(
+                    f"  ✗ [{profile['name']}] failed: {e} "
+                    f"(status={getattr(resp, 'status_code', 'unknown')}, body={getattr(resp, 'text', '')})"
+                )
+            else:
+                print(f"  ✗ [{profile['name']}] failed before receiving a response: {e}")
 
 
 async def run_pipeline(args):
