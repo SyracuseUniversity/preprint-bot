@@ -316,11 +316,6 @@ NO_DOT_CATEGORIES = {
     "math-ph", "nucl-ex", "nucl-th", "quant-ph"
 }
 
-categories_list = [
-    cat for cat in st.session_state.get("profile_cat_tree_selected", [])
-    if '.' in cat or cat in NO_DOT_CATEGORIES
-]
-
 def _build_arxiv_code_to_label() -> Dict[str, str]:
     """Build mapping of category codes to labels"""
     try:
