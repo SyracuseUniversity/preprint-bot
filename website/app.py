@@ -1,3 +1,4 @@
+import re
 import streamlit as st
 from typing import Optional, Dict, List
 from api_client.sync_client import SyncWebAPIClient
@@ -984,9 +985,15 @@ def profiles_page(user: Dict):
                                                             for arxiv_id in line.split(','):
                                                                 arxiv_id = arxiv_id.strip()
                                                                 if arxiv_id:
-                                                                    if 'v' in arxiv_id:
-                                                                        arxiv_id = arxiv_id.split('v')[0]
-                                                                    arxiv_ids.append(arxiv_id)
+                                                                    # Extract the ID token from URLs or arXiv: prefixed strings
+                                                                    if '/' in arxiv_id:
+                                                                        arxiv_id = arxiv_id.rstrip('/').split('/')[-1]
+                                                                    elif ':' in arxiv_id:
+                                                                        arxiv_id = arxiv_id.split(':')[-1].strip()
+                                                                    # Remove only a trailing version suffix (e.g. v2, v10)
+                                                                    arxiv_id = re.sub(r'v\d+$', '', arxiv_id)
+                                                                    if arxiv_id:
+                                                                        arxiv_ids.append(arxiv_id)
                                                         
                                                         if not arxiv_ids:
                                                             st.error("No valid arXiv IDs found")
