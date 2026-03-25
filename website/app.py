@@ -10,6 +10,12 @@ import uuid
 import nest_asyncio
 nest_asyncio.apply()
 import traceback
+
+# Optional arxiv client: handled gracefully if not installed.
+try:
+    import arxiv  # type: ignore[import-untyped]
+except ImportError:
+    arxiv = None  # type: ignore[assignment]
 import logging
 from datetime import datetime, date, timedelta
 
@@ -1066,7 +1072,11 @@ def profiles_page(user: Dict):
                                                     
                                                     with st.spinner("Searching arXiv..."):
                                                         try:
-                                                            import arxiv
+                                                            if arxiv is None:
+                                                                raise RuntimeError(
+                                                                    "The 'arxiv' package is not installed. "
+                                                                    "Please install it to enable arXiv search."
+                                                                )
                                                             client = arxiv.Client()
                                                             search = arxiv.Search(
                                                                 query=query_string,
