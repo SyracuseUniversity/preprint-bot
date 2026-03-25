@@ -46,10 +46,11 @@ async def send_digest(req: DigestRequest):
             JOIN papers p ON p.id = r.paper_id
             LEFT JOIN summaries s ON s.paper_id = p.id
             WHERE pr.profile_id = $1
+              AND pr.run_date = $2::date
             ORDER BY r.score DESC
-            LIMIT $2
+            LIMIT $3
             """,
-            req.profile_id, top_x
+            req.profile_id, run_date, top_x
         )
 
         if not rows:
