@@ -3,14 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import get_db_pool, close_db_pool
 
-# Import route modules
 from routes import users, papers, corpora, sections, embeddings, auth, uploads
-# from routes.recommendations import router as recommendation_runs_router, recommendations_router
 import routes.recommendations as recommendations
 
-# Optional route imports
 try:
-    from routes import profiles, profile_corpora, summaries, profile_recommendations, email_logs
+    from routes import profiles, profile_corpora, summaries, profile_recommendations, email_logs, emails
     HAS_OPTIONAL_ROUTES = True
 except ImportError:
     HAS_OPTIONAL_ROUTES = False
@@ -19,21 +16,17 @@ except ImportError:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage application lifecycle"""
-    # Startup
     print("Starting Preprint Bot API...")
     await get_db_pool()
     print("Database connection pool created")
     
     yield
     
-    # Shutdown
     print("Shutting down Preprint Bot API...")
     await close_db_pool()
     print("Database connections closed")
 
 
-# Create FastAPI app
 app = FastAPI(
     title="Preprint Bot API",
     description="API for managing academic paper recommendations with vector search",
@@ -43,28 +36,25 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include core routers
 app.include_router(users.router)
 app.include_router(papers.router)
 app.include_router(corpora.router)
 app.include_router(sections.router)
 app.include_router(embeddings.router)
 app.include_router(recommendations.router)
-app.include_router(recommendations.recommendations_router)  # This one!
+app.include_router(recommendations.recommendations_router)
 app.include_router(summaries.router)
 app.include_router(auth.router)
-app.include_router(uploads.router) 
+app.include_router(uploads.router)
 
-# Include optional routers if available
 if HAS_OPTIONAL_ROUTES:
     try:
         app.include_router(profiles.router)
@@ -72,14 +62,14 @@ if HAS_OPTIONAL_ROUTES:
         app.include_router(summaries.router)
         app.include_router(profile_recommendations.router)
         app.include_router(email_logs.router)
-        print(" All route modules loaded")
+        app.include_router(emails.router)
+        print("All route modules loaded")
     except Exception as e:
-        print(f" Warning loading optional routes: {e}")
+        print(f"Warning loading optional routes: {e}")
 
 
 @app.get("/")
 async def root():
-    """Root endpoint with API information"""
     return {
         "message": "Preprint Bot - Academic Paper Recommendation System",
         "version": "2.0.0",
@@ -99,7 +89,6 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -120,7 +109,6 @@ async def health_check():
 
 @app.get("/stats")
 async def get_stats():
-    """Get database statistics"""
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:

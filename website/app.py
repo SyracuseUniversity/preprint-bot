@@ -30,7 +30,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(LOG_FILE_PATH),
-        logging.FileHandler(LOG_FILE_PATH),
         logging.StreamHandler()
     ]
 )
@@ -212,12 +211,16 @@ ARXIV_CATEGORY_TREE: List[Dict] = [
                     {"title": "Superconductivity (cond-mat.supr-con)", "value": "cond-mat.supr-con"},
                 ],
             },
-            {"title": "General Relativity and Quantum Cosmology (gr-qc)", "value": "gr-qc"},
-            {"title": "High Energy Physics - Experiment (hep-ex)", "value": "hep-ex"},
-            {"title": "High Energy Physics - Lattice (hep-lat)", "value": "hep-lat"},
-            {"title": "High Energy Physics - Phenomenology (hep-ph)", "value": "hep-ph"},
-            {"title": "High Energy Physics - Theory (hep-th)", "value": "hep-th"},
-            {"title": "Mathematical Physics (math-ph)", "value": "math-ph"},
+            {
+                "title": "High Energy Physics",
+                "value": "hep",
+                "children": [
+                    {"title": "High Energy Physics - Experiment (hep-ex)", "value": "hep-ex"},
+                    {"title": "High Energy Physics - Lattice (hep-lat)", "value": "hep-lat"},
+                    {"title": "High Energy Physics - Phenomenology (hep-ph)", "value": "hep-ph"},
+                    {"title": "High Energy Physics - Theory (hep-th)", "value": "hep-th"},
+                ],
+            },
             {
                 "title": "Nonlinear Sciences",
                 "value": "nlin",
@@ -229,10 +232,8 @@ ARXIV_CATEGORY_TREE: List[Dict] = [
                     {"title": "Exactly Solvable and Integrable Systems (nlin.SI)", "value": "nlin.SI"},
                 ],
             },
-            {"title": "Nuclear Experiment (nucl-ex)", "value": "nucl-ex"},
-            {"title": "Nuclear Theory (nucl-th)", "value": "nucl-th"},
             {
-                "title": "Physics",
+                "title": "Physics (General)",
                 "value": "physics",
                 "children": [
                     {"title": "Accelerator Physics (physics.acc-ph)", "value": "physics.acc-ph"},
@@ -259,7 +260,17 @@ ARXIV_CATEGORY_TREE: List[Dict] = [
                     {"title": "Space Physics (physics.space-ph)", "value": "physics.space-ph"},
                 ],
             },
-            {"title": "Quantum Physics (quant-ph)", "value": "quant-ph"},
+            {
+                "title": "Other Physics",
+                "value": "other-physics",
+                "children": [
+                    {"title": "General Relativity and Quantum Cosmology (gr-qc)", "value": "gr-qc"},
+                    {"title": "Mathematical Physics (math-ph)", "value": "math-ph"},
+                    {"title": "Nuclear Experiment (nucl-ex)", "value": "nucl-ex"},
+                    {"title": "Nuclear Theory (nucl-th)", "value": "nucl-th"},
+                    {"title": "Quantum Physics (quant-ph)", "value": "quant-ph"},
+                ],
+            },
         ],
     },
     {
@@ -306,6 +317,11 @@ ARXIV_CATEGORY_TREE: List[Dict] = [
         ],
     },
 ]
+
+NO_DOT_CATEGORIES = {
+    "gr-qc", "hep-ex", "hep-lat", "hep-ph", "hep-th",
+    "math-ph", "nucl-ex", "nucl-th", "quant-ph"
+}
 
 def _build_arxiv_code_to_label() -> Dict[str, str]:
     """Build mapping of category codes to labels"""
@@ -758,6 +774,7 @@ def dashboard_page(user: Dict):
         with st.expander("Error Details"):
             st.code(traceback.format_exc())
 
+
 def profiles_page(user: Dict):
     """Profiles management page with integrated paper upload"""
     try:
@@ -784,7 +801,7 @@ def profiles_page(user: Dict):
                     })
         except Exception as e:
             log_error("profiles_page.check_processing", e, {"user_id": user.get('id')})
-            
+
         st.markdown("### Profiles")
 
         default_view = st.session_state.get("profiles_view", "List")
@@ -843,22 +860,22 @@ def profiles_page(user: Dict):
                                 
                                 # ============ PAPER UPLOAD SECTION ============
                                 st.markdown("#### 📄 Papers")
-                                
+
                                 # Show uploaded papers
                                 try:
                                     logger.debug(f"Fetching papers for profile {profile['id']}")
                                     papers_data = api.list_uploaded_papers(user.get('id'), profile['id'])
                                     papers = papers_data.get('papers', [])
-                                    
-                                    if papers:
-                                        st.write(f"**{len(papers)} paper(s) uploaded**")
-                                        
-                                        # Show papers in expandable section
-                                        with st.expander("View Papers", expanded=False):
+
+                                    # Show papers in expandable section
+                                    with st.expander("View Papers", expanded=False):
+                                        if not papers:
+                                            st.caption("No papers uploaded yet")
+                                        else:
+                                            st.write(f"**{len(papers)} paper(s) uploaded**")
                                             for paper in papers:
                                                 try:
                                                     paper_col1, paper_col2, paper_col3 = st.columns([3, 1, 1])
-                                                    
                                                     with paper_col1:
                                                         st.write(f"📄 {paper['filename']}")
                                                     with paper_col2:
@@ -908,42 +925,47 @@ def profiles_page(user: Dict):
                                                         logger.info(f"Starting upload of {len(uploaded_files)} files")
                                                         progress_bar = st.progress(0)
                                                         status_text = st.empty()
-                                                        
-                                                        uploaded_count = 0
-                                                        total_files = len(uploaded_files)
-                                                        
-                                                        for i, uploaded_file in enumerate(uploaded_files):
+                                                        success_count = 0
+                                                        failed_papers = []
+
+                                                        for i, arxiv_id in enumerate(arxiv_ids):
                                                             try:
-                                                                status_text.text(f"Uploading {uploaded_file.name}...")
-                                                                logger.debug(f"Uploading file {i+1}/{total_files}: {uploaded_file.name}")
-                                                                
-                                                                file_bytes = uploaded_file.read()
-                                                                
-                                                                api.upload_paper_bytes(
+                                                                status_text.text(f"Fetching {arxiv_id}...")
+                                                                logger.debug(f"Fetching arXiv paper {i+1}/{len(arxiv_ids)}: {arxiv_id}")
+
+                                                                # Call backend API to add paper from arXiv
+                                                                api.add_paper_from_arxiv(
                                                                     user.get('id'),
                                                                     profile['id'],
-                                                                    uploaded_file.name,
-                                                                    file_bytes
+                                                                    arxiv_id
                                                                 )
-                                                                
-                                                                uploaded_count += 1
-                                                                progress_bar.progress((i + 1) / total_files)
-                                                                logger.info(f"Successfully uploaded: {uploaded_file.name}")
-                                                                
+
+                                                                success_count += 1
+                                                                progress_bar.progress((i + 1) / len(arxiv_ids))
+                                                                logger.info(f"Successfully added arXiv paper: {arxiv_id}")
+
                                                             except Exception as e:
-                                                                log_error("profiles_page.upload_file", e, {
-                                                                    "filename": uploaded_file.name,
+                                                                log_error("profiles_page.add_arxiv_paper", e, {
+                                                                    "arxiv_id": arxiv_id,
                                                                     "user_id": user.get('id'),
                                                                     "profile_id": profile['id']
                                                                 })
-                                                                st.error(f"Failed to upload {uploaded_file.name}: {str(e)}")
-                                                        
+                                                                failed_papers.append(f"{arxiv_id}: {str(e)}")
+                                                                progress_bar.progress((i + 1) / len(arxiv_ids))
+
                                                         status_text.text("")
                                                         progress_bar.empty()
-                                                        
-                                                        if uploaded_count > 0:
-                                                            st.success(f"Successfully uploaded {uploaded_count} file(s)!")
-                                                            logger.info(f"Upload complete: {uploaded_count}/{total_files} files")
+
+                                                        if success_count > 0:
+                                                            st.success(f"Successfully added {success_count} paper(s) from arXiv!")
+                                                            logger.info(f"arXiv import complete: {success_count}/{len(arxiv_ids)} papers")
+
+                                                        if failed_papers:
+                                                            with st.expander("❌ Failed papers"):
+                                                                for failure in failed_papers:
+                                                                    st.error(failure)
+
+                                                        if success_count > 0:
                                                             st.rerun()
                                                     except Exception as e:
                                                         log_error("profiles_page.upload_files", e, {
@@ -1231,7 +1253,7 @@ def profiles_page(user: Dict):
                                         st.code(traceback.format_exc())
                                 
                                 st.divider()
-                                
+
                                 # ============ DELETE PROFILE SECTION ============
                                 confirm_key = f"confirm_delete_{profile['id']}"
                                 if st.session_state.get(confirm_key):
@@ -1261,7 +1283,7 @@ def profiles_page(user: Dict):
                                     if st.button("🗑️ Delete Profile", key=f"del_{profile['id']}"):
                                         st.session_state[confirm_key] = True
                                         st.rerun()
-                        
+
                         except Exception as e:
                             log_error("profiles_page.display_profile", e, {
                                 "profile_id": profile.get('id'),
@@ -1270,36 +1292,36 @@ def profiles_page(user: Dict):
                             st.error(f"Error displaying profile {profile.get('name')}: {str(e)}")
                             with st.expander("Error Details"):
                                 st.code(traceback.format_exc())
-            
+
             except Exception as e:
                 log_error("profiles_page.list_view", e, {"user_id": user.get('id')})
                 st.error(f"Error loading profiles: {str(e)}")
                 with st.expander("Error Details"):
                     st.code(traceback.format_exc())
-            
+
             return  # End of List view
             
         # ==================== CREATE / EDIT VIEW ====================
-        
+
         try:
             logger.debug("Loading Create/Edit view")
-            
+
             # Mode selector
             mode = st.segmented_control("Mode", ["Create new", "Edit existing"], key="profile_mode", default="Create new")
-            
+
             # Initialize session keys
             if "profile_cat_tree_selected" not in st.session_state:
                 st.session_state["profile_cat_tree_selected"] = []
-            
+
             # Get existing profiles for edit mode
             profiles = api.get_user_profiles(user.get('id'))
-            
+
             selected_profile_id = None
             if mode == "Edit existing":
                 if not profiles:
                     st.info("No profiles to edit. Create one first.")
                     return
-                
+
                 profile_options = {p['name']: p['id'] for p in profiles}
                 selected_name = st.selectbox(
                     "Choose profile to edit",
@@ -1307,10 +1329,10 @@ def profiles_page(user: Dict):
                     index=(["— Select —"] + list(profile_options.keys())).index(st.session_state.get("edit_profile_name", "— Select —"))
                     if st.session_state.get("edit_profile_name") in profile_options else 0
                 )
-                
+
                 if selected_name != "— Select —":
                     selected_profile_id = profile_options[selected_name]
-            
+
             # Set defaults based on mode
             if selected_profile_id:
                 try:
@@ -1337,37 +1359,71 @@ def profiles_page(user: Dict):
                 default_keywords = ""
                 if mode == "Create new":
                     st.session_state["profile_cat_tree_selected"] = []
-            
-            # Outside form - category tree
+
+            # Form for create/edit
             if mode == "Create new" or selected_profile_id:
-                with st.form("profile_form", enter_to_submit=True):
-                    name = st.text_input("Profile Name", value=default_name)
-                    
-                    freq = st.selectbox(
-                        "Email Frequency",
-                        ["daily", "weekly", "monthly"],
-                        index=["daily", "weekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "monthly"] else 1
-                    )
-                    if selected_cats:
-                        st.session_state["profile_cat_tree_selected"] = [c for c in selected_cats if '.' in c]
-                except Exception as e:
-                    log_error("profiles_page.category_tree", e)
-                    st.error("Error loading category tree")
-                    
+
+                name = st.text_input("Profile Name", value=default_name, key="profile_name_input")
+
+                freq = st.selectbox(
+                    "Email Frequency",
+                    ["daily", "weekly", "monthly"],
+                    index=["daily", "weekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "monthly"] else 1,
+                    key="profile_freq_input"
+                )
+
                 keywords = st.text_input(
                     "Keywords (comma-separated, optional)",
                     value=default_keywords,
-                    placeholder="machine learning, neural networks, optimization"
+                    placeholder="machine learning, neural networks, optimization",
+                    key="profile_keywords_input"
                 )
 
+                # # Category tree - sits right below keywords
+                # st.write("**Select arXiv Categories** (required)")
+                # if st.session_state.get("profile_cat_tree_selected"):
+                #     cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in st.session_state["profile_cat_tree_selected"]]
+                #     st.caption("Currently selected: " + ", ".join(cat_labels))
+                try:
+                    NO_DOT_CATEGORIES = {
+                        "gr-qc", "hep-ex", "hep-lat", "hep-ph", "hep-th",
+                        "math-ph", "nucl-ex", "nucl-th", "quant-ph"
+                    }
+                    selected_cats = st_ant_tree(
+                        treeData=ARXIV_CATEGORY_TREE,
+                        treeCheckable=True,
+                        showSearch=True,
+                        placeholder="Select categories",
+                        max_height=300,
+                        only_children_select=True,
+                        defaultValue=st.session_state.get("profile_cat_tree_selected", [])
+                    )
+                    if selected_cats:
+                        st.session_state["profile_cat_tree_selected"] = [
+                            c for c in selected_cats if '.' in c or c in NO_DOT_CATEGORIES
+                        ]
+                except Exception as e:
+                    log_error("profiles_page.category_tree", e)
+                    st.error("Error loading category tree")
+
                 with st.expander("⚙️ Advanced Options"):
+                    col_low, col_med, col_high = st.columns([1, 1, 1])
+                    with col_low:
+                        st.markdown("**Low**")
+                    with col_med:
+                        st.markdown("<div style='text-align: center'><b>Medium</b></div>", unsafe_allow_html=True)
+                    with col_high:
+                        st.markdown("<div style='text-align: right'><b>High</b></div>", unsafe_allow_html=True)
+
                     threshold_val = st.slider(
                         "Threshold",
-                        min_value=0.1,
-                        max_value=0.9,
-                        value=float(default_threshold) if isinstance(default_threshold, (int, float)) else 0.5,
+                        min_value=0.40,
+                        max_value=0.75,
+                        value=float(default_threshold) if isinstance(default_threshold, (int, float)) else 0.575,
                         step=0.01,
-                        help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.1) casts a wider net. High (0.9) is stricter."
+                        label_visibility="collapsed",
+                        key="profile_threshold_input",
+                        help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.4) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers."
                     )
 
                     top_x = st.slider(
@@ -1376,6 +1432,7 @@ def profiles_page(user: Dict):
                         max_value=999,
                         value=default_top_x if selected_profile_id else 999,
                         step=5,
+                        key="profile_top_x_input",
                         help="Set to 999 for unlimited. If unsure, leave as is."
                     )
                     
@@ -1422,16 +1479,13 @@ def profiles_page(user: Dict):
                             help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.4) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers."
                         )
 
-                        top_x = st.slider(
-                            "Maximum recommendations to show",
-                            min_value=5,
-                            max_value=999,
-                            value=default_top_x if selected_profile_id else 999,
-                            step=5,
-                            help="Set to 999 for unlimited. If unsure, leave as is."
-                        )
+                submit = st.button(
+                    "Create Profile" if mode == "Create new" else "Update Profile",
+                    type="primary",
+                    key="profile_submit_btn"
+                )
 
-                    submit = st.form_submit_button("Create Profile" if mode == "Create new" else "Update Profile")
+                
                 
                 if submit:
                     if not name:
@@ -1445,62 +1499,29 @@ def profiles_page(user: Dict):
                                 return
 
                             kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
-                            
-                            # Extract selected categories from tree
-                            categories_list = []
-                            if selected_cats:
-                                try:
-                                    if isinstance(selected_cats, list):
-                                        categories_list = selected_cats
-                                    elif isinstance(selected_cats, dict):
-                                        for key in ['checked', 'selected', 'value', 'checkedKeys', 'halfCheckedKeys']:
-                                            if key in selected_cats:
-                                                val = selected_cats[key]
-                                                if isinstance(val, list):
-                                                    categories_list = val
-                                                break
-                                    
-                                    # Filter out parent nodes (keep only leaf categories with dots)
-                                    if categories_list:
-                                        categories_list = [cat for cat in categories_list if '.' in cat]
-                                    
-                                    logger.debug(f"Extracted categories: {categories_list}")
-                                except Exception as e:
-                                    log_error("profiles_page.extract_categories", e, {
-                                        "selected_cats": selected_cats
-                                    })
-                                    st.warning("Error processing categories, proceeding without them")
-                                    categories_list = []
-                            
+
+                            # Use categories from session state (set by tree widget above)
+                            categories_list = st.session_state.get("profile_cat_tree_selected", [])
+
                             if not categories_list:
                                 st.error("Please select at least one arXiv category")
                                 return
 
                             if selected_profile_id:
-                                # EDIT MODE: Save immediately
-                                try:
-                                    logger.info(f"Updating profile: {selected_profile_id}")
-                                    api.update_profile(
-                                        selected_profile_id,
-                                        name=clean_name,
-                                        keywords=kw_list,
-                                        categories=categories_list,
-                                        frequency=freq,
-                                        threshold=threshold_val,
-                                        top_x=top_x
-                                    )
-                                    st.success("Profile updated successfully!")
-                                    logger.info(f"Successfully updated profile: {selected_profile_id}")
-                                    st.rerun()
-                                except Exception as e:
-                                    log_error("profiles_page.update_profile", e, {
-                                        "profile_id": selected_profile_id,
-                                        "name": clean_name
-                                    })
-                                    st.error(f"Error updating profile: {str(e)}")
-                                    with st.expander("Error Details"):
-                                        st.code(traceback.format_exc())
+                                # EDIT MODE: Show confirmation panel
+                                st.session_state["pending_profile_update"] = {
+                                    "profile_id": selected_profile_id,
+                                    "name": clean_name,
+                                    "keywords": kw_list,
+                                    "categories": categories_list,
+                                    "frequency": freq,
+                                    "threshold": threshold_val,
+                                    "top_x": top_x
+                                }
+                                st.session_state["show_profile_update_confirm"] = True
+                                st.rerun()
                             else:
+                                # CREATE MODE: Show confirmation panel
                                 st.session_state["pending_profile_create"] = {
                                     "name": clean_name,
                                     "keywords": kw_list,
@@ -1522,10 +1543,10 @@ def profiles_page(user: Dict):
             if st.session_state.get("show_profile_create_confirm") and st.session_state.get("pending_profile_create"):
                 try:
                     data = st.session_state["pending_profile_create"]
-                    
+
                     with st.container(border=True):
                         st.warning("Create this profile?")
-                        
+
                         st.write(f"**Name:** {data['name']}")
                         st.write(f"**Frequency:** {data['frequency']}")
                         st.write(f"**Threshold:** {data['threshold']}")
@@ -1534,7 +1555,7 @@ def profiles_page(user: Dict):
                         if data.get('categories'):
                             cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in data['categories']]
                             st.write(f"**Categories:** {', '.join(cat_labels)}")
-                        
+
                         col1, col2 = st.columns(2)
                         with col1:
                             if st.button("Confirm Create", key="confirm_profile_create", type="primary"):
@@ -1563,7 +1584,7 @@ def profiles_page(user: Dict):
                                     st.error(f"Error creating profile: {str(e)}")
                                     with st.expander("Error Details"):
                                         st.code(traceback.format_exc())
-                        
+
                         with col2:
                             if st.button("Cancel", key="cancel_profile_create"):
                                 st.session_state.pop("pending_profile_create", None)
@@ -1571,7 +1592,7 @@ def profiles_page(user: Dict):
                                 st.session_state["profile_cat_tree_selected"] = []
                                 st.info("Creation cancelled")
                                 st.rerun()
-                
+
                 except Exception as e:
                     log_error("profiles_page.confirmation_panel", e)
                     st.error(f"Error in confirmation panel: {str(e)}")
@@ -1582,10 +1603,10 @@ def profiles_page(user: Dict):
             if st.session_state.get("show_profile_update_confirm") and st.session_state.get("pending_profile_update"):
                 try:
                     data = st.session_state["pending_profile_update"]
-                    
+
                     with st.container(border=True):
                         st.warning("Update this profile?")
-                        
+
                         st.write(f"**Name:** {data['name']}")
                         st.write(f"**Frequency:** {data['frequency']}")
                         st.write(f"**Threshold:** {data['threshold']}")
@@ -1594,7 +1615,7 @@ def profiles_page(user: Dict):
                         if data.get('categories'):
                             cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in data['categories']]
                             st.write(f"**Categories:** {', '.join(cat_labels)}")
-                        
+
                         col1, col2 = st.columns(2)
                         with col1:
                             if st.button("Confirm Update", key="confirm_profile_update", type="primary"):
@@ -1609,12 +1630,14 @@ def profiles_page(user: Dict):
                                         top_x=data['top_x']
                                     )
                                     st.toast(f"Profile '{data['name']}' updated successfully!", icon="✅")
+                                    logger.info(f"Successfully updated profile: {data['profile_id']}")
                                     st.session_state.pop("pending_profile_update", None)
                                     st.session_state.pop("show_profile_update_confirm", None)
                                     st.session_state["profile_cat_tree_selected"] = []
-                                    st.session_state["profiles_view"] = "List"
+                                    st.session_state.pop("loaded_profile_id", None)
                                     st.session_state.pop("edit_profile_name", None)
                                     st.session_state.pop("profiles_view_source", None)
+                                    st.session_state["profiles_view"] = "List"
                                     time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
@@ -1622,20 +1645,20 @@ def profiles_page(user: Dict):
                                     st.error(f"Error updating profile: {str(e)}")
                                     with st.expander("Error Details"):
                                         st.code(traceback.format_exc())
-                        
+
                         with col2:
                             if st.button("Cancel", key="cancel_profile_update"):
                                 st.session_state.pop("pending_profile_update", None)
                                 st.session_state.pop("show_profile_update_confirm", None)
                                 st.info("Update cancelled")
                                 st.rerun()
-                
+
                 except Exception as e:
                     log_error("profiles_page.update_confirmation_panel", e)
                     st.error(f"Error in confirmation panel: {str(e)}")
                     with st.expander("Error Details"):
                         st.code(traceback.format_exc())
-        
+
         except Exception as e:
             log_error("profiles_page.create_edit_view", e, {"user_id": user.get('id')})
             st.error(f"Error in Create/Edit view: {str(e)}")
