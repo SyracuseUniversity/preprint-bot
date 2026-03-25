@@ -9,6 +9,7 @@ import streamlit.components.v1 as components
 import uuid
 import nest_asyncio
 nest_asyncio.apply()
+import html
 import traceback
 
 # Optional arxiv client: handled gracefully if not installed.
@@ -1173,8 +1174,8 @@ def profiles_page(user: Dict):
                                                                 authors_list = author_text.split(", ")
                                                                 
                                                                 if len(authors_list) > 6:
-                                                                    visible_authors = ", ".join(authors_list[:6])
-                                                                    hidden_authors = ", ".join(authors_list[6:])
+                                                                    visible_authors = html.escape(", ".join(authors_list[:6]))
+                                                                    hidden_authors = html.escape(", ".join(authors_list[6:]))
                                                                     
                                                                     details_html = f"""
                                                                     <div style="margin-bottom: 0.5rem;">
