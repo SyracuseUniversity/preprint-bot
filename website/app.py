@@ -9,7 +9,14 @@ import streamlit.components.v1 as components
 import uuid
 import nest_asyncio
 nest_asyncio.apply()
+import html
 import traceback
+
+# Optional arxiv client: handled gracefully if not installed.
+try:
+    import arxiv  # type: ignore[import-untyped]
+except ImportError:
+    arxiv = None  # type: ignore[assignment]
 import logging
 from datetime import datetime, date, timedelta
 
@@ -755,19 +762,7 @@ def profiles_page(user: Dict):
     """Profiles management page with integrated paper upload"""
     try:
         logger.info(f"Loading profiles page for user: {user.get('email')}")
-        profiles = api.get_user_profiles(user.get('id'))  # CHANGED
-        for profile in profiles:
-            try:
-                progress = api.get_processing_progress(user.get('id'), profile['id'])  # CHANGED
-                if progress and progress.get('status') == 'running':
-                    # Show a banner at the top
-                    st.info(f"Processing papers for profile '{profile['name']}'... Auto-refreshing every 3 seconds.")
-                    time.sleep(3)
-                    st.rerun()
-            except:
-                pass
-    except:
-        pass
+        api = get_api_client()
         
         # Check for any running processing tasks and auto-refresh
         try:
@@ -837,41 +832,12 @@ def profiles_page(user: Dict):
                                     if len(profile['keywords']) > 3:
                                         keywords_display += f" (+{len(profile['keywords']) - 3} more)"
                                     st.write(keywords_display)
-                                # Categories display
+                                
+                                # Categories display (From main branch)
                                 if profile.get('categories'):
                                     st.write("**Categories**")
                                     cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in profile['categories']]
                                     st.caption(", ".join(cat_labels))
-                                # Show papers in expandable section
-                                with st.expander("View Papers", expanded=False):
-                                    for paper in papers:
-                                        paper_col1, paper_col2, paper_col3 = st.columns([3, 1, 1])
-                                        
-                                        with paper_col1:
-                                            st.write(f"📄 {paper['filename']}")
-                                        with paper_col2:
-                                            st.caption(f"{paper['size_mb']} MB")
-                                        with paper_col3:
-                                            if st.button("🗑️", key=f"del_{profile['id']}_{paper['filename']}", 
-                                                        help="Delete this paper"):
-                                                try:
-                                                    api.delete_uploaded_paper(
-                                                        user.get('id'),  # CHANGED
-                                                        profile['id'],
-                                                        paper['filename']
-                                                    )
-                                                    st.success(f"Deleted {paper['filename']}")
-                                                    st.rerun()
-                                                except Exception as e:
-                                                    st.error(f"Delete failed: {str(e)}")
-                            else:
-                                st.caption("No papers uploaded yet")
-                            
-                            
-                            # Upload new papers - WITH TABS
-                            with st.expander("Upload Papers", expanded=False):
-                                # Create tabs for different upload methods
-                                upload_tab, arxiv_tab, search_tab = st.tabs(["Upload PDF", "Add by ID", "Search arXiv"])
                                 
                                 st.divider()
                                 
@@ -898,8 +864,7 @@ def profiles_page(user: Dict):
                                                     with paper_col2:
                                                         st.caption(f"{paper['size_mb']} MB")
                                                     with paper_col3:
-                                                        if st.button("🗑️", key=f"del_{profile['id']}_{paper['filename']}", 
-                                                                    help="Delete this paper"):
+                                                        if st.button("🗑️", key=f"del_{profile['id']}_{paper['filename']}", help="Delete this paper"):
                                                             try:
                                                                 logger.info(f"Deleting paper: {paper['filename']}")
                                                                 api.delete_uploaded_paper(
@@ -922,12 +887,12 @@ def profiles_page(user: Dict):
                                     else:
                                         st.caption("No papers uploaded yet")
                                     
-                                    # Upload new papers - WITH TABS
+                                    # Upload new papers - WITH TABS (Combined logic)
                                     with st.expander("Upload Papers", expanded=False):
-                                        # Create tabs for different upload methods
-                                        upload_tab, arxiv_tab = st.tabs(["Upload PDF", "Add from arXiv"])
+                                        # Create 3 tabs
+                                        upload_tab, arxiv_tab, search_tab = st.tabs(["Upload PDF", "Add by ID", "Search arXiv"])
                                         
-                                        # TAB 1: Upload PDF files
+                                        # TAB 1: Upload PDF files (Main branch logic with logging)
                                         with upload_tab:
                                             uploaded_files = st.file_uploader(
                                                 "Choose PDF files",
@@ -990,7 +955,7 @@ def profiles_page(user: Dict):
                                                         with st.expander("Error Details"):
                                                             st.code(traceback.format_exc())
                                         
-                                        # TAB 2: Add from arXiv
+                                        # TAB 2: Add from arXiv (Main branch logic with logging)
                                         with arxiv_tab:
                                             st.write("**Add papers from arXiv**")
                                             st.caption("Enter arXiv IDs (one per line or comma-separated)")
@@ -1008,15 +973,11 @@ def profiles_page(user: Dict):
                                                 else:
                                                     try:
                                                         logger.info("Processing arXiv IDs input")
-                                                        # Parse arXiv IDs
                                                         arxiv_ids = []
-                                                        
-                                                        # Handle both newline and comma separation
                                                         for line in arxiv_input.split('\n'):
                                                             for arxiv_id in line.split(','):
                                                                 arxiv_id = arxiv_id.strip()
                                                                 if arxiv_id:
-                                                                    # Remove version suffix if present (e.g., v1, v2)
                                                                     if 'v' in arxiv_id:
                                                                         arxiv_id = arxiv_id.split('v')[0]
                                                                     arxiv_ids.append(arxiv_id)
@@ -1038,7 +999,6 @@ def profiles_page(user: Dict):
                                                                     status_text.text(f"Fetching {arxiv_id}...")
                                                                     logger.debug(f"Fetching arXiv paper {i+1}/{len(arxiv_ids)}: {arxiv_id}")
                                                                     
-                                                                    # Call backend API to add paper from arXiv
                                                                     result = api.add_paper_from_arxiv(
                                                                         user.get('id'),
                                                                         profile['id'],
@@ -1073,218 +1033,206 @@ def profiles_page(user: Dict):
                                                             if success_count > 0:
                                                                 st.rerun()
                                                     except Exception as e:
-                                                        failed_papers.append(f"{arxiv_id}: {str(e)}")
-                                                        progress_bar.progress((i + 1) / len(arxiv_ids))
-                                                
-                                                status_text.text("")
-                                                progress_bar.empty()
-                                                
-                                                if success_count > 0:
-                                                    st.success(f"Successfully added {success_count} paper(s) from arXiv!")
-                                                
-                                                if failed_papers:
-                                                    with st.expander("❌ Failed papers"):
-                                                        for failure in failed_papers:
-                                                            st.error(failure)
-                                                
-                                                if success_count > 0:
-                                                    st.rerun()
-                                # TAB 3: Search arXiv
-                                with search_tab:
-                                    st.write("**Search arXiv to find and add papers**")
-                                    col_s1, col_s2 = st.columns(2)
-                                    
-                                    with col_s1:
-                                        search_title = st.text_input("Title", key=f"s_title_{profile['id']}")
-                                    with col_s2:
-                                        search_author = st.text_input("Author", key=f"s_author_{profile['id']}")
-                                    
-                                    # Unique key to store results in session state
-                                    search_key = f"search_results_{profile['id']}"
+                                                        log_error("profiles_page.arxiv_import", e, {
+                                                            "user_id": user.get('id'),
+                                                            "profile_id": profile['id'],
+                                                            "input": arxiv_input
+                                                        })
+                                                        st.error(f"arXiv import failed: {str(e)}")
+                                                        with st.expander("Error Details"):
+                                                            st.code(traceback.format_exc())
 
-                                    if st.button("Search", key=f"search_btn_{profile['id']}", type="primary"):
-                                        if not search_title.strip() and not search_author.strip():
-                                            st.error("Please enter a title or author to search.")
-                                        else:
-                                            # Format the search query
-                                            query_parts = []
-                                            if search_title.strip():
-                                                query_parts.append(f'ti:"{search_title.strip()}"')
-                                            if search_author.strip():
-                                                query_parts.append(f'au:"{search_author.strip()}"')
-                                            query_string = " AND ".join(query_parts)
+                                        # TAB 3: Search arXiv (Your custom UI)
+                                        with search_tab:
+                                            st.write("**Search arXiv to find and add papers**")
+                                            col_s1, col_s2 = st.columns(2)
                                             
-                                            with st.spinner("Searching arXiv..."):
-                                                try:
-                                                    import arxiv
-                                                    client = arxiv.Client()
-                                                    search = arxiv.Search(
-                                                        query=query_string,
-                                                        max_results=25, # Increased slightly since it's scrollable now
-                                                        sort_by=arxiv.SortCriterion.SubmittedDate,
-                                                        sort_order=arxiv.SortOrder.Descending
-                                                    )
-                                                    results = list(client.results(search))
+                                            with col_s1:
+                                                search_title = st.text_input("Title", key=f"s_title_{profile['id']}")
+                                            with col_s2:
+                                                search_author = st.text_input("Author", key=f"s_author_{profile['id']}")
+                                            
+                                            search_key = f"search_results_{profile['id']}"
+
+                                            if st.button("Search", key=f"search_btn_{profile['id']}", type="primary"):
+                                                if not search_title.strip() and not search_author.strip():
+                                                    st.error("Please enter a title or author to search.")
+                                                else:
+                                                    query_parts = []
+                                                    if search_title.strip():
+                                                        query_parts.append(f'ti:"{search_title.strip()}"')
+                                                    if search_author.strip():
+                                                        query_parts.append(f'au:"{search_author.strip()}"')
+                                                    query_string = " AND ".join(query_parts)
                                                     
-                                                    if not results:
-                                                        st.session_state[search_key] = []
-                                                    else:
-                                                        st.session_state[search_key] = [
-                                                            {
-                                                                "title": p.title,
-                                                                "authors": ", ".join([a.name for a in p.authors]),
-                                                                "published": p.published.strftime('%Y-%m-%d'),
-                                                                "id": p.get_short_id().split('v')[0]
-                                                            } for p in results
+                                                    with st.spinner("Searching arXiv..."):
+                                                        try:
+                                                            if arxiv is None:
+                                                                raise RuntimeError(
+                                                                    "The 'arxiv' package is not installed. "
+                                                                    "Please install it to enable arXiv search."
+                                                                )
+                                                            client = arxiv.Client()
+                                                            search = arxiv.Search(
+                                                                query=query_string,
+                                                                max_results=25,
+                                                                sort_by=arxiv.SortCriterion.SubmittedDate,
+                                                                sort_order=arxiv.SortOrder.Descending
+                                                            )
+                                                            results = list(client.results(search))
+                                                            
+                                                            if not results:
+                                                                st.session_state[search_key] = []
+                                                            else:
+                                                                st.session_state[search_key] = [
+                                                                    {
+                                                                        "title": p.title,
+                                                                        "authors": ", ".join([a.name for a in p.authors]),
+                                                                        "published": p.published.strftime('%Y-%m-%d'),
+                                                                        "id": p.get_short_id().split('v')[0]
+                                                                    } for p in results
+                                                                ]
+                                                                
+                                                                for p in st.session_state[search_key]:
+                                                                    st.session_state[f"chk_{profile['id']}_{p['id']}"] = False
+                                                                    
+                                                        except Exception as e:
+                                                            log_error("profiles_page.arxiv_search", e, {"query": query_string})
+                                                            st.error(f"Search failed: {str(e)}")
+
+                                            if search_key in st.session_state:
+                                                current_results = st.session_state[search_key]
+                                                
+                                                if not current_results:
+                                                    st.info("No papers found matching your query.")
+                                                else:
+                                                    st.write("---")
+                                                    
+                                                    existing_arxiv_ids = {
+                                                        p['filename'].replace('.pdf', '').split('v')[0]
+                                                        for p in papers
+                                                    }
+                                                    
+                                                    col_sel1, col_sel2, _ = st.columns([1, 1, 2])
+                                                    with col_sel1:
+                                                        if st.button("Select All", key=f"sel_all_{profile['id']}"):
+                                                            for paper in current_results:
+                                                                if paper['id'] not in existing_arxiv_ids:
+                                                                    st.session_state[f"chk_{profile['id']}_{paper['id']}"] = True
+                                                            st.rerun()
+                                                    with col_sel2:
+                                                        if st.button("Deselect All", key=f"desel_all_{profile['id']}"):
+                                                            for paper in current_results:
+                                                                if paper['id'] not in existing_arxiv_ids:
+                                                                    st.session_state[f"chk_{profile['id']}_{paper['id']}"] = False
+                                                            st.rerun()
+                                                    
+                                                    with st.container(height=500, border=True):
+                                                        st.markdown("""
+                                                            <style>
+                                                            .inline-details { font-size: 0.875rem; opacity: 0.8; }
+                                                            .inline-details summary { 
+                                                                display: inline; 
+                                                                cursor: pointer; 
+                                                                list-style: none; 
+                                                            }
+                                                            .inline-details summary::-webkit-details-marker { display: none; }
+                                                            .inline-details summary::before {
+                                                                content: "► ";
+                                                                font-size: 0.8em;
+                                                                margin-right: 0.2em;
+                                                            }
+                                                            .inline-details[open] summary::before {
+                                                                content: "▼ ";
+                                                            }
+                                                            .inline-details[open] .hide-when-open { display: none; }
+                                                            .inline-details:not([open]) .show-when-open { display: none; }
+                                                            </style>
+                                                        """, unsafe_allow_html=True)
+                                                        
+                                                        for paper in current_results:
+                                                            c_chk, c_info = st.columns([1, 15])
+                                                            
+                                                            is_already_added = paper['id'] in existing_arxiv_ids
+                                                            
+                                                            with c_chk:
+                                                                if is_already_added:
+                                                                    st.checkbox(" ", value=True, disabled=True, key=f"chk_dis_{profile['id']}_{paper['id']}", label_visibility="collapsed", help="Already added to this profile")
+                                                                else:
+                                                                    st.checkbox(" ", key=f"chk_{profile['id']}_{paper['id']}", label_visibility="collapsed")
+                                                                
+                                                            with c_info:
+                                                                st.markdown(f"**[{paper['title']}](https://arxiv.org/abs/{paper['id']})**")
+                                                                
+                                                                author_text = paper['authors']
+                                                                authors_list = author_text.split(", ")
+                                                                
+                                                                if len(authors_list) > 6:
+                                                                    visible_authors = html.escape(", ".join(authors_list[:6]))
+                                                                    hidden_authors = html.escape(", ".join(authors_list[6:]))
+                                                                    
+                                                                    details_html = f"""
+                                                                    <div style="margin-bottom: 0.5rem;">
+                                                                        <details class="inline-details">
+                                                                            <summary>
+                                                                                <b>Authors:</b> {visible_authors}<span class="hide-when-open">...</span><span class="show-when-open">, </span>
+                                                                            </summary>
+                                                                            <span>{hidden_authors}</span>
+                                                                        </details>
+                                                                    </div>
+                                                                    """
+                                                                    st.markdown(details_html, unsafe_allow_html=True)
+                                                                else:
+                                                                    st.caption(f"**Authors:** {author_text}")
+                                                                    
+                                                                st.caption(f"**Published:** {paper['published']} | **arXiv ID:** {paper['id']}")
+                                                            st.divider()
+
+                                                    if st.button("Add Selected to Profile", type="primary", key=f"add_bulk_{profile['id']}"):
+                                                        selected_papers = [
+                                                            p for p in current_results 
+                                                            if p['id'] not in existing_arxiv_ids and st.session_state.get(f"chk_{profile['id']}_{p['id']}")
                                                         ]
                                                         
-                                                        # Reset all checkboxes to unchecked for the new search
-                                                        for p in st.session_state[search_key]:
-                                                            st.session_state[f"chk_{profile['id']}_{p['id']}"] = False
-                                                            
-                                                except Exception as e:
-                                                    st.error(f"Search failed: {str(e)}")
-
-                                    # Display results if they exist in session state
-                                    if search_key in st.session_state:
-                                        current_results = st.session_state[search_key]
-                                        
-                                        if not current_results:
-                                            st.info("No papers found matching your query.")
-                                        else:
-                                            st.write("---")
-                                            
-                                            # Create a set of already added arXiv IDs for quick lookup
-                                            # Normalize filenames to match the arxiv_id format (strip '.pdf' and any version suffix)
-                                            existing_arxiv_ids = {
-                                                p['filename'].replace('.pdf', '').split('v')[0]
-                                                for p in papers
-                                            }
-                                            
-                                            # Select All / Deselect All Controls
-                                            col_sel1, col_sel2, _ = st.columns([1, 1, 2])
-                                            with col_sel1:
-                                                if st.button("Select All", key=f"sel_all_{profile['id']}"):
-                                                    for paper in current_results:
-                                                        # Only select papers that haven't been added yet
-                                                        if paper['id'] not in existing_arxiv_ids:
-                                                            st.session_state[f"chk_{profile['id']}_{paper['id']}"] = True
-                                                    st.rerun()
-                                            with col_sel2:
-                                                if st.button("Deselect All", key=f"desel_all_{profile['id']}"):
-                                                    for paper in current_results:
-                                                        if paper['id'] not in existing_arxiv_ids:
-                                                            st.session_state[f"chk_{profile['id']}_{paper['id']}"] = False
-                                                    st.rerun()
-                                            
-                                            # SCROLLABLE CONTAINER
-                                            with st.container(height=500, border=True):
-                                                
-                                                # Inject CSS once for the seamless inline dropdowns
-                                                st.markdown("""
-                                                    <style>
-                                                    .inline-details { font-size: 0.875rem; opacity: 0.8; }
-                                                    .inline-details summary { 
-                                                        display: inline; 
-                                                        cursor: pointer; 
-                                                        list-style: none; 
-                                                    }
-                                                    .inline-details summary::-webkit-details-marker { display: none; }
-                                                    .inline-details summary::before {
-                                                        content: "► ";
-                                                        font-size: 0.8em;
-                                                        margin-right: 0.2em;
-                                                    }
-                                                    .inline-details[open] summary::before {
-                                                        content: "▼ ";
-                                                    }
-                                                    .inline-details[open] .hide-when-open { display: none; }
-                                                    .inline-details:not([open]) .show-when-open { display: none; }
-                                                    </style>
-                                                """, unsafe_allow_html=True)
-                                                
-                                                for paper in current_results:
-                                                    c_chk, c_info = st.columns([1, 15])
-                                                    
-                                                    # Check if it's already in the profile
-                                                    is_already_added = paper['id'] in existing_arxiv_ids
-                                                    
-                                                    with c_chk:
-                                                        if is_already_added:
-                                                            # Show a disabled, checked box to indicate it's already there
-                                                            st.checkbox(" ", value=True, disabled=True, key=f"chk_dis_{profile['id']}_{paper['id']}", label_visibility="collapsed", help="Already added to this profile")
+                                                        if not selected_papers:
+                                                            st.warning("Please check at least one paper to add.")
                                                         else:
-                                                            # The Normal Checkbox
-                                                            st.checkbox(" ", key=f"chk_{profile['id']}_{paper['id']}", label_visibility="collapsed")
-                                                        
-                                                    with c_info:
-                                                        # Title as a clickable link
-                                                        st.markdown(f"**[{paper['title']}](https://arxiv.org/abs/{paper['id']})**")
-                                                        
-                                                        # Seamless Inline Collapsible Author List
-                                                        author_text = paper['authors']
-                                                        authors_list = author_text.split(", ")
-                                                        
-                                                        if len(authors_list) > 6:
-                                                            visible_authors = ", ".join(authors_list[:6])
-                                                            hidden_authors = ", ".join(authors_list[6:])
+                                                            progress_bar = st.progress(0)
+                                                            status_text = st.empty()
+                                                            success_count = 0
                                                             
-                                                            details_html = f"""
-                                                            <div style="margin-bottom: 0.5rem;">
-                                                                <details class="inline-details">
-                                                                    <summary>
-                                                                        <b>Authors:</b> {visible_authors}<span class="hide-when-open">...</span><span class="show-when-open">, </span>
-                                                                    </summary>
-                                                                    <span>{hidden_authors}</span>
-                                                                </details>
-                                                            </div>
-                                                            """
-                                                            st.markdown(details_html, unsafe_allow_html=True)
-                                                        else:
-                                                            st.caption(f"**Authors:** {author_text}")
+                                                            for i, paper in enumerate(selected_papers):
+                                                                try:
+                                                                    status_text.text(f"Adding {paper['id']}...")
+                                                                    api.add_paper_from_arxiv(user.get('id'), profile['id'], paper['id'])
+                                                                    success_count += 1
+                                                                    logger.info(f"Successfully bulk added: {paper['id']}")
+                                                                except Exception as e:
+                                                                    log_error("profiles_page.bulk_add", e, {"arxiv_id": paper['id']})
+                                                                    st.error(f"Failed {paper['id']}: {str(e)}")
+                                                                    
+                                                                progress_bar.progress((i + 1) / len(selected_papers))
                                                             
-                                                        st.caption(f"**Published:** {paper['published']} | **arXiv ID:** {paper['id']}")
-                                                    st.divider()
-
-                                            # Bulk Add Button at the bottom
-                                            if st.button("Add Selected to Profile", type="primary", key=f"add_bulk_{profile['id']}"):
-                                                # Find all papers where the checkbox is True (and ignore already added ones)
-                                                selected_papers = [
-                                                    p for p in current_results 
-                                                    if p['id'] not in existing_arxiv_ids and st.session_state.get(f"chk_{profile['id']}_{p['id']}")
-                                                ]
-                                                
-                                                if not selected_papers:
-                                                    st.warning("Please check at least one paper to add.")
-                                                else:
-                                                    progress_bar = st.progress(0)
-                                                    status_text = st.empty()
-                                                    success_count = 0
-                                                    
-                                                    for i, paper in enumerate(selected_papers):
-                                                        try:
-                                                            status_text.text(f"Adding {paper['id']}...")
-                                                            api.add_paper_from_arxiv(user.get('id'), profile['id'], paper['id'])
-                                                            success_count += 1
-                                                        except Exception as e:
-                                                            st.error(f"Failed {paper['id']}: {str(e)}")
+                                                            status_text.text("")
+                                                            progress_bar.empty()
                                                             
-                                                        progress_bar.progress((i + 1) / len(selected_papers))
-                                                    
-                                                    status_text.text("")
-                                                    progress_bar.empty()
-                                                    
-                                                    if success_count > 0:
-                                                        st.success(f"Successfully added {success_count} paper(s)!")
-                                                        # We no longer remove them from the list!
-                                                        # The rerun will automatically turn them into disabled checkmarks.
-                                                        time.sleep(1)
-                                                        st.rerun()
-                                                        
+                                                            if success_count > 0:
+                                                                st.success(f"Successfully added {success_count} paper(s)!")
+                                                                time.sleep(1)
+                                                                st.rerun()
+                                
+                                except Exception as e:
+                                    log_error("profiles_page.paper_management", e, {
+                                        "user_id": user.get('id'),
+                                        "profile_id": profile['id']
+                                    })
+                                    st.error(f"Error managing papers: {str(e)}")
+                                    with st.expander("Error Details"):
+                                        st.code(traceback.format_exc())
+                                
                                 st.divider()
                                 
                                 # ============ DELETE PROFILE SECTION ============
-                                # Delete button with confirmation
                                 confirm_key = f"confirm_delete_{profile['id']}"
                                 if st.session_state.get(confirm_key):
                                     st.warning("⚠️ Are you sure? This will delete the profile and all uploaded papers. This cannot be undone.")
@@ -1330,7 +1278,7 @@ def profiles_page(user: Dict):
                     st.code(traceback.format_exc())
             
             return  # End of List view
-        
+            
         # ==================== CREATE / EDIT VIEW ====================
         
         try:
