@@ -241,11 +241,15 @@ async def store_sections(api_client: APIClient, corpus_id: int, entries):
     print(f"Stored {sections_stored} total sections")
 
 
-async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, entries, mode: str = "abstract"):
+async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, entries, mode: str = "abstract", paper_ids: set = None):
     print(f"\nGenerating summaries using {type(summarizer).__name__}...")
     papers = await api_client.get_papers_by_corpus(corpus_id)
     entry_ids = {e.id.split('/')[-1] for e in entries}
     papers = [p for p in papers if p.get('arxiv_id') in entry_ids]
+
+    if paper_ids is not None:
+        papers = [p for p in papers if p['id'] in paper_ids]
+        print(f"  Filtered to {len(papers)} recommended papers")
 
     if not papers:
         print("  No papers found to summarize")
@@ -299,16 +303,18 @@ async def process_user_papers(api_client: APIClient, skip_parse: bool, skip_embe
     return all_user_corpora
 
 
-async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, user_corpora: List, target_date: datetime):
+async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, user_corpora: List, target_date: datetime) -> set:
     print("\n" + "="*60)
     print("STEP: Generating Recommendations")
     print("="*60)
 
     if not user_corpora:
         print("No user corpora to generate recommendations for")
-        return
+        return set()
 
     print(f"Generating recommendations for {len(user_corpora)} user corpora")
+
+    recommended_paper_ids = set()
 
     for corpus_info in user_corpora:
         user_corpus_id = corpus_info['corpus_id']
@@ -331,8 +337,16 @@ async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, 
                 use_sections=True
             )
             print(f"    ✓ Created recommendation run ID: {run_id}")
+
+            recs = await api_client.get_recommendations_by_run(run_id)
+            for rec in recs:
+                recommended_paper_ids.add(rec['paper_id'])
+
         except Exception as e:
             print(f"    ✗ Failed: {e}")
+
+    print(f"\n  Total unique recommended papers: {len(recommended_paper_ids)}")
+    return recommended_paper_ids
 
 
 async def send_all_digests(api_client: APIClient, run_date: str = None):
@@ -414,7 +428,7 @@ async def run_pipeline(args):
         )
 
         if not entries:
-            print("No new papers fetched. Skipping embedding and summarization.")
+            print("No new papers fetched. Skipping embedding, recommendations, and summarization.")
         else:
             print("\n" + "="*60)
             print("STEP 3: Generating Embeddings")
@@ -429,30 +443,32 @@ async def run_pipeline(args):
                 )
 
             print("\n" + "="*60)
-            print("STEP 4: Generating Summaries")
+            print("STEP 4: Processing User Papers")
+            print("="*60)
+            user_corpora = await process_user_papers(api_client, skip_parse=args.skip_parse, skip_embed=args.skip_embed)
+
+            print("\n" + "="*60)
+            print("STEP 5: Generating Recommendations")
+            print("="*60)
+            recommended_paper_ids = await generate_recommendations(api_client, corpus_id, user_corpora, target_date)
+
+            print("\n" + "="*60)
+            print("STEP 6: Generating Summaries")
             print("="*60)
             if not args.skip_summarize:
-                if args.summarizer == "llama":
+                if not recommended_paper_ids:
+                    print("  No recommended papers — skipping summarization.")
+                elif args.summarizer == "llama":
                     if not Path(args.llm_model).exists():
                         print(f"Warning: LLM model not found at {args.llm_model}. Skipping summarization.")
                     else:
                         summarizer = LlamaSummarizer(model_path=args.llm_model)
-                        await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract")
+                        await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract", paper_ids=recommended_paper_ids)
                 else:
                     summarizer = TransformerSummarizer()
-                    await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract")
+                    await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract", paper_ids=recommended_paper_ids)
             else:
                 print("Skipping summarization.")
-
-        print("\n" + "="*60)
-        print("STEP 5: Processing User Papers")
-        print("="*60)
-        user_corpora = await process_user_papers(api_client, skip_parse=args.skip_parse, skip_embed=args.skip_embed)
-
-        print("\n" + "="*60)
-        print("STEP 6: Generating Recommendations")
-        print("="*60)
-        await generate_recommendations(api_client, corpus_id, user_corpora, target_date)
 
         print("\n" + "="*60)
         print("STEP 7: Cleanup")
@@ -485,7 +501,6 @@ async def run_pipeline(args):
 
     finally:
         await api_client.close()
-
 
 def main():
     parser = argparse.ArgumentParser(description="Preprint Bot Pipeline")
