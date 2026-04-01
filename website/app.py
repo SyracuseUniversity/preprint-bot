@@ -1033,8 +1033,19 @@ def profiles_page(user: Dict):
                                                                 arxiv_id = arxiv_id.strip()
                                                                 if arxiv_id:
                                                                     # Remove version suffix if present (e.g., v1, v2)
-                                                                    if 'v' in arxiv_id:
-                                                                        arxiv_id = arxiv_id.split('v')[0]
+                                                                    arxiv_id = arxiv_id.strip()
+                                                                    if arxiv_id:
+                                                                        if arxiv_id.lower().startswith('arxiv:'):
+                                                                            arxiv_id = arxiv_id[6:] # slices off the first 6 characters
+                                                                            
+                                                                        if 'v' in arxiv_id:
+                                                                            arxiv_id = arxiv_id.split('v')[0]
+                                                                            
+                                                                        try:
+                                                                            float(arxiv_id) 
+                                                                            arxiv_ids.append(arxiv_id)
+                                                                        except ValueError:
+                                                                            st.error(f"'{arxiv_id}' doesn't look like a valid arXiv ID.")
                                                                     arxiv_ids.append(arxiv_id)
                                                         
                                                         if not arxiv_ids:
