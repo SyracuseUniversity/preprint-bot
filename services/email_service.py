@@ -59,14 +59,14 @@ def send_email(to_address: str, subject: str, html_body: str) -> bool:
         msg["To"] = to_address
         msg.attach(MIMEText(html_body, "html"))
 
-        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT, timeout=30) as server:
-            server.ehlo()
+        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT, timeout=10) as server:
             server.starttls()
-            server.ehlo()
+            server.login(EMAIL_USER, EMAIL_PASSWORD)
             server.sendmail(EMAIL_FROM_ADDRESS, to_address, msg.as_string())
+
         return True
     except Exception as e:
-        print(f"[email_service] Failed to send to {to_address}: {e}")
+        print(f"Email send failed: {e}")
         return False
 
 

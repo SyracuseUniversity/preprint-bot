@@ -901,8 +901,6 @@ def profiles_page(user: Dict):
                                                                 st.error(f"Delete failed: {str(e)}")
                                                 except Exception as e:
                                                     log_error("profiles_page.display_paper", e, {"paper": paper})
-                                    else:
-                                        st.caption("No papers uploaded yet")
                                     
                                     # Upload new papers - WITH TABS (Combined logic)
                                     with st.expander("Upload Papers", expanded=False):
@@ -928,37 +926,38 @@ def profiles_page(user: Dict):
                                                         success_count = 0
                                                         failed_papers = []
 
-                                                        for i, arxiv_id in enumerate(arxiv_ids):
+                                                        for i, uploaded_file in enumerate(uploaded_files):
                                                             try:
-                                                                status_text.text(f"Fetching {arxiv_id}...")
-                                                                logger.debug(f"Fetching arXiv paper {i+1}/{len(arxiv_ids)}: {arxiv_id}")
+                                                                status_text.text(f"Fetching {uploaded_file.name}...")
+                                                                logger.debug(f"Fetching arXiv paper {i+1}/{len(uploaded_files)}: {uploaded_file.name}")
 
                                                                 # Call backend API to add paper from arXiv
-                                                                api.add_paper_from_arxiv(
+                                                                api.upload_paper_bytes(
                                                                     user.get('id'),
                                                                     profile['id'],
-                                                                    arxiv_id
+                                                                    uploaded_file.name,
+                                                                    uploaded_file.read()
                                                                 )
 
                                                                 success_count += 1
-                                                                progress_bar.progress((i + 1) / len(arxiv_ids))
-                                                                logger.info(f"Successfully added arXiv paper: {arxiv_id}")
+                                                                progress_bar.progress((i + 1) / len(uploaded_files))
+                                                                logger.info(f"Successfully added arXiv paper: {uploaded_file.name}")
 
                                                             except Exception as e:
                                                                 log_error("profiles_page.add_arxiv_paper", e, {
-                                                                    "arxiv_id": arxiv_id,
+                                                                    "filename": uploaded_file.name,
                                                                     "user_id": user.get('id'),
                                                                     "profile_id": profile['id']
                                                                 })
-                                                                failed_papers.append(f"{arxiv_id}: {str(e)}")
-                                                                progress_bar.progress((i + 1) / len(arxiv_ids))
+                                                                failed_papers.append(f"{uploaded_file.name}: {str(e)}")
+                                                                progress_bar.progress((i + 1) / len(uploaded_files))
 
                                                         status_text.text("")
                                                         progress_bar.empty()
 
                                                         if success_count > 0:
                                                             st.success(f"Successfully added {success_count} paper(s) from arXiv!")
-                                                            logger.info(f"arXiv import complete: {success_count}/{len(arxiv_ids)} papers")
+                                                            logger.info(f"arXiv import complete: {success_count}/{len(uploaded_files)} papers")
 
                                                         if failed_papers:
                                                             with st.expander("❌ Failed papers"):

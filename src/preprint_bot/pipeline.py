@@ -8,7 +8,7 @@ import asyncio
 import sys
 from pathlib import Path
 from typing import List, Dict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date as date_type
 from zoneinfo import ZoneInfo
 import time
 import requests
@@ -48,8 +48,6 @@ async def get_all_profile_categories(api_client: APIClient) -> List[str]:
 
 async def fetch_papers_for_arxiv_day(target_date, categories):
     eastern = ZoneInfo("America/New_York")
-    # arXiv "day": papers submitted between 2 PM Eastern the previous calendar day
-    # and 2 PM Eastern on target_date. Convert this local window to UTC for the API.
     local_end = datetime(
         year=target_date.year,
         month=target_date.month,
@@ -147,7 +145,6 @@ async def fetch_and_store_arxiv(
         if existing:
             continue
 
-        from datetime import timezone
         submitted_date = None
         pub_str = paper_data['metadata'].get('published', '')
         if pub_str:
@@ -276,10 +273,6 @@ async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, en
 
 
 async def process_user_papers(api_client: APIClient, skip_parse: bool, skip_embed: bool):
-    print("\n" + "="*60)
-    print("STEP: Processing User Papers")
-    print("="*60)
-
     structure = get_user_profile_structure(USER_PDF_DIR)
     if not structure:
         print("No user papers found in user_pdfs/")
@@ -294,6 +287,8 @@ async def process_user_papers(api_client: APIClient, skip_parse: bool, skip_embe
         result = await process_user_profiles(api_client, uid, pids, skip_parse=skip_parse, skip_embed=skip_embed)
         if result:
             for r in result['results']:
+                if r.get('corpus') is None:
+                    continue
                 all_user_corpora.append({
                     'user_id': result['user']['id'],
                     'corpus_id': r['corpus']['id'],
@@ -304,10 +299,6 @@ async def process_user_papers(api_client: APIClient, skip_parse: bool, skip_embe
 
 
 async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, user_corpora: List, target_date: datetime) -> set:
-    print("\n" + "="*60)
-    print("STEP: Generating Recommendations")
-    print("="*60)
-
     if not user_corpora:
         print("No user corpora to generate recommendations for")
         return set()
@@ -336,6 +327,9 @@ async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, 
                 model_name=DEFAULT_MODEL_NAME,
                 use_sections=True
             )
+            if run_id is None:
+                print(f"    ✗ Skipped: no embeddings found")
+                continue
             print(f"    ✓ Created recommendation run ID: {run_id}")
 
             recs = await api_client.get_recommendations_by_run(run_id)
@@ -427,6 +421,9 @@ async def run_pipeline(args):
             skip_parse=args.skip_parse
         )
 
+        entries = entries or []
+        user_corpora = []
+
         if not entries:
             print("No new papers fetched. Skipping embedding, recommendations, and summarization.")
         else:
@@ -443,32 +440,30 @@ async def run_pipeline(args):
                 )
 
             print("\n" + "="*60)
-            print("STEP 4: Processing User Papers")
-            print("="*60)
-            user_corpora = await process_user_papers(api_client, skip_parse=args.skip_parse, skip_embed=args.skip_embed)
-
-            print("\n" + "="*60)
-            print("STEP 5: Generating Recommendations")
-            print("="*60)
-            recommended_paper_ids = await generate_recommendations(api_client, corpus_id, user_corpora, target_date)
-
-            print("\n" + "="*60)
-            print("STEP 6: Generating Summaries")
+            print("STEP 4: Generating Summaries")
             print("="*60)
             if not args.skip_summarize:
-                if not recommended_paper_ids:
-                    print("  No recommended papers — skipping summarization.")
-                elif args.summarizer == "llama":
+                if args.summarizer == "llama":
                     if not Path(args.llm_model).exists():
                         print(f"Warning: LLM model not found at {args.llm_model}. Skipping summarization.")
                     else:
                         summarizer = LlamaSummarizer(model_path=args.llm_model)
-                        await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract", paper_ids=recommended_paper_ids)
+                        await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract")
                 else:
                     summarizer = TransformerSummarizer()
-                    await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract", paper_ids=recommended_paper_ids)
+                    await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract")
             else:
                 print("Skipping summarization.")
+
+            print("\n" + "="*60)
+            print("STEP 5: Processing User Papers")
+            print("="*60)
+            user_corpora = await process_user_papers(api_client, skip_parse=args.skip_parse, skip_embed=args.skip_embed)
+
+            print("\n" + "="*60)
+            print("STEP 6: Generating Recommendations")
+            print("="*60)
+            await generate_recommendations(api_client, corpus_id, user_corpora, target_date)
 
         print("\n" + "="*60)
         print("STEP 7: Cleanup")
@@ -501,6 +496,7 @@ async def run_pipeline(args):
 
     finally:
         await api_client.close()
+
 
 def main():
     parser = argparse.ArgumentParser(description="Preprint Bot Pipeline")

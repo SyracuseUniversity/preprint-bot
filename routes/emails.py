@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 from database import get_db_pool
 from services.email_service import send_recommendations_digest, send_email
 
@@ -18,6 +19,7 @@ class DigestRequest(BaseModel):
 async def send_digest(req: DigestRequest):
     pool = await get_db_pool()
     run_date = req.run_date or str(date.today())
+    run_date_obj = datetime.strptime(run_date, "%Y-%m-%d").date()
 
     async with pool.acquire() as conn:
         user = await conn.fetchrow(
@@ -40,25 +42,26 @@ async def send_digest(req: DigestRequest):
 
         rows = await conn.fetch(
             """
-            SELECT p.arxiv_id, p.title, p.abstract, r.score, s.summary_text
+            SELECT p.arxiv_id, p.title, p.abstract, r.score, r.summary
             FROM profile_recommendations pr
             JOIN recommendations r ON r.id = pr.recommendation_id
+            JOIN recommendation_runs rr ON rr.id = r.run_id
             JOIN papers p ON p.id = r.paper_id
-            LEFT JOIN summaries s ON s.paper_id = p.id
             WHERE pr.profile_id = $1
-              AND pr.run_date = $2::date
+            AND rr.target_date = $2
             ORDER BY r.score DESC
             LIMIT $3
             """,
-            req.profile_id, run_date, top_x
+            req.profile_id, run_date_obj, top_x
         )
 
         if not rows:
-            return {"status": "skipped", "reason": "no recommendations found"}
+            return {"status": "skipped", "reason": "no recommendations found for this date"}
 
         papers = [dict(r) for r in rows]
 
-    success, subject, html_body = send_recommendations_digest(
+    success, subject, html_body = await run_in_threadpool(
+        send_recommendations_digest,
         to_address=user["email"],
         profile_name=profile["name"],
         papers=papers,
@@ -84,7 +87,8 @@ async def send_digest(req: DigestRequest):
 
 @router.post("/test-email")
 async def test_email(to_email: str):
-    success = send_email(
+    success = await run_in_threadpool(
+        send_email,
         to_address=to_email,
         subject="Preprint Bot — Test Email",
         html_body="<p>If you received this, your SMTP relay is configured correctly.</p>"
