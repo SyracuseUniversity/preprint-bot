@@ -75,9 +75,10 @@ async def process_profile_directory(
     # Get profile by ID directly
     try:
         response = await api_client.client.get(f"{api_client.base_url}/profiles/{profile_id}")
+        response.raise_for_status()
         profile = response.json()
-    except:
-        print(f"  Error: Profile {profile_id} not found")
+    except Exception as e:
+        print(f"  Error: Profile {profile_id} not found: {e}")
         return None
     
     print(f"  Profile: {profile['name']} (ID: {profile['id']})")

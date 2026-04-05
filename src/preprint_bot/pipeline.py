@@ -75,7 +75,7 @@ async def fetch_papers_for_arxiv_day(target_date, categories):
         for cat in categories:
             query = f"cat:{cat}+AND+submittedDate:[{start}+TO+{end}]"
             url = (
-                "http://export.arxiv.org/api/query?"
+                "https://export.arxiv.org/api/query?"
                 f"search_query={query}"
                 f"&start=0&max_results=100"
                 "&sortBy=submittedDate&sortOrder=descending"
@@ -335,6 +335,50 @@ async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, 
             print(f"    ✗ Failed: {e}")
 
 
+async def send_all_digests(api_client: APIClient, run_date: str = None):
+    run_date = run_date or str(date_type.today())
+    print(f"\n{'='*60}")
+    print("STEP 8: Sending Email Digests")
+    print(f"{'='*60}")
+
+    try:
+        response = await api_client.client.get(f"{api_client.base_url}/profiles/")
+        response.raise_for_status()
+        profiles = response.json()
+    except Exception as e:
+        print(f"  Failed to fetch profiles: {e}")
+        return
+
+    for profile in profiles:
+        if not profile.get("email_notify", False):
+            continue
+
+        profile_id = profile["id"]
+        user_id = profile["user_id"]
+
+        resp = None
+        try:
+            resp = await api_client.client.post(
+                f"{api_client.base_url}/emails/send-digest",
+                json={"user_id": user_id, "profile_id": profile_id, "run_date": run_date}
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            status = result.get("status")
+            if status == "sent":
+                print(f"  ✓ [{profile['name']}] → {result.get('to')} ({result.get('papers_count')} papers)")
+            else:
+                print(f"  - [{profile['name']}] skipped: {result.get('reason')}")
+        except Exception as e:
+            if resp is not None:
+                print(
+                    f"  ✗ [{profile['name']}] failed: {e} "
+                    f"(status={getattr(resp, 'status_code', 'unknown')}, body={getattr(resp, 'text', '')})"
+                )
+            else:
+                print(f"  ✗ [{profile['name']}] failed before receiving a response: {e}")
+
+
 async def run_pipeline(args):
     api_client = APIClient()
 
@@ -427,6 +471,8 @@ async def run_pipeline(args):
             print(f"  ✓ User files in {USER_PDF_DIR} are safe")
         except Exception as e:
             print(f"  Warning: Cleanup failed: {e}")
+
+        await send_all_digests(api_client, run_date=target_date.strftime("%Y-%m-%d"))
 
         print("\n" + "="*80)
         print("PIPELINE COMPLETE!")
