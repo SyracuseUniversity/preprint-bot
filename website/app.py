@@ -16,8 +16,6 @@ from datetime import datetime, date, timedelta
 
 LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
 
-LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
-
 cookie_manager = stx.CookieManager()
 
 # Configure logging
@@ -25,7 +23,6 @@ logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(LOG_FILE_PATH),
         logging.FileHandler(LOG_FILE_PATH),
         logging.StreamHandler()
     ]
@@ -363,19 +360,30 @@ def get_current_user() -> Optional[Dict]:
             logger.debug(f"User from session: {st.session_state['user'].get('email')}")
             return st.session_state['user']
         
-        # Read the ID from the secure cookie (NOT the URL!)
+        # Restore from cookies only if we have a valid auth token.
+        # A raw user_id cookie alone is client-controlled and untrusted.
+        auth_token = cookie_manager.get('auth_token')
         user_id = cookie_manager.get('user_id')
-        
-        if user_id:
+
+        if user_id and auth_token:
             logger.info(f"Attempting to restore user from cookie: {user_id}")
             try:
-                api = get_api_client()
+                api = get_api_client()  # This already injects auth_token via cookie
+                # verify_session validates the token server-side
+                api.verify_session(int(user_id))
                 user = api.get_user(int(user_id))
                 st.session_state['user'] = user
                 logger.info(f"User restored: {user.get('email')}")
                 return user
             except Exception as e:
-                log_error("get_current_user.restore_from_cookie", e, {"user_id": user_id})
+                # Token invalid/expired — clear stale cookies
+                logger.warning(f"Session restore failed, clearing cookies: {e}")
+                cookie_manager.delete('user_id')
+                cookie_manager.delete('auth_token')
+        elif user_id and not auth_token:
+            # user_id cookie without auth token = untrusted, clear it
+            logger.warning("Found user_id cookie without auth_token, clearing")
+            cookie_manager.delete('user_id')
         
         logger.debug("No user found")
         return None
@@ -401,10 +409,12 @@ def set_current_user(user: Dict):
         if user_id:
             cookie_manager.set('user_id', str(user_id), max_age=86400)
             
-        # Save token to cookies if it exists
-        if 'token' in user:
-            st.session_state['auth_token'] = user['token']
-            cookie_manager.set('auth_token', user['token'], max_age=86400)
+        # FIX #1: Save auth token to session and cookies if it exists
+        # Backend may return it as 'access_token', 'token', or 'auth_token'
+        token = user.get('access_token') or user.get('token') or user.get('auth_token')
+        if token:
+            st.session_state['auth_token'] = token
+            cookie_manager.set('auth_token', token, max_age=86400)
             
         # Clean the URL to be safe
         st.query_params.clear()
@@ -1041,12 +1051,13 @@ def profiles_page(user: Dict):
                                                                         if 'v' in arxiv_id:
                                                                             arxiv_id = arxiv_id.split('v')[0]
                                                                             
+                                                                        # Only append valid IDs, with dedup check
                                                                         try:
-                                                                            float(arxiv_id) 
-                                                                            arxiv_ids.append(arxiv_id)
+                                                                            float(arxiv_id)
+                                                                            if arxiv_id not in arxiv_ids:
+                                                                                arxiv_ids.append(arxiv_id)
                                                                         except ValueError:
                                                                             st.error(f"'{arxiv_id}' doesn't look like a valid arXiv ID.")
-                                                                    arxiv_ids.append(arxiv_id)
                                                         
                                                         if not arxiv_ids:
                                                             st.error("No valid arXiv IDs found")
