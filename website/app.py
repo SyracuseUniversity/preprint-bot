@@ -12,6 +12,7 @@ nest_asyncio.apply()
 import extra_streamlit_components as stx
 import html
 import traceback
+import re
 
 # Optional arxiv client: handled gracefully if not installed.
 try:
@@ -323,6 +324,9 @@ NO_DOT_CATEGORIES = {
     "gr-qc", "hep-ex", "hep-lat", "hep-ph", "hep-th",
     "math-ph", "nucl-ex", "nucl-th", "quant-ph"
 }
+
+# arXiv ID pattern: new format (2301.12345) and old format (hep-th/9901001)
+ARXIV_ID_PATTERN = re.compile(r'^(\d{4}\.\d{4,5}|[a-z-]+/\d{7})$')
 
 def _build_arxiv_code_to_label() -> Dict[str, str]:
     """Build mapping of category codes to labels"""
@@ -928,8 +932,6 @@ def profiles_page(user: Dict):
                                                                 st.error(f"Delete failed: {str(e)}")
                                                 except Exception as e:
                                                     log_error("profiles_page.display_paper", e, {"paper": paper})
-                                    else:
-                                        st.caption("No papers uploaded yet")
                                     
                                     # Upload new papers - WITH TABS (Combined logic)
                                     with st.expander("Upload Papers", expanded=False):
@@ -1011,7 +1013,7 @@ def profiles_page(user: Dict):
                                             
                                             arxiv_input = st.text_area(
                                                 "arXiv IDs",
-                                                placeholder="2301.12345\n2302.67890\nor\n2301.12345, 2302.67890",
+                                                placeholder="( \"https://arxiv.org/abs/2601.19018\" ,  \"arXiv:2601.19018\" ,  or  \"2301.12345, 2302.67890\" )",
                                                 key=f"arxiv_input_{profile['id']}",
                                                 height=100
                                             )
@@ -1027,22 +1029,21 @@ def profiles_page(user: Dict):
                                                             for arxiv_id in line.split(','):
                                                                 arxiv_id = arxiv_id.strip()
                                                                 if arxiv_id:
-                                                                    # Remove version suffix if present (e.g., v1, v2)
-                                                                    arxiv_id = arxiv_id.strip()
-                                                                    if arxiv_id:
-                                                                        if arxiv_id.lower().startswith('arxiv:'):
-                                                                            arxiv_id = arxiv_id[6:] # slices off the first 6 characters
-                                                                            
-                                                                        if 'v' in arxiv_id:
-                                                                            arxiv_id = arxiv_id.split('v')[0]
-                                                                            
-                                                                        # Only append valid IDs, with dedup check
-                                                                        try:
-                                                                            float(arxiv_id)
-                                                                            if arxiv_id not in arxiv_ids:
-                                                                                arxiv_ids.append(arxiv_id)
-                                                                        except ValueError:
-                                                                            st.error(f"'{arxiv_id}' doesn't look like a valid arXiv ID.")
+                                                                    # Strip URL prefixes
+                                                                    arxiv_id = re.sub(r'https?://arxiv\.org/(abs|pdf)/', '', arxiv_id)
+                                                                    # Strip arxiv: prefix
+                                                                    if arxiv_id.lower().startswith('arxiv:'):
+                                                                        arxiv_id = arxiv_id[6:]
+                                                                    # Strip trailing version suffix only (v1, v2, etc.)
+                                                                    arxiv_id = re.sub(r'v\d+$', '', arxiv_id)
+                                                                    # Strip trailing .pdf
+                                                                    arxiv_id = arxiv_id.replace('.pdf', '')
+
+                                                                    if ARXIV_ID_PATTERN.match(arxiv_id):
+                                                                        if arxiv_id not in arxiv_ids:
+                                                                            arxiv_ids.append(arxiv_id)
+                                                                    else:
+                                                                        st.error(f"'{arxiv_id}' doesn't look like a valid arXiv ID.")
                                                         
                                                         if not arxiv_ids:
                                                             st.error("No valid arXiv IDs found")
@@ -2345,6 +2346,7 @@ def main():
         
         with h_col1:
             st.write(f"Logged in as: **{user.get('name') or user['email']}** (ID: {user.get('id')})")
+            st.write("Please send feeback to preprintbot@syr.edu")
             
         with h_col2:
             if st.button("Help", use_container_width=True):
