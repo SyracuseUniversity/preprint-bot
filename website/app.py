@@ -2349,7 +2349,7 @@ def main():
         
         with h_col1:
             st.write(f"Logged in as: **{user.get('name') or user['email']}** (ID: {user.get('id')})")
-            st.write("Please send feeback to preprintbot@syr.edu")
+            st.write("Please send feedback to preprintbot@syr.edu")
             
         with h_col2:
             if st.button("Help", use_container_width=True):
