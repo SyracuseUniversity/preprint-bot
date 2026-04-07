@@ -42,11 +42,12 @@ async def send_digest(req: DigestRequest):
 
         rows = await conn.fetch(
             """
-            SELECT p.arxiv_id, p.title, p.abstract, r.score, r.summary
+            SELECT p.arxiv_id, p.title, p.abstract, r.score, r.summary, s.summary_text
             FROM profile_recommendations pr
             JOIN recommendations r ON r.id = pr.recommendation_id
             JOIN recommendation_runs rr ON rr.id = r.run_id
             JOIN papers p ON p.id = r.paper_id
+            LEFT JOIN summaries s ON s.paper_id = p.id
             WHERE pr.profile_id = $1
             AND rr.target_date = $2
             ORDER BY r.score DESC

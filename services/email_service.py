@@ -15,7 +15,7 @@ def build_digest_html(profile_name: str, papers: List[Dict], run_date: str) -> s
         arxiv_id = paper.get("arxiv_id", "")
         title = paper.get("title", "No title")
         score = paper.get("score", 0)
-        summary = paper.get("summary") or paper.get("summary_text") or paper.get("abstract", "")
+        summary = paper.get("summary_text") or paper.get("summary") or paper.get("abstract", "")
         arxiv_url = f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else "#"
 
         rows += f"""
@@ -25,7 +25,7 @@ def build_digest_html(profile_name: str, papers: List[Dict], run_date: str) -> s
                 <a href="{arxiv_url}" style="font-size:15px;font-weight:bold;color:#1a73e8;text-decoration:none;">{title}</a>
                 <br>
                 <span style="font-size:12px;color:#888;">Score: {score:.3f}</span>
-                <p style="margin:8px 0 0;font-size:13px;color:#444;">{summary[:300]}{'...' if len(summary) > 300 else ''}</p>
+                <p style="margin:8px 0 0;font-size:13px;color:#444;">{summary[:600]}{'...' if len(summary) > 600 else ''}</p>
             </td>
         </tr>
         """
