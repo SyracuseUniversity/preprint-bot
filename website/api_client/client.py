@@ -65,6 +65,14 @@ class WebAPIClient:
         response.raise_for_status()
         return response.json()
     
+    async def get_me(self) -> Dict:
+        response = await self.client.get(
+            f"{self.base_url}/auth/me",
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
+    
     # User methods
     async def get_user(self, user_id: int) -> Dict:
         response = await self.client.get(

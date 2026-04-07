@@ -391,31 +391,35 @@ def get_current_user() -> Optional[Dict]:
             logger.debug(f"User from session: {st.session_state['user'].get('email')}")
             return st.session_state['user']
         
-        # Restore from cookies only if we have a valid auth token.
-        # A raw user_id cookie alone is client-controlled and untrusted.
+        # Restore from auth_token cookie only — user_id cookie is NOT trusted
         auth_token = cookie_manager.get('auth_token')
-        user_id = cookie_manager.get('user_id')
 
-        if user_id and auth_token:
-            logger.info(f"Attempting to restore user from cookie: {user_id}")
+        if auth_token:
+            logger.info("Attempting to restore session from auth_token")
             try:
-                api = get_api_client()  # This already injects auth_token via cookie
-                # verify_session validates the token server-side
-                api.verify_session(int(user_id))
-                user = api.get_user(int(user_id))
+                api = get_api_client()
+                user = api.get_me()
+                
                 st.session_state['user'] = user
+                
+                user_id = user.get('id') or user.get('user_id')
+                if user_id:
+                    cookie_manager.set('user_id', str(user_id), max_age=86400)
+                
                 logger.info(f"User restored: {user.get('email')}")
                 return user
+                
             except Exception as e:
-                # Token invalid/expired — clear stale cookies and session token
                 logger.warning(f"Session restore failed, clearing cookies: {e}")
                 cookie_manager.delete('user_id')
                 cookie_manager.delete('auth_token')
-                st.session_state.pop('auth_token', None)
-        elif user_id and not auth_token:
-            # user_id cookie without auth token = untrusted, clear it
-            logger.warning("Found user_id cookie without auth_token, clearing")
-            cookie_manager.delete('user_id')
+                if 'auth_token' in st.session_state:
+                    del st.session_state['auth_token']
+        else:
+            user_id = cookie_manager.get('user_id')
+            if user_id:
+                logger.warning("Found user_id cookie without auth_token, clearing")
+                cookie_manager.delete('user_id')
         
         logger.debug("No user found")
         return None

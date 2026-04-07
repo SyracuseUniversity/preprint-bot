@@ -48,6 +48,9 @@ class SyncWebAPIClient:
     def verify_session(self, user_id: int) -> Dict:
         return self._run_async(self._client.verify_session(user_id))
     
+    def get_me(self) -> Dict:
+        return self._run_async(self._client.get_me())
+    
     # Users
     def get_user(self, user_id: int) -> Dict:
         return self._run_async(self._client.get_user(user_id))

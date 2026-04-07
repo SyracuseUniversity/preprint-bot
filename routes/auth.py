@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 import hashlib
@@ -10,6 +10,7 @@ from database import get_db_pool
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 PBKDF2_ITER = 200_000
+TOKEN_EXPIRY_HOURS = 24
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -48,6 +49,46 @@ def _verify_password(password: str, stored: str) -> bool:
     except Exception:
         return False
 
+async def _create_token(conn, user_id: int) -> str:
+    token = secrets.token_urlsafe(48)
+    expires_at = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRY_HOURS)
+    await conn.execute(
+        "INSERT INTO auth_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)",
+        user_id, token, expires_at
+    )
+    return token
+
+async def _get_user_from_token(request: Request) -> dict:
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    
+    token = auth_header.removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Empty token")
+    
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT u.id, u.email, u.name
+            FROM auth_tokens t
+            JOIN users u ON u.id = t.user_id
+            WHERE t.token = $1 AND t.expires_at > NOW()
+            """,
+            token
+        )
+    
+    if not row:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    return {"user_id": row["id"], "email": row["email"], "name": row["name"]}
+
+@router.get("/me")
+async def me(request: Request):
+    """Return the authenticated user based on their token"""
+    return await _get_user_from_token(request)
+
 @router.post("/login")
 async def login(credentials: UserLogin):
     """Authenticate user and return user info"""
@@ -67,10 +108,13 @@ async def login(credentials: UserLogin):
         if not _verify_password(credentials.password, row['password_hash']):
             raise HTTPException(status_code=401, detail="Invalid email or password")
         
+        token = await _create_token(conn, row['id'])
+        
         return {
             "user_id": row['id'],
             "email": row['email'],
-            "name": row['name']
+            "name": row['name'],
+            "access_token": token
         }
 
 @router.post("/register")
@@ -79,7 +123,6 @@ async def register(user: UserCreate):
     pool = await get_db_pool()
     
     async with pool.acquire() as conn:
-        # Check if user exists
         existing = await conn.fetchrow(
             "SELECT id FROM users WHERE lower(email) = lower($1)",
             user.email
@@ -88,17 +131,19 @@ async def register(user: UserCreate):
         if existing:
             raise HTTPException(status_code=400, detail="Email already registered")
         
-        # Create user with hashed password
         password_hash = _hash_password(user.password)
         row = await conn.fetchrow(
             "INSERT INTO users (email, name, password_hash) VALUES ($1, $2, $3) RETURNING id, email, name",
             user.email, user.name, password_hash
         )
         
+        token = await _create_token(conn, row['id'])
+        
         return {
             "user_id": row['id'],
             "email": row['email'],
-            "name": row['name']
+            "name": row['name'],
+            "access_token": token
         }
 
 @router.post("/request-reset")
