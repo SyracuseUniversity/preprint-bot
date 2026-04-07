@@ -325,8 +325,11 @@ NO_DOT_CATEGORIES = {
     "math-ph", "nucl-ex", "nucl-th", "quant-ph"
 }
 
-# arXiv ID pattern: new format (2301.12345) and old format (hep-th/9901001)
-ARXIV_ID_PATTERN = re.compile(r'^(\d{4}\.\d{4,5}|[a-z-]+/\d{7})$')
+# arXiv ID pattern: new format (2301.12345) and old format (hep-th/9901001, math.GT/0309136)
+ARXIV_ID_PATTERN = re.compile(
+    r'^(\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z-]+)*/\d{7})$',
+    re.IGNORECASE,
+)
 
 def _build_arxiv_code_to_label() -> Dict[str, str]:
     """Build mapping of category codes to labels"""
