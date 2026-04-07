@@ -327,7 +327,7 @@ NO_DOT_CATEGORIES = {
 
 # arXiv ID pattern: new format (2301.12345) and old format (hep-th/9901001, math.GT/0309136)
 ARXIV_ID_PATTERN = re.compile(
-    r'^(\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z-]+)*/\d{7})$',
+    r'^(\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z-]+)?/\d{7})$',
     re.IGNORECASE,
 )
 
