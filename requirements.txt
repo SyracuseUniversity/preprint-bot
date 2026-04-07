@@ -55,7 +55,7 @@ email-validator>=2.0.0
 python-dotenv>=1.0.0
 
 # LLM (optional)
-llama-cpp-python>=0.1.83
+#llama-cpp-python>=0.1.83
 
 # Development and Testing
 pytest>=8.0.0
@@ -75,6 +75,7 @@ gunicorn>=21.2.0
 streamlit==1.50.0
 st-ant-tree
 streamlit-extras>=0.4.0
+extra-streamlit-components
 nest-asyncio>=1.6.0  # Fixes the event loop crash in app.py
 
 # Auth & Speed Improvements
