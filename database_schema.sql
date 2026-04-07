@@ -330,7 +330,6 @@ CREATE INDEX idx_password_resets_user ON public.password_resets(user_id);
 CREATE INDEX idx_password_resets_token ON public.password_resets(token);
 
 -- Auth tokens indexes
-CREATE INDEX idx_auth_tokens_hash ON public.auth_tokens(token_hash);
 CREATE INDEX idx_auth_tokens_user_id ON public.auth_tokens(user_id);
 CREATE INDEX idx_auth_tokens_expires ON public.auth_tokens(expires_at);
 
