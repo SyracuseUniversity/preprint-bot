@@ -4,7 +4,7 @@ from typing import Optional
 import hashlib
 import secrets
 import binascii
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from database import get_db_pool
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -51,10 +51,11 @@ def _verify_password(password: str, stored: str) -> bool:
 
 async def _create_token(conn, user_id: int) -> str:
     token = secrets.token_urlsafe(48)
-    expires_at = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRY_HOURS)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRY_HOURS)
     await conn.execute(
-        "INSERT INTO auth_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)",
-        user_id, token, expires_at
+        "INSERT INTO auth_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)",
+        user_id, token_hash, expires_at
     )
     return token
 
@@ -67,6 +68,8 @@ async def _get_user_from_token(request: Request) -> dict:
     if not token:
         raise HTTPException(status_code=401, detail="Empty token")
     
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -74,9 +77,9 @@ async def _get_user_from_token(request: Request) -> dict:
             SELECT u.id, u.email, u.name
             FROM auth_tokens t
             JOIN users u ON u.id = t.user_id
-            WHERE t.token = $1 AND t.expires_at > NOW()
+            WHERE t.token_hash = $1 AND t.expires_at > NOW()
             """,
-            token
+            token_hash
         )
     
     if not row:
@@ -163,7 +166,7 @@ async def request_password_reset(request: PasswordResetRequest):
         
         # Create reset token
         token = secrets.token_urlsafe(32)
-        expires_at = datetime.utcnow() + timedelta(hours=1)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         
         await conn.execute(
             """
@@ -203,7 +206,7 @@ async def reset_password(reset: PasswordReset):
         if row['used_at']:
             raise HTTPException(status_code=400, detail="Token already used")
         
-        if row['expires_at'] < datetime.utcnow():
+        if row['expires_at'] < datetime.now(timezone.utc):
             raise HTTPException(status_code=400, detail="Token expired")
         
         # Update password
@@ -222,8 +225,14 @@ async def reset_password(reset: PasswordReset):
         return {"message": "Password updated successfully"}
 
 @router.get("/verify/{user_id}")
-async def verify_session(user_id: int):
-    """Verify a user session by ID"""
+async def verify_session(user_id: int, request: Request):
+    """Verify a user session — requires a valid auth token matching the user_id"""
+    # Enforce token auth so this can't be used for user enumeration (IDOR)
+    authenticated = await _get_user_from_token(request)
+    
+    if authenticated["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Token does not match user_id")
+    
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
