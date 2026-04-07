@@ -407,10 +407,11 @@ def get_current_user() -> Optional[Dict]:
                 logger.info(f"User restored: {user.get('email')}")
                 return user
             except Exception as e:
-                # Token invalid/expired — clear stale cookies
+                # Token invalid/expired — clear stale cookies and session token
                 logger.warning(f"Session restore failed, clearing cookies: {e}")
                 cookie_manager.delete('user_id')
                 cookie_manager.delete('auth_token')
+                st.session_state.pop('auth_token', None)
         elif user_id and not auth_token:
             # user_id cookie without auth token = untrusted, clear it
             logger.warning("Found user_id cookie without auth_token, clearing")
