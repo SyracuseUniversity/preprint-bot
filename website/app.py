@@ -363,7 +363,7 @@ ARXIV_CODE_TO_LABEL: Dict[str, str] = _build_arxiv_code_to_label()
 
 def get_api_client() -> SyncWebAPIClient:
     """
-    Creates a fresh client and restores the token securely from cookies.
+    Creates a fresh client and restores the token from cookies.
     """
     logger.info("Creating new API client")
     client = SyncWebAPIClient()
@@ -371,7 +371,7 @@ def get_api_client() -> SyncWebAPIClient:
     # 1. Try to get token from session state first
     token = st.session_state.get('auth_token')
     
-    # 2. If it's empty (page refreshed), check the secure cookie!
+    # 2. If it's empty (page refreshed), check the cookie!
     if not token:
         token = cookie_manager.get('auth_token')
         if token:
@@ -428,7 +428,7 @@ def get_current_user() -> Optional[Dict]:
         return None
 
 def set_current_user(user: Dict):
-    """Set current user in session and securely save to cookies"""
+    """Set current user in session and save to cookies"""
     try:
         logger.info(f"Setting current user: {user.get('email')}")
         

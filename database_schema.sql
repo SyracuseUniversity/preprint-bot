@@ -216,7 +216,7 @@ CREATE TABLE public.password_resets (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     token TEXT NOT NULL UNIQUE,
-    expires_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMPZ NOT NULL,
     used_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
