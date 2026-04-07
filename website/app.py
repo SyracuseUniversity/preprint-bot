@@ -9,8 +9,10 @@ import streamlit.components.v1 as components
 import uuid
 import nest_asyncio
 nest_asyncio.apply()
+import extra_streamlit_components as stx
 import html
 import traceback
+import re
 
 # Optional arxiv client: handled gracefully if not installed.
 try:
@@ -22,7 +24,7 @@ from datetime import datetime, date, timedelta
 
 LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
 
-LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
+cookie_manager = stx.CookieManager()
 
 # Configure logging
 logging.basicConfig(
@@ -323,6 +325,12 @@ NO_DOT_CATEGORIES = {
     "math-ph", "nucl-ex", "nucl-th", "quant-ph"
 }
 
+# arXiv ID pattern: new format (2301.12345) and old format (hep-th/9901001, math.GT/0309136)
+ARXIV_ID_PATTERN = re.compile(
+    r'^(\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z-]+)?/\d{7})$',
+    re.IGNORECASE,
+)
+
 def _build_arxiv_code_to_label() -> Dict[str, str]:
     """Build mapping of category codes to labels"""
     try:
@@ -355,48 +363,63 @@ ARXIV_CODE_TO_LABEL: Dict[str, str] = _build_arxiv_code_to_label()
 
 def get_api_client() -> SyncWebAPIClient:
     """
-    Creates a fresh client for every run to prevent Event Loop crashes,
-    but manually restores the auth token so the user stays logged in.
+    Creates a fresh client and restores the token from cookies.
     """
     logger.info("Creating new API client")
-    # 1. Create a fresh client (starts with token=None)
-    # This attaches to the CURRENT thread's event loop automatically.
     client = SyncWebAPIClient()
     
-    # 2. Check if we have a saved token in the session state
-    # (We will save this in login_page)
+    # 1. Try to get token from session state first
     token = st.session_state.get('auth_token')
     
-    # 3. If we do, inject it into the internal async client
+    # 2. If it's empty (page refreshed), check the cookie!
+    if not token:
+        token = cookie_manager.get('auth_token')
+        if token:
+            st.session_state['auth_token'] = token
+            
+    # 3. Inject into client
     if token:
-        # Access the internal WebAPIClient via ._client and set the token
-        # This assumes your WebAPIClient has a .token attribute or uses .headers
         client._client.token = token
         
     return client
 
 def get_current_user() -> Optional[Dict]:
-    """Get currently logged in user"""
+    """Get currently logged in user safely via cookies"""
     try:
         # Try session first
         if 'user' in st.session_state and st.session_state.get('user'):
             logger.debug(f"User from session: {st.session_state['user'].get('email')}")
             return st.session_state['user']
         
-        # Try to restore from query params
-        query_params = st.query_params
-        user_id = query_params.get('user_id')
-        
-        if user_id:
-            logger.info(f"Attempting to restore user from query params: {user_id}")
+        # Restore from auth_token cookie only — user_id cookie is NOT trusted
+        auth_token = cookie_manager.get('auth_token')
+
+        if auth_token:
+            logger.info("Attempting to restore session from auth_token")
             try:
                 api = get_api_client()
-                user = api.get_user(int(user_id))
+                user = api.get_me()
+                
                 st.session_state['user'] = user
+                
+                user_id = user.get('id') or user.get('user_id')
+                if user_id:
+                    cookie_manager.set('user_id', str(user_id), max_age=86400)
+                
                 logger.info(f"User restored: {user.get('email')}")
                 return user
+                
             except Exception as e:
-                log_error("get_current_user.restore_from_params", e, {"user_id": user_id})
+                logger.warning(f"Session restore failed, clearing cookies: {e}")
+                cookie_manager.delete('user_id')
+                cookie_manager.delete('auth_token')
+                if 'auth_token' in st.session_state:
+                    del st.session_state['auth_token']
+        else:
+            user_id = cookie_manager.get('user_id')
+            if user_id:
+                logger.warning("Found user_id cookie without auth_token, clearing")
+                cookie_manager.delete('user_id')
         
         logger.debug("No user found")
         return None
@@ -405,11 +428,11 @@ def get_current_user() -> Optional[Dict]:
         return None
 
 def set_current_user(user: Dict):
-    """Set current user in session"""
+    """Set current user in session and save to cookies"""
     try:
         logger.info(f"Setting current user: {user.get('email')}")
         
-        # Normalize - make sure both 'id' and 'user_id' exist
+        # Normalize
         if 'user_id' in user and 'id' not in user:
             user['id'] = user['user_id']
         elif 'id' in user and 'user_id' not in user:
@@ -417,22 +440,38 @@ def set_current_user(user: Dict):
         
         st.session_state['user'] = user
         
-        # Add to URL for persistence
+        # Save to cookies instead of URL (Expires in 1 day / 86400 seconds)
         user_id = user.get('user_id') or user.get('id')
         if user_id:
-            st.query_params['user_id'] = str(user_id)
-            logger.debug(f"Added user_id to query params: {user_id}")
+            cookie_manager.set('user_id', str(user_id), max_age=86400)
+            
+        # FIX #1: Save auth token to session and cookies if it exists
+        # Backend may return it as 'access_token', 'token', or 'auth_token'
+        token = user.get('access_token') or user.get('token') or user.get('auth_token')
+        if token:
+            st.session_state['auth_token'] = token
+            cookie_manager.set('auth_token', token, max_age=86400)
+            
+        # Clean the URL to be safe
+        st.query_params.clear()
+        
     except Exception as e:
         log_error("set_current_user", e, {"user": user})
 
 def logout():
-    """Logout current user"""
+    """Logout current user and destroy cookies"""
     try:
         logger.info("Logging out user")
         if 'user' in st.session_state:
             del st.session_state['user']
+        if 'auth_token' in st.session_state:
+            del st.session_state['auth_token']
         
-        # Clear from URL
+        # Destroy the cookies in the browser
+        cookie_manager.delete('user_id')
+        cookie_manager.delete('auth_token')
+        
+        # Clear URL
         st.query_params.clear()
         
         st.success("Logged out successfully")
@@ -901,8 +940,6 @@ def profiles_page(user: Dict):
                                                                 st.error(f"Delete failed: {str(e)}")
                                                 except Exception as e:
                                                     log_error("profiles_page.display_paper", e, {"paper": paper})
-                                    else:
-                                        st.caption("No papers uploaded yet")
                                     
                                     # Upload new papers - WITH TABS (Combined logic)
                                     with st.expander("Upload Papers", expanded=False):
@@ -984,7 +1021,7 @@ def profiles_page(user: Dict):
                                             
                                             arxiv_input = st.text_area(
                                                 "arXiv IDs",
-                                                placeholder="2301.12345\n2302.67890\nor\n2301.12345, 2302.67890",
+                                                placeholder="( \"https://arxiv.org/abs/2601.19018\" ,  \"arXiv:2601.19018\" ,  or  \"2301.12345, 2302.67890\" )",
                                                 key=f"arxiv_input_{profile['id']}",
                                                 height=100
                                             )
@@ -1000,9 +1037,21 @@ def profiles_page(user: Dict):
                                                             for arxiv_id in line.split(','):
                                                                 arxiv_id = arxiv_id.strip()
                                                                 if arxiv_id:
-                                                                    if 'v' in arxiv_id:
-                                                                        arxiv_id = arxiv_id.split('v')[0]
-                                                                    arxiv_ids.append(arxiv_id)
+                                                                    # Strip URL prefixes
+                                                                    arxiv_id = re.sub(r'https?://arxiv\.org/(abs|pdf)/', '', arxiv_id)
+                                                                    # Strip arxiv: prefix
+                                                                    if arxiv_id.lower().startswith('arxiv:'):
+                                                                        arxiv_id = arxiv_id[6:]
+                                                                    # Strip trailing version suffix only (v1, v2, etc.)
+                                                                    arxiv_id = re.sub(r'v\d+$', '', arxiv_id)
+                                                                    # Strip trailing .pdf
+                                                                    arxiv_id = arxiv_id.replace('.pdf', '')
+
+                                                                    if ARXIV_ID_PATTERN.match(arxiv_id):
+                                                                        if arxiv_id not in arxiv_ids:
+                                                                            arxiv_ids.append(arxiv_id)
+                                                                    else:
+                                                                        st.error(f"'{arxiv_id}' doesn't look like a valid arXiv ID.")
                                                         
                                                         if not arxiv_ids:
                                                             st.error("No valid arXiv IDs found")
@@ -2305,6 +2354,7 @@ def main():
         
         with h_col1:
             st.write(f"Logged in as: **{user.get('name') or user['email']}** (ID: {user.get('id')})")
+            st.write("Please send feedback to preprintbot@syr.edu")
             
         with h_col2:
             if st.button("Help", use_container_width=True):

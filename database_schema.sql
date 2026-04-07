@@ -216,9 +216,18 @@ CREATE TABLE public.password_resets (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     token TEXT NOT NULL UNIQUE,
-    expires_at TIMESTAMP NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
     used_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Auth tokens table (session tokens for cookie-based auth)
+CREATE TABLE public.auth_tokens (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ArXiv daily stats table
@@ -319,6 +328,10 @@ CREATE INDEX idx_email_logs_status ON public.email_logs(status);
 -- Password resets indexes
 CREATE INDEX idx_password_resets_user ON public.password_resets(user_id);
 CREATE INDEX idx_password_resets_token ON public.password_resets(token);
+
+-- Auth tokens indexes
+CREATE INDEX idx_auth_tokens_user_id ON public.auth_tokens(user_id);
+CREATE INDEX idx_auth_tokens_expires ON public.auth_tokens(expires_at);
 
 -- ArXiv stats indexes
 CREATE INDEX idx_arxiv_stats_date ON public.arxiv_daily_stats(submission_date);
