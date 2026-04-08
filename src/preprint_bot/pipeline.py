@@ -238,7 +238,7 @@ async def store_sections(api_client: APIClient, corpus_id: int, entries):
     print(f"Stored {sections_stored} total sections")
 
 
-async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, entries, mode: str = "abstract", paper_ids: set = None):
+async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, entries, mode: str = "abstract", paper_ids: set[int] | None = None):
     print(f"\nGenerating summaries using {type(summarizer).__name__}...")
     papers = await api_client.get_papers_by_corpus(corpus_id)
     entry_ids = {e.id.split('/')[-1] for e in entries}
