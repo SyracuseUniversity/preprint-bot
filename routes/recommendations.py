@@ -12,29 +12,35 @@ async def create_recommendation(rec: RecommendationCreate):
     pool = await get_db_pool()
     try:
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO recommendations (run_id, paper_id, score, rank, summary)
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (run_id, paper_id) DO UPDATE
-                    SET score = EXCLUDED.score,
-                        rank = EXCLUDED.rank,
-                        summary = EXCLUDED.summary
-                RETURNING id, run_id, paper_id, score, rank, summary, created_at
-                """,
-                rec.run_id, rec.paper_id, rec.score, rec.rank, rec.summary
-            )
-            await conn.execute(
-                """
-                INSERT INTO profile_recommendations (profile_id, recommendation_id)
-                SELECT rr.profile_id, $1
-                FROM recommendation_runs rr
-                WHERE rr.id = $2
-                ON CONFLICT DO NOTHING
-                """,
-                row['id'], rec.run_id
-            )
-            return dict(row)
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """
+                    WITH ins AS (
+                        INSERT INTO recommendations (run_id, paper_id, score, rank, summary)
+                        VALUES ($1, $2, $3, $4, $5)
+                        ON CONFLICT (run_id, paper_id) DO UPDATE
+                            SET score = EXCLUDED.score,
+                                rank = EXCLUDED.rank,
+                                summary = EXCLUDED.summary
+                        RETURNING id, run_id, paper_id, score, rank, summary, created_at
+                    )
+                    INSERT INTO profile_recommendations (profile_id, recommendation_id)
+                    SELECT rr.profile_id, ins.id
+                    FROM recommendation_runs rr, ins
+                    WHERE rr.id = $1
+                    ON CONFLICT DO NOTHING
+                    RETURNING (SELECT id FROM ins), (SELECT run_id FROM ins),
+                              (SELECT paper_id FROM ins), (SELECT score FROM ins),
+                              (SELECT rank FROM ins), (SELECT summary FROM ins),
+                              (SELECT created_at FROM ins)
+                    """,
+                    rec.run_id, rec.paper_id, rec.score, rec.rank, rec.summary
+                )
+                if not row:
+                    raise HTTPException(status_code=400, detail="Insert failed — profile_id may be missing on run")
+                return dict(row)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
