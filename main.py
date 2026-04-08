@@ -4,14 +4,9 @@ from contextlib import asynccontextmanager
 from database import get_db_pool, close_db_pool
 
 from routes import users, papers, corpora, sections, embeddings, auth, uploads
+from routes import profiles, profile_corpora, summaries, profile_recommendations, email_logs, emails
+from routes import recommendation_runs
 import routes.recommendations as recommendations
-
-try:
-    from routes import profiles, profile_corpora, summaries, profile_recommendations, email_logs, emails
-    HAS_OPTIONAL_ROUTES = True
-except ImportError:
-    HAS_OPTIONAL_ROUTES = False
-    print("Warning: Some optional route modules not found. Core functionality will work.")
 
 
 @asynccontextmanager
@@ -19,9 +14,7 @@ async def lifespan(app: FastAPI):
     print("Starting Preprint Bot API...")
     await get_db_pool()
     print("Database connection pool created")
-    
     yield
-    
     print("Shutting down Preprint Bot API...")
     await close_db_pool()
     print("Database connections closed")
@@ -49,23 +42,16 @@ app.include_router(papers.router)
 app.include_router(corpora.router)
 app.include_router(sections.router)
 app.include_router(embeddings.router)
-app.include_router(recommendations.router)
+app.include_router(recommendation_runs.router)
 app.include_router(recommendations.recommendations_router)
+app.include_router(profiles.router)
+app.include_router(profile_corpora.router)
 app.include_router(summaries.router)
+app.include_router(profile_recommendations.router)
+app.include_router(email_logs.router)
+app.include_router(emails.router)
 app.include_router(auth.router)
 app.include_router(uploads.router)
-
-if HAS_OPTIONAL_ROUTES:
-    try:
-        app.include_router(profiles.router)
-        app.include_router(profile_corpora.router)
-        app.include_router(summaries.router)
-        app.include_router(profile_recommendations.router)
-        app.include_router(email_logs.router)
-        app.include_router(emails.router)
-        print("All route modules loaded")
-    except Exception as e:
-        print(f"Warning loading optional routes: {e}")
 
 
 @app.get("/")
@@ -93,7 +79,6 @@ async def health_check():
         pool = await get_db_pool()
         async with pool.acquire() as conn:
             await conn.fetchval("SELECT 1")
-        
         return {
             "status": "healthy",
             "database": "connected",
@@ -116,7 +101,6 @@ async def get_stats():
             papers_count = await conn.fetchval("SELECT COUNT(*) FROM papers")
             embeddings_count = await conn.fetchval("SELECT COUNT(*) FROM embeddings")
             recommendations_count = await conn.fetchval("SELECT COUNT(*) FROM recommendations")
-            
             return {
                 "users": users_count,
                 "papers": papers_count,

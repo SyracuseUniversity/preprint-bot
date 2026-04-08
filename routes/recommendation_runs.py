@@ -12,11 +12,11 @@ async def create_recommendation_run(run: RecommendationRunCreate):
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO recommendation_runs (profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method)
-                VALUES ($1, $2, $3, $4, $5::float , $6)
-                RETURNING id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, created_at
+                INSERT INTO recommendation_runs (profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, total_papers_fetched, target_date)
+                VALUES ($1, $2, $3, $4, $5::float, $6, $7, $8)
+                RETURNING id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, total_papers_fetched, target_date, created_at
                 """,
-                run.profile_id, run.user_id, run.user_corpus_id, run.ref_corpus_id, run.threshold, run.method
+                run.profile_id, run.user_id, run.user_corpus_id, run.ref_corpus_id, run.threshold, run.method, run.total_papers_fetched, run.target_date
             )
             return dict(row)
     except Exception as e:
@@ -27,7 +27,7 @@ async def get_recommendation_runs():
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, created_at FROM recommendation_runs"
+            "SELECT id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, total_papers_fetched, target_date, created_at FROM recommendation_runs"
         )
         return [dict(row) for row in rows]
 
@@ -36,7 +36,7 @@ async def get_recommendation_run(run_id: int):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, created_at FROM recommendation_runs WHERE id = $1",
+            "SELECT id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, total_papers_fetched, target_date, created_at FROM recommendation_runs WHERE id = $1",
             run_id
         )
         if not row:
@@ -50,4 +50,3 @@ async def delete_recommendation_run(run_id: int):
         result = await conn.execute("DELETE FROM recommendation_runs WHERE id = $1", run_id)
         if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Recommendation run not found")
-

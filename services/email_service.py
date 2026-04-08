@@ -15,7 +15,7 @@ def build_digest_html(profile_name: str, papers: List[Dict], run_date: str) -> s
         arxiv_id = paper.get("arxiv_id", "")
         title = paper.get("title", "No title")
         score = paper.get("score", 0)
-        summary = paper.get("summary") or paper.get("summary_text") or paper.get("abstract", "")
+        summary = paper.get("summary_text") or paper.get("summary") or paper.get("abstract", "")
         arxiv_url = f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else "#"
 
         rows += f"""
@@ -25,7 +25,7 @@ def build_digest_html(profile_name: str, papers: List[Dict], run_date: str) -> s
                 <a href="{arxiv_url}" style="font-size:15px;font-weight:bold;color:#1a73e8;text-decoration:none;">{title}</a>
                 <br>
                 <span style="font-size:12px;color:#888;">Score: {score:.3f}</span>
-                <p style="margin:8px 0 0;font-size:13px;color:#444;">{summary[:300]}{'...' if len(summary) > 300 else ''}</p>
+                <p style="margin:8px 0 0;font-size:13px;color:#444;">{summary[:600]}{'...' if len(summary) > 600 else ''}</p>
             </td>
         </tr>
         """
@@ -59,14 +59,14 @@ def send_email(to_address: str, subject: str, html_body: str) -> bool:
         msg["To"] = to_address
         msg.attach(MIMEText(html_body, "html"))
 
-        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT, timeout=30) as server:
-            server.ehlo()
+        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT, timeout=10) as server:
             server.starttls()
-            server.ehlo()
+            server.login(EMAIL_USER, EMAIL_PASSWORD)
             server.sendmail(EMAIL_FROM_ADDRESS, to_address, msg.as_string())
+
         return True
     except Exception as e:
-        print(f"[email_service] Failed to send to {to_address}: {e}")
+        print(f"Email send failed: {e}")
         return False
 
 

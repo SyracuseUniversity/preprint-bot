@@ -8,7 +8,7 @@ import asyncio
 import sys
 from pathlib import Path
 from typing import List, Dict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date as date_type
 from zoneinfo import ZoneInfo
 import time
 import requests
@@ -48,8 +48,6 @@ async def get_all_profile_categories(api_client: APIClient) -> List[str]:
 
 async def fetch_papers_for_arxiv_day(target_date, categories):
     eastern = ZoneInfo("America/New_York")
-    # arXiv "day": papers submitted between 2 PM Eastern the previous calendar day
-    # and 2 PM Eastern on target_date. Convert this local window to UTC for the API.
     local_end = datetime(
         year=target_date.year,
         month=target_date.month,
@@ -147,7 +145,6 @@ async def fetch_and_store_arxiv(
         if existing:
             continue
 
-        from datetime import timezone
         submitted_date = None
         pub_str = paper_data['metadata'].get('published', '')
         if pub_str:
@@ -241,11 +238,15 @@ async def store_sections(api_client: APIClient, corpus_id: int, entries):
     print(f"Stored {sections_stored} total sections")
 
 
-async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, entries, mode: str = "abstract"):
+async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, entries, mode: str = "abstract", paper_ids: set[int] | None = None):
     print(f"\nGenerating summaries using {type(summarizer).__name__}...")
     papers = await api_client.get_papers_by_corpus(corpus_id)
     entry_ids = {e.id.split('/')[-1] for e in entries}
     papers = [p for p in papers if p.get('arxiv_id') in entry_ids]
+
+    if paper_ids is not None:
+        papers = [p for p in papers if p['id'] in paper_ids]
+        print(f"  Filtered to {len(papers)} recommended papers")
 
     if not papers:
         print("  No papers found to summarize")
@@ -272,10 +273,6 @@ async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, en
 
 
 async def process_user_papers(api_client: APIClient, skip_parse: bool, skip_embed: bool):
-    print("\n" + "="*60)
-    print("STEP: Processing User Papers")
-    print("="*60)
-
     structure = get_user_profile_structure(USER_PDF_DIR)
     if not structure:
         print("No user papers found in user_pdfs/")
@@ -290,6 +287,8 @@ async def process_user_papers(api_client: APIClient, skip_parse: bool, skip_embe
         result = await process_user_profiles(api_client, uid, pids, skip_parse=skip_parse, skip_embed=skip_embed)
         if result:
             for r in result['results']:
+                if r.get('corpus') is None:
+                    continue
                 all_user_corpora.append({
                     'user_id': result['user']['id'],
                     'corpus_id': r['corpus']['id'],
@@ -299,16 +298,14 @@ async def process_user_papers(api_client: APIClient, skip_parse: bool, skip_embe
     return all_user_corpora
 
 
-async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, user_corpora: List, target_date: datetime):
-    print("\n" + "="*60)
-    print("STEP: Generating Recommendations")
-    print("="*60)
-
+async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, user_corpora: List, target_date: datetime) -> set:
     if not user_corpora:
         print("No user corpora to generate recommendations for")
-        return
+        return set()
 
     print(f"Generating recommendations for {len(user_corpora)} user corpora")
+
+    recommended_paper_ids = set()
 
     for corpus_info in user_corpora:
         user_corpus_id = corpus_info['corpus_id']
@@ -330,9 +327,20 @@ async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, 
                 model_name=DEFAULT_MODEL_NAME,
                 use_sections=True
             )
+            if run_id is None:
+                print(f"    ✗ Skipped: no embeddings found")
+                continue
             print(f"    ✓ Created recommendation run ID: {run_id}")
+
+            recs = await api_client.get_recommendations_by_run(run_id)
+            for rec in recs:
+                recommended_paper_ids.add(rec['paper_id'])
+
         except Exception as e:
             print(f"    ✗ Failed: {e}")
+
+    print(f"\n  Total unique recommended papers: {len(recommended_paper_ids)}")
+    return recommended_paper_ids
 
 
 async def send_all_digests(api_client: APIClient, run_date: str = None):
@@ -413,8 +421,11 @@ async def run_pipeline(args):
             skip_parse=args.skip_parse
         )
 
+        entries = entries or []
+        user_corpora = []
+
         if not entries:
-            print("No new papers fetched. Skipping embedding and summarization.")
+            print("No new papers fetched. Skipping embedding, recommendations, and summarization.")
         else:
             print("\n" + "="*60)
             print("STEP 3: Generating Embeddings")
@@ -444,15 +455,15 @@ async def run_pipeline(args):
             else:
                 print("Skipping summarization.")
 
-        print("\n" + "="*60)
-        print("STEP 5: Processing User Papers")
-        print("="*60)
-        user_corpora = await process_user_papers(api_client, skip_parse=args.skip_parse, skip_embed=args.skip_embed)
+            print("\n" + "="*60)
+            print("STEP 5: Processing User Papers")
+            print("="*60)
+            user_corpora = await process_user_papers(api_client, skip_parse=args.skip_parse, skip_embed=args.skip_embed)
 
-        print("\n" + "="*60)
-        print("STEP 6: Generating Recommendations")
-        print("="*60)
-        await generate_recommendations(api_client, corpus_id, user_corpora, target_date)
+            print("\n" + "="*60)
+            print("STEP 6: Generating Recommendations")
+            print("="*60)
+            await generate_recommendations(api_client, corpus_id, user_corpora, target_date)
 
         print("\n" + "="*60)
         print("STEP 7: Cleanup")

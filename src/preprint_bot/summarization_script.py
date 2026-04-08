@@ -1,6 +1,4 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '' 
-import os
 import re
 from pathlib import Path
 from nltk.tokenize import sent_tokenize
@@ -137,12 +135,12 @@ class LlamaSummarizer:
 
         # Always use abstract summarization prompt
         prompt_text = (
-            "Task: Write a 3-sentence summary of this research abstract.\n"
+            "Task: Write a 2-sentence summary of this research abstract.\n"
             "Rules:\n"
-            "- Exactly 3 sentences\n"
+            "- Exactly 2 sentences\n"
             "- Focus on main contribution and results\n"
             "- No meta-commentary, word counts, or extra text\n"
-            "- Stop after the third sentence\n\n"
+            "- Stop after the second sentence\n\n"
             f"Abstract:\n{text}\n\n"
             "Summary:\n"
         )

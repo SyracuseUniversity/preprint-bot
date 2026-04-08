@@ -1,109 +1,49 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
-from schemas import (
-    RecommendationRunCreate, RecommendationRunResponse,
-    RecommendationCreate, RecommendationResponse
-)
+from schemas import RecommendationCreate, RecommendationResponse
 from database import get_db_pool
 import json
 
-router = APIRouter(prefix="/recommendation-runs", tags=["recommendation-runs"])
-
-# Recommendation Run endpoints
-@router.post("/", response_model=RecommendationRunResponse, status_code=201)
-async def create_recommendation_run(run: RecommendationRunCreate):
-    pool = await get_db_pool()
-    try:
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO recommendation_runs (profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, total_papers_fetched)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                RETURNING id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, total_papers_fetched, created_at
-                """,
-                run.profile_id, run.user_id, run.user_corpus_id, run.ref_corpus_id, run.threshold, run.method, run.total_papers_fetched
-            )
-            return dict(row)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@router.get("/{run_id}", response_model=RecommendationRunResponse)
-async def get_recommendation_run(run_id: int):
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, total_papers_fetched, created_at FROM recommendation_runs WHERE id = $1",
-            run_id
-        )
-        if not row:
-            raise HTTPException(status_code=404, detail="Recommendation run not found")
-        return dict(row)
-
-@router.get("/", response_model=List[RecommendationRunResponse])
-async def get_recommendation_runs():
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, created_at FROM recommendation_runs"
-        )
-        return [dict(row) for row in rows]
-
-@router.get("/{run_id}", response_model=RecommendationRunResponse)
-async def get_recommendation_run(run_id: int):
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT id, profile_id, user_id, user_corpus_id, ref_corpus_id, threshold, method, created_at FROM recommendation_runs WHERE id = $1",
-            run_id
-        )
-        if not row:
-            raise HTTPException(status_code=404, detail="Recommendation run not found")
-        return dict(row)
-
-@router.delete("/{run_id}", status_code=204)
-async def delete_recommendation_run(run_id: int):
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        result = await conn.execute("DELETE FROM recommendation_runs WHERE id = $1", run_id)
-        if result == "DELETE 0":
-            raise HTTPException(status_code=404, detail="Recommendation run not found")
-
-
-# Add recommendations router
 recommendations_router = APIRouter(prefix="/recommendations", tags=["recommendations"])
+
 
 @recommendations_router.post("/", response_model=RecommendationResponse, status_code=201)
 async def create_recommendation(rec: RecommendationCreate):
     pool = await get_db_pool()
     try:
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO recommendations (run_id, paper_id, score, rank, summary)
-                VALUES ($1, $2, $3, $4, $5)
-                RETURNING id, run_id, paper_id, score, rank, summary, created_at
-                """,
-                rec.run_id, rec.paper_id, rec.score, rec.rank, rec.summary
-            )
-            rec_id = await conn.fetchval(
-                """
-                WITH ins AS (
-                    INSERT INTO recommendations (run_id, paper_id, score, method)
-                    VALUES ($1, $2, $3, $4)
-                    RETURNING id
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    """
+                    WITH ins AS (
+                        INSERT INTO recommendations (run_id, paper_id, score, rank, summary)
+                        VALUES ($1, $2, $3, $4, $5)
+                        ON CONFLICT (run_id, paper_id) DO UPDATE
+                            SET score = EXCLUDED.score,
+                                rank = EXCLUDED.rank,
+                                summary = EXCLUDED.summary
+                        RETURNING id, run_id, paper_id, score, rank, summary, created_at
+                    )
+                    INSERT INTO profile_recommendations (profile_id, recommendation_id)
+                    SELECT rr.profile_id, ins.id
+                    FROM recommendation_runs rr, ins
+                    WHERE rr.id = $1
+                    ON CONFLICT DO NOTHING
+                    RETURNING (SELECT id FROM ins), (SELECT run_id FROM ins),
+                              (SELECT paper_id FROM ins), (SELECT score FROM ins),
+                              (SELECT rank FROM ins), (SELECT summary FROM ins),
+                              (SELECT created_at FROM ins)
+                    """,
+                    rec.run_id, rec.paper_id, rec.score, rec.rank, rec.summary
                 )
-                INSERT INTO profile_recommendations (profile_id, recommendation_id)
-                SELECT rr.profile_id, ins.id
-                FROM recommendation_runs rr, ins
-                WHERE rr.id = $1
-                ON CONFLICT DO NOTHING
-                RETURNING (SELECT id FROM ins)
-                """,
-                rec.run_id, rec.paper_id, rec.score, rec.method
-            )
-            return dict(row)
+                if not row:
+                    raise HTTPException(status_code=400, detail="Insert failed — profile_id may be missing on run")
+                return dict(row)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 
 @recommendations_router.get("/", response_model=List[RecommendationResponse])
 async def get_recommendations(run_id: Optional[int] = Query(None)):
@@ -120,21 +60,9 @@ async def get_recommendations(run_id: Optional[int] = Query(None)):
             )
         return [dict(row) for row in rows]
 
-@recommendations_router.get("/{rec_id}", response_model=RecommendationResponse)
-async def get_recommendation(rec_id: int):
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT id, run_id, paper_id, score, rank, summary, created_at FROM recommendations WHERE id = $1",
-            rec_id
-        )
-        if not row:
-            raise HTTPException(status_code=404, detail="Recommendation not found")
-        return dict(row)
 
 @recommendations_router.get("/run/{run_id}/with-papers")
 async def get_recommendations_with_papers(run_id: int, limit: int = Query(50, ge=1, le=100)):
-    """Get recommendations with full paper details"""
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -152,7 +80,6 @@ async def get_recommendations_with_papers(run_id: int, limit: int = Query(50, ge
             """,
             run_id, limit
         )
-        
         results = []
         for row in rows:
             result = dict(row)
@@ -162,48 +89,30 @@ async def get_recommendations_with_papers(run_id: int, limit: int = Query(50, ge
                 except:
                     pass
             results.append(result)
-        
         return results
-
-@recommendations_router.delete("/{rec_id}", status_code=204)
-async def delete_recommendation(rec_id: int):
-    pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        result = await conn.execute("DELETE FROM recommendations WHERE id = $1", rec_id)
-        if result == "DELETE 0":
-            raise HTTPException(status_code=404, detail="Recommendation not found")
 
 
 @recommendations_router.get("/profile/{profile_id}")
 async def get_recommendations_by_profile(profile_id: int, limit: int = Query(5000)):
-    """Get unique recommendations per paper (highest score) for a specific profile"""
     pool = await get_db_pool()
     async with pool.acquire() as conn:
-        # Get profile
         profile = await conn.fetchrow(
             "SELECT user_id, top_x FROM profiles WHERE id = $1",
             profile_id
         )
-        
         if not profile:
             return []
-        
+
         user_id = profile['user_id']
-        
-        # Get the user corpus for this profile
         corpus_name = f"user_{user_id}_profile_{profile_id}"
-        
         corpus = await conn.fetchrow(
             "SELECT id FROM corpora WHERE user_id = $1 AND name = $2",
             user_id, corpus_name
         )
-        
         if not corpus:
             return []
-        
+
         user_corpus_id = corpus['id']
-        
-        # Use DISTINCT ON to get one recommendation per paper (highest score)
         rows = await conn.fetch(
             """
             SELECT DISTINCT ON (p.arxiv_id)
@@ -221,7 +130,6 @@ async def get_recommendations_by_profile(profile_id: int, limit: int = Query(500
             """,
             user_corpus_id, limit
         )
-        
         results = []
         for row in rows:
             result = dict(row)
@@ -231,5 +139,26 @@ async def get_recommendations_by_profile(profile_id: int, limit: int = Query(500
                 except:
                     pass
             results.append(result)
-        
         return results
+
+
+@recommendations_router.get("/{rec_id}", response_model=RecommendationResponse)
+async def get_recommendation(rec_id: int):
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, run_id, paper_id, score, rank, summary, created_at FROM recommendations WHERE id = $1",
+            rec_id
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Recommendation not found")
+        return dict(row)
+
+
+@recommendations_router.delete("/{rec_id}", status_code=204)
+async def delete_recommendation(rec_id: int):
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute("DELETE FROM recommendations WHERE id = $1", rec_id)
+        if result == "DELETE 0":
+            raise HTTPException(status_code=404, detail="Recommendation not found")

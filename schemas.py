@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 from enum import Enum
 
 # Enums
@@ -205,6 +205,7 @@ class RecommendationRunCreate(BaseModel):
     threshold: Optional[float] = None
     method: Optional[str] = None
     total_papers_fetched: Optional[int] = 0
+    target_date: Optional[date] = None
 
 class RecommendationRunResponse(BaseModel):
     id: int
@@ -214,6 +215,8 @@ class RecommendationRunResponse(BaseModel):
     ref_corpus_id: int
     threshold: Optional[float]
     method: Optional[str]
+    total_papers_fetched: Optional[int]
+    target_date: Optional[date]
     created_at: datetime
 
 # Recommendation Schemas

@@ -242,7 +242,8 @@ class APIClient:
     
     async def create_recommendation_run(self, profile_id: int, user_id: int,
                                     user_corpus_id: int, ref_corpus_id: int,
-                                    threshold: str, method: str, total_papers_fetched: int = 0) -> Dict:
+                                    threshold: str, method: str, total_papers_fetched: int = 0,
+                                    target_date=None) -> Dict:
         response = await self.client.post(
             f"{self.base_url}/recommendation-runs/",
             json={
@@ -252,7 +253,8 @@ class APIClient:
                 "ref_corpus_id": ref_corpus_id,
                 "threshold": threshold,
                 "method": method,
-                "total_papers_fetched": total_papers_fetched  # ADD THIS
+                "total_papers_fetched": total_papers_fetched,
+                "target_date": str(target_date) if target_date else None
             }
         )
         response.raise_for_status()

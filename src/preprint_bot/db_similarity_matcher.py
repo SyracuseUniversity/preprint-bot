@@ -129,14 +129,15 @@ async def run_similarity_matching(
     
     # Create recommendation run with total_papers_fetched
     run = await api_client.create_recommendation_run(
-        profile_id=profile_id,
-        user_id=user_id,
-        user_corpus_id=user_corpus_id,
-        ref_corpus_id=arxiv_corpus_id,
-        threshold=threshold,
-        method=f"{method}_{'sections' if use_sections else 'abstract'}",
-        total_papers_fetched=total_papers_fetched  # ADD THIS
-    )
+            profile_id=profile_id,
+            user_id=user_id,
+            user_corpus_id=user_corpus_id,
+            ref_corpus_id=arxiv_corpus_id,
+            threshold=threshold,
+            method=f"{method}_{'sections' if use_sections else 'abstract'}",
+            total_papers_fetched=total_papers_fetched,
+            target_date=target_date.date() if target_date else None
+        )
     run_id = run["id"]
     print(f"\nCreated recommendation run ID: {run_id}")
     
