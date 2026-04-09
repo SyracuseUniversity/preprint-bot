@@ -328,7 +328,19 @@ class WebAPIClient:
     async def add_paper_from_arxiv(self, user_id: int, profile_id: int, arxiv_id: str) -> Dict:
         response = await self.client.post(
             f"{self.base_url}/uploads/arxiv/{user_id}/{profile_id}",
-            json={"arxiv_id": arxiv_id}
+            json={"arxiv_id": arxiv_id},
+            headers=self._get_headers()
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def set_token(self, token: str):
+        self.token = token
+
+    async def get_arxiv_stats_for_date(self, date: str) -> Dict:
+        response = await self.client.get(
+            f"{self.base_url}/papers/arxiv-stats/date/{date}",
+            headers=self._get_headers()
         )
         response.raise_for_status()
         return response.json()

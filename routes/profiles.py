@@ -1,14 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from typing import List
 from schemas import ProfileCreate, ProfileUpdate, ProfileResponse
 from database import get_db_pool
 from datetime import datetime
 from typing import Optional
+from routes.auth import _get_user_from_token
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 
 @router.post("/", response_model=ProfileResponse, status_code=201)
-async def create_profile(profile: ProfileCreate):
+async def create_profile(profile: ProfileCreate, request: Request):
+    await _get_user_from_token(request)
     pool = await get_db_pool()
     try:
         async with pool.acquire() as conn:
@@ -26,7 +28,8 @@ async def create_profile(profile: ProfileCreate):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/", response_model=List[ProfileResponse])
-async def get_profiles():
+async def get_profiles(request: Request):
+    await _get_user_from_token(request)
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -35,7 +38,8 @@ async def get_profiles():
         return [dict(row) for row in rows]
 
 @router.get("/{profile_id}", response_model=ProfileResponse)
-async def get_profile(profile_id: int):
+async def get_profile(profile_id: int, request: Request):
+    await _get_user_from_token(request)
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -47,7 +51,8 @@ async def get_profile(profile_id: int):
         return dict(row)
 
 @router.put("/{profile_id}", response_model=ProfileResponse)
-async def update_profile(profile_id: int, profile: ProfileUpdate):
+async def update_profile(profile_id: int, profile: ProfileUpdate, request: Request):
+    await _get_user_from_token(request)
     pool = await get_db_pool()
     updates = []
     values = []
@@ -61,7 +66,7 @@ async def update_profile(profile_id: int, profile: ProfileUpdate):
         updates.append(f"keywords = ${idx}")
         values.append(profile.keywords)
         idx += 1
-    if profile.categories is not None:  # ADD THIS BLOCK
+    if profile.categories is not None:
         updates.append(f"categories = ${idx}")
         values.append(profile.categories)
         idx += 1
@@ -101,7 +106,8 @@ async def update_profile(profile_id: int, profile: ProfileUpdate):
         return dict(row)
 
 @router.delete("/{profile_id}", status_code=204)
-async def delete_profile(profile_id: int):
+async def delete_profile(profile_id: int, request: Request):
+    await _get_user_from_token(request)
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         result = await conn.execute("DELETE FROM profiles WHERE id = $1", profile_id)
