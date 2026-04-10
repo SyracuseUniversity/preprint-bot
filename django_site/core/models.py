@@ -1,18 +1,23 @@
 """
-Django ORM models mapped to the existing preprint_bot PostgreSQL schema.
+Django ORM models for Preprint Bot.
 
-Every model uses ``managed = False`` so that ``migrate`` never touches
-the tables that were created by ``database_schema.sql``.
+All models are fully managed by Django (migrations create/alter the tables).
+Table names match the original schema so the FastAPI backend still works.
 """
 
 from django.db import models
 from django.contrib.postgres.fields import ArrayField
 
+try:
+    from pgvector.django import VectorField
+except ImportError:
+    VectorField = None
+
 
 # ── Users ──────────────────────────────────────────────────────────────────
 
 class PBUser(models.Model):
-    """Maps to the public.users table."""
+    """System users and researchers."""
 
     email = models.CharField(max_length=255, unique=True)
     name = models.CharField(max_length=255, blank=True, null=True)
@@ -21,7 +26,6 @@ class PBUser(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        managed = False
         db_table = "users"
 
     def __str__(self):
@@ -31,21 +35,26 @@ class PBUser(models.Model):
 # ── Profiles ───────────────────────────────────────────────────────────────
 
 class Profile(models.Model):
-    """Maps to the public.profiles table."""
+    """User research profiles and preferences."""
+
+    FREQUENCY_CHOICES = [
+        ("daily", "Daily"),
+        ("weekly", "Weekly"),
+        ("monthly", "Monthly"),
+    ]
 
     user = models.ForeignKey(PBUser, on_delete=models.CASCADE, related_name="profiles")
     name = models.CharField(max_length=255)
     keywords = ArrayField(models.TextField(), default=list, blank=True)
     categories = ArrayField(models.TextField(), default=list, blank=True)
     email_notify = models.BooleanField(default=True)
-    frequency = models.CharField(max_length=20, default="weekly")
-    threshold = models.CharField(max_length=20, default="medium")
+    frequency = models.CharField(max_length=20, choices=FREQUENCY_CHOICES, default="weekly")
+    threshold = models.FloatField(default=0.6)
     top_x = models.IntegerField(default=10)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        managed = False
         db_table = "profiles"
         unique_together = [("user", "name")]
 
@@ -56,7 +65,7 @@ class Profile(models.Model):
 # ── Corpora ────────────────────────────────────────────────────────────────
 
 class Corpus(models.Model):
-    """Maps to the public.corpora table."""
+    """Collections of papers (arXiv corpus or user collections)."""
 
     user = models.ForeignKey(PBUser, on_delete=models.CASCADE, related_name="corpora")
     name = models.CharField(max_length=255)
@@ -65,7 +74,6 @@ class Corpus(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        managed = False
         db_table = "corpora"
         unique_together = [("user", "name")]
         verbose_name_plural = "corpora"
@@ -82,7 +90,6 @@ class ProfileCorpus(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
         db_table = "profile_corpora"
         unique_together = [("profile", "corpus")]
 
@@ -90,22 +97,23 @@ class ProfileCorpus(models.Model):
 # ── Papers ─────────────────────────────────────────────────────────────────
 
 class Paper(models.Model):
-    """Maps to the public.papers table."""
+    """Academic papers from arXiv or user uploads."""
+
+    SOURCE_CHOICES = [("user", "User"), ("arxiv", "arXiv")]
 
     corpus = models.ForeignKey(Corpus, on_delete=models.CASCADE, related_name="papers")
     arxiv_id = models.CharField(max_length=50, unique=True, blank=True, null=True)
     title = models.TextField()
     abstract = models.TextField(blank=True, null=True)
-    metadata = models.JSONField(default=dict, blank=True, null=True)  # jsonb
+    metadata = models.JSONField(default=dict, blank=True, null=True)
     pdf_path = models.TextField(blank=True, null=True)
     processed_text_path = models.TextField(blank=True, null=True)
-    source = models.CharField(max_length=20, default="arxiv")
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="arxiv")
     submitted_date = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        managed = False
         db_table = "papers"
 
     def __str__(self):
@@ -119,7 +127,6 @@ class Paper(models.Model):
 
     @property
     def categories_list(self):
-        """Extract categories from the metadata JSON."""
         if self.metadata and isinstance(self.metadata, dict):
             return self.metadata.get("categories", [])
         return []
@@ -135,24 +142,64 @@ class Section(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
         db_table = "sections"
 
 
 # ── Summaries ──────────────────────────────────────────────────────────────
 
 class Summary(models.Model):
+    MODE_CHOICES = [("abstract", "Abstract"), ("full", "Full")]
+
     paper = models.ForeignKey(Paper, on_delete=models.CASCADE, related_name="summaries")
-    mode = models.CharField(max_length=20, default="abstract")
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default="abstract")
     summary_text = models.TextField(blank=True, null=True)
     summarizer = models.CharField(max_length=100, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
         db_table = "summaries"
         unique_together = [("paper", "mode")]
         verbose_name_plural = "summaries"
+
+
+# ── Embeddings ─────────────────────────────────────────────────────────────
+
+class Embedding(models.Model):
+    """Vector embeddings for semantic similarity search.
+    Requires the ``pgvector-django`` package for the vector(384) column.
+    """
+
+    TYPE_CHOICES = [("abstract", "Abstract"), ("section", "Section")]
+
+    paper = models.ForeignKey(Paper, on_delete=models.CASCADE, related_name="embeddings")
+    section = models.ForeignKey(
+        Section, on_delete=models.CASCADE, blank=True, null=True, related_name="embeddings"
+    )
+    if VectorField:
+        embedding = VectorField(dimensions=384)
+    else:
+        embedding = models.TextField(help_text="Install pgvector-django for proper vector support")
+    type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="abstract")
+    model_name = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "embeddings"
+
+
+# ── Processing runs ────────────────────────────────────────────────────────
+
+class ProcessingRun(models.Model):
+    run_type = models.CharField(max_length=50)
+    category = models.CharField(max_length=50, blank=True, null=True)
+    status = models.CharField(max_length=20, default="started")
+    papers_processed = models.IntegerField(default=0)
+    error_message = models.TextField(blank=True, null=True)
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = "processing_runs"
 
 
 # ── Recommendation runs ───────────────────────────────────────────────────
@@ -162,12 +209,8 @@ class RecommendationRun(models.Model):
         Profile, on_delete=models.CASCADE, blank=True, null=True, related_name="runs"
     )
     user = models.ForeignKey(PBUser, on_delete=models.CASCADE, related_name="recommendation_runs")
-    user_corpus = models.ForeignKey(
-        Corpus, on_delete=models.CASCADE, related_name="user_runs"
-    )
-    ref_corpus = models.ForeignKey(
-        Corpus, on_delete=models.CASCADE, related_name="ref_runs"
-    )
+    user_corpus = models.ForeignKey(Corpus, on_delete=models.CASCADE, related_name="user_runs")
+    ref_corpus = models.ForeignKey(Corpus, on_delete=models.CASCADE, related_name="ref_runs")
     threshold = models.CharField(max_length=20, blank=True, null=True)
     method = models.CharField(max_length=20, blank=True, null=True)
     total_papers_fetched = models.IntegerField(default=0)
@@ -176,7 +219,6 @@ class RecommendationRun(models.Model):
     completed_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
-        managed = False
         db_table = "recommendation_runs"
 
 
@@ -193,7 +235,6 @@ class Recommendation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
         db_table = "recommendations"
         unique_together = [("run", "paper")]
 
@@ -206,7 +247,6 @@ class ProfileRecommendation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
         db_table = "profile_recommendations"
         unique_together = [("profile", "recommendation")]
 
@@ -220,7 +260,6 @@ class AuthToken(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
         db_table = "auth_tokens"
 
 
@@ -234,22 +273,33 @@ class PasswordReset(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
         db_table = "password_resets"
 
 
 # ── Email logs ─────────────────────────────────────────────────────────────
 
 class EmailLog(models.Model):
+    STATUS_CHOICES = [("sent", "Sent"), ("failed", "Failed")]
+
     user = models.ForeignKey(PBUser, on_delete=models.CASCADE, related_name="email_logs")
-    profile = models.ForeignKey(
-        Profile, on_delete=models.SET_NULL, blank=True, null=True
-    )
+    profile = models.ForeignKey(Profile, on_delete=models.SET_NULL, blank=True, null=True)
     subject = models.TextField(blank=True, null=True)
     body = models.TextField(blank=True, null=True)
-    status = models.CharField(max_length=20, default="sent")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="sent")
     sent_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        managed = False
         db_table = "email_logs"
+
+
+# ── ArXiv daily stats ─────────────────────────────────────────────────────
+
+class ArxivDailyStats(models.Model):
+    submission_date = models.DateField()
+    category = models.CharField(max_length=50)
+    total_papers = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "arxiv_daily_stats"
+        unique_together = [("submission_date", "category")]

@@ -76,13 +76,6 @@ FREQUENCY_CHOICES = [
 ]
 
 
-THRESHOLD_CHOICES = [
-    ("low", "Low – broader results (0.5)"),
-    ("medium", "Medium – balanced (0.6)"),
-    ("high", "High – stricter matching (0.75)"),
-]
-
-
 class ProfileForm(forms.Form):
     """Create / edit a research profile."""
 
@@ -91,10 +84,12 @@ class ProfileForm(forms.Form):
         widget=forms.TextInput(attrs={"placeholder": "e.g. AI Research"}),
     )
     frequency = forms.ChoiceField(choices=FREQUENCY_CHOICES, initial="weekly")
-    threshold = forms.ChoiceField(
-        choices=THRESHOLD_CHOICES,
-        initial="medium",
-        help_text="Controls how similar a paper must be to yours to be recommended.",
+    threshold = forms.FloatField(
+        min_value=0.40,
+        max_value=0.75,
+        initial=0.575,
+        widget=forms.HiddenInput(),  # actual input is the range slider in the template
+        help_text="Lower = more results, higher = stricter matching.",
     )
     top_x = forms.IntegerField(
         min_value=5,

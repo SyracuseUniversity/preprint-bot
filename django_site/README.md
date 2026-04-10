@@ -20,8 +20,8 @@ Connects to the **same PostgreSQL database** used by the FastAPI backend.
 ```
 
 Both the FastAPI backend (which runs the recommendation pipeline) and this
-Django site read/write the same tables. Django models use `managed = False`
-so `migrate` never touches the existing schema.
+Django site read/write the same tables. Django models are fully managed
+and create the schema via `makemigrations` / `migrate`.
 
 ## Prerequisites
 
@@ -65,11 +65,11 @@ brew install pgvector
 ## Quick Start
 
 ```bash
-# 1. Set up the database (run from the project root, next to database_schema.sql)
+# 1. Set up the database (run from the project root)
 chmod +x setup_database.sh
 ./setup_database.sh
 #    → prompts for DB name, user, password, etc.
-#    → creates the database, loads the schema, writes django_site/.env
+#    → creates the database and user, writes django_site/.env
 
 # 2. Create a virtual environment and install dependencies
 cd django_site
@@ -77,16 +77,19 @@ python3 -m venv venv
 source venv/bin/activate          # On Windows WSL this is the same
 pip install -r requirements.txt
 
-# 3. Run Django migrations (creates Django's own tables: sessions, admin, etc.)
+# 3. Generate and run migrations (creates ALL tables — extensions, app, Django)
+python manage.py makemigrations core
 python manage.py migrate
 
 # 4. Start the dev server
 python manage.py runserver 0.0.0.0:8001
 ```
 
-Visit http://localhost:8001 and sign in with any account that already
-exists in the `users` table (created via the Streamlit/FastAPI frontend),
-or register a new account directly.
+Visit http://localhost:8001 and register a new account.
+
+> **Note:** `makemigrations core` only needs to run once (or whenever you
+> change `models.py`). The generated migration files go into
+> `core/migrations/` and should be committed to version control.
 
 > **WSL note:** PostgreSQL won't auto-start when you open a new terminal.
 > Run `sudo pg_ctlcluster 16 main start` each time, or add it to your
@@ -116,7 +119,7 @@ django_site/
 │   ├── urls.py
 │   └── wsgi.py
 └── core/                      # Main application
-    ├── models.py              # ORM models (managed=False)
+    ├── models.py              # ORM models (fully managed by Django)
     ├── views.py               # All view functions
     ├── urls.py                # URL routing
     ├── forms.py               # Django forms
@@ -160,9 +163,9 @@ django_site/
   The FastAPI backend + `preprint_bot` CLI still handle fetching, embedding,
   and generating recommendations. This site is purely a frontend.
 
-- Django's `migrate` creates its own tables (`django_session`,
-  `django_content_type`, etc.) but does **not** touch the preprint_bot
-  tables because all models use `managed = False`.
+- Django's `migrate` creates **all** tables — both the application tables
+  (users, profiles, papers, etc.) and Django's own tables (sessions, admin).
+  The `database_schema.sql` file from the FastAPI project is no longer needed.
 
 - The arXiv "Add from arXiv" feature in the profile page downloads PDFs
   via `requests` and saves them to the `pdf_data/user_pdfs/` directory,

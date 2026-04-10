@@ -18,16 +18,23 @@
       {{ form.name }}
     </div>
 
-    <div class="grid-2">
-      <div class="form-group">
-        <label for="id_frequency">Email Frequency</label>
-        {{ form.frequency }}
+    <div class="form-group">
+      <label for="id_frequency">Email Frequency</label>
+      {{ form.frequency }}
+    </div>
+
+    <div class="form-group">
+      <label>Similarity Threshold</label>
+      {{ form.threshold }}
+      <input type="range" id="threshold-slider" min="0.40" max="0.75" step="0.01"
+             value="{{ form.threshold.value|default:'0.575' }}"
+             oninput="document.getElementById('id_threshold').value=this.value; document.getElementById('threshold-display').textContent=this.value;">
+      <div style="display:flex; justify-content:space-between; font-size:.75rem; color:var(--text-dim);">
+        <span>Low (0.40)</span>
+        <span id="threshold-display" style="font-weight:600;">{{ form.threshold.value|default:"0.575" }}</span>
+        <span>High (0.75)</span>
       </div>
-      <div class="form-group">
-        <label for="id_threshold">Similarity Threshold</label>
-        {{ form.threshold }}
-        <div class="form-help">{{ form.threshold.help_text }}</div>
-      </div>
+      <div class="form-help">Lower = more results, higher = stricter matching.</div>
     </div>
 
     <div class="grid-2">
