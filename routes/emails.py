@@ -1,11 +1,10 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from typing import Optional
 from datetime import date, datetime
 from database import get_db_pool
 from services.email_service import send_recommendations_digest, send_email
-from routes.auth import _get_user_from_token
 
 router = APIRouter(prefix="/emails", tags=["emails"])
 
@@ -17,8 +16,7 @@ class DigestRequest(BaseModel):
 
 
 @router.post("/send-digest")
-async def send_digest(req: DigestRequest, request: Request):
-    await _get_user_from_token(request)
+async def send_digest(req: DigestRequest):
     pool = await get_db_pool()
     run_date = req.run_date or str(date.today())
     run_date_obj = datetime.strptime(run_date, "%Y-%m-%d").date()
@@ -89,8 +87,7 @@ async def send_digest(req: DigestRequest, request: Request):
 
 
 @router.post("/test-email")
-async def test_email(to_email: str, request: Request):
-    await _get_user_from_token(request)
+async def test_email(to_email: str):
     success = await run_in_threadpool(
         send_email,
         to_address=to_email,

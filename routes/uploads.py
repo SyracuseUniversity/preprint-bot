@@ -1,14 +1,13 @@
 from fastapi.responses import StreamingResponse
 from .progress_tracker import progress_tracker
 import json
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
 from typing import List
 import shutil
 from database import get_db_pool
 from config import USER_PDF_DIR
 import asyncio
 from fastapi import Body
-from routes.auth import _get_user_from_token
 
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
@@ -17,17 +16,20 @@ router = APIRouter(prefix="/uploads", tags=["uploads"])
 async def upload_paper(
     user_id: int,
     profile_id: int,
-    request: Request,
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = None
 ):
-    await _get_user_from_token(request)
+    """Upload a PDF paper for a user profile"""
+    
+    # Validate file type
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
     
+    # Create directories
     user_pdf_dir = USER_PDF_DIR / str(user_id) / str(profile_id)
     user_pdf_dir.mkdir(parents=True, exist_ok=True)
     
+    # Save file
     file_path = user_pdf_dir / file.filename
     
     try:
@@ -48,10 +50,10 @@ async def upload_paper(
 async def upload_multiple_papers(
     user_id: int,
     profile_id: int,
-    request: Request,
     files: List[UploadFile] = File(...)
 ):
-    await _get_user_from_token(request)
+    """Upload multiple PDF papers at once"""
+    
     results = []
     errors = []
     
@@ -84,8 +86,9 @@ async def upload_multiple_papers(
     }
 
 @router.get("/papers/{user_id}/{profile_id}")
-async def list_uploaded_papers(user_id: int, profile_id: int, request: Request):
-    await _get_user_from_token(request)
+async def list_uploaded_papers(user_id: int, profile_id: int):
+    """List all uploaded papers for a user profile"""
+    
     user_pdf_dir = USER_PDF_DIR / str(user_id) / str(profile_id)
     
     if not user_pdf_dir.exists():
@@ -102,8 +105,9 @@ async def list_uploaded_papers(user_id: int, profile_id: int, request: Request):
     return {"papers": papers}
 
 @router.delete("/paper/{user_id}/{profile_id}/{filename}")
-async def delete_uploaded_paper(user_id: int, profile_id: int, filename: str, request: Request):
-    await _get_user_from_token(request)
+async def delete_uploaded_paper(user_id: int, profile_id: int, filename: str):
+    """Delete an uploaded paper"""
+    
     file_path = USER_PDF_DIR / str(user_id) / str(profile_id) / filename
     
     if not file_path.exists():
@@ -119,17 +123,19 @@ async def delete_uploaded_paper(user_id: int, profile_id: int, filename: str, re
 async def trigger_processing(
     user_id: int,
     profile_id: int,
-    request: Request,
-    background_tasks: BackgroundTasks = None
+    background_tasks: BackgroundTasks
 ):
-    await _get_user_from_token(request)
+    """Trigger processing of uploaded papers"""
+    
     user_pdf_dir = USER_PDF_DIR / str(user_id) / str(profile_id)
     
     if not user_pdf_dir.exists() or not list(user_pdf_dir.glob("*.pdf")):
         raise HTTPException(status_code=400, detail="No papers to process")
     
+    # Count PDFs
     pdf_count = len(list(user_pdf_dir.glob("*.pdf")))
     
+    # Initialize progress tracking
     task_id = f"{user_id}_{profile_id}"
     progress_tracker.start_task(
         task_id, 
@@ -137,6 +143,7 @@ async def trigger_processing(
         description=f"Processing {pdf_count} papers"
     )
     
+    # Add background task to process papers
     background_tasks.add_task(process_user_papers_task, user_id, profile_id)
     
     return {
@@ -149,6 +156,7 @@ async def trigger_processing(
 
 
 async def process_user_papers_task(user_id: int, profile_id: int):
+    """Background task to process user papers with progress tracking"""
     task_id = f"{user_id}_{profile_id}"
     
     print(f"Starting processing for user {user_id}, profile {profile_id}")
@@ -157,6 +165,7 @@ async def process_user_papers_task(user_id: int, profile_id: int):
         from pathlib import Path
         import sys
         
+        # Get the correct paths
         project_root = Path(__file__).resolve().parent.parent.parent
         sys.path.insert(0, str(project_root / "src"))
         
@@ -167,6 +176,7 @@ async def process_user_papers_task(user_id: int, profile_id: int):
         
         api_client = APIClient()
         
+        # Get user from database
         pool = await get_db_pool()
         async with pool.acquire() as conn:
             user_row = await conn.fetchrow(
@@ -187,6 +197,7 @@ async def process_user_papers_task(user_id: int, profile_id: int):
         profile_processed_dir = USER_PROCESSED_DIR / str(user_id) / str(profile_id)
         profile_processed_dir.mkdir(parents=True, exist_ok=True)
         
+        # Get or create corpus
         corpus_name = f"user_{user_id}_profile_{profile_id}"
         corpus = await api_client.get_or_create_corpus(
             user_id=user_id,
@@ -194,23 +205,29 @@ async def process_user_papers_task(user_id: int, profile_id: int):
             description=f"Papers for user {user_id} profile {profile_id}"
         )
         
+        # Get list of PDFs
         pdf_files = list(profile_pdf_dir.glob("*.pdf"))
         total_pdfs = len(pdf_files)
         
         print(f"Processing {total_pdfs} papers from: {profile_pdf_dir}")
         
+        # Load embedding model once
         model = load_model(DEFAULT_MODEL_NAME)
         
+        # Process each PDF
         for i, pdf_file in enumerate(pdf_files):
             try:
                 arxiv_id = pdf_file.stem
                 
+                # Update progress - Starting
                 progress_tracker.update_progress(task_id, i, f"Starting: {pdf_file.name}")
                 print(f"Processing {i+1}/{total_pdfs}: {pdf_file.name}")
                 
+                # Extract with GROBID
                 progress_tracker.update_progress(task_id, i, f"Extracting text: {pdf_file.name}")
                 info = extract_grobid_sections(pdf_file)
                 
+                # Save processed text
                 progress_tracker.update_progress(task_id, i, f"Saving text: {pdf_file.name}")
                 processed_file = profile_processed_dir / f"{arxiv_id}_output.txt"
                 with open(processed_file, "w", encoding="utf-8") as fh:
@@ -220,12 +237,14 @@ async def process_user_papers_task(user_id: int, profile_id: int):
                         fh.write(f"### {sec['header']}\n")
                         fh.write(f"{sec['text']}\n\n")
                 
+                # Check if paper already exists
                 existing = await api_client.get_paper_by_arxiv_id(arxiv_id)
                 if existing:
                     print(f"  Paper {arxiv_id} already exists, skipping")
                     progress_tracker.update_progress(task_id, i+1, f"Skipped (exists): {pdf_file.name}")
                     continue
                 
+                # Create paper in database
                 progress_tracker.update_progress(task_id, i, f"Storing in database: {pdf_file.name}")
                 paper = await api_client.create_paper(
                     corpus_id=corpus['id'],
@@ -237,8 +256,10 @@ async def process_user_papers_task(user_id: int, profile_id: int):
                     source="user"
                 )
                 
+                # Update processed text path
                 await api_client.update_paper_processed_path(paper['id'], str(processed_file))
                 
+                # Store sections
                 for sec in info["sections"]:
                     await api_client.create_section(
                         paper_id=paper['id'],
@@ -246,8 +267,10 @@ async def process_user_papers_task(user_id: int, profile_id: int):
                         text=sec['text']
                     )
                 
+                # Generate embeddings
                 progress_tracker.update_progress(task_id, i, f"Generating embeddings: {pdf_file.name}")
                 
+                # Abstract embedding
                 abstract_text = f"{info['title']}. {info['abstract']}"
                 abstract_emb = model.encode([abstract_text], normalize_embeddings=True)[0]
                 await api_client.create_embedding(
@@ -257,9 +280,10 @@ async def process_user_papers_task(user_id: int, profile_id: int):
                     model_name=DEFAULT_MODEL_NAME
                 )
                 
+                # Section embeddings
                 sections = await api_client.get_sections_by_paper(paper['id'])
                 for section in sections:
-                    if len(section['text'].split()) > 20:
+                    if len(section['text'].split()) > 20:  # Only substantial sections
                         section_emb = model.encode([section['text']], normalize_embeddings=True)[0]
                         await api_client.create_embedding(
                             paper_id=paper['id'],
@@ -272,11 +296,31 @@ async def process_user_papers_task(user_id: int, profile_id: int):
                 progress_tracker.update_progress(task_id, i+1, f"Completed: {pdf_file.name}")
                 print(f"  Completed {pdf_file.name}")
                 
+            except requests.exceptions.RequestException as e:
+                # GROBID connection errors - can continue with other papers
+                logger.error(f"GROBID processing failed for {pdf_file.name}: {e}")
+                progress_tracker.update_progress(task_id, i+1, f"Failed (GROBID): {pdf_file.name}")
+                continue
+                
+            except IOError as e:
+                # File read/write errors - can continue with other papers
+                logger.error(f"File I/O error for {pdf_file.name}: {e}")
+                progress_tracker.update_progress(task_id, i+1, f"Failed (I/O): {pdf_file.name}")
+                continue
+                
+            except KeyError as e:
+                # Missing expected data in parsed content - can continue
+                logger.error(f"Missing data in {pdf_file.name}: {e}")
+                progress_tracker.update_progress(task_id, i+1, f"Failed (parsing): {pdf_file.name}")
+                continue
+                
             except Exception as e:
-                progress_tracker.update_progress(task_id, i+1, f"Failed: {pdf_file.name}")
-                print(f"Error processing {pdf_file.name}: {e}")
+                # Unexpected errors - log and continue with next paper
+                logger.exception(f"Unexpected error processing {pdf_file.name}: {e}")
+                progress_tracker.update_progress(task_id, i+1, f"Failed (error): {pdf_file.name}")
                 continue
         
+        # Mark as complete
         progress_tracker.complete_task(task_id)
         print(f"Processing complete for user {user_id}, profile {profile_id}")
         
@@ -292,8 +336,8 @@ async def process_user_papers_task(user_id: int, profile_id: int):
             pass
 
 @router.get("/progress/{user_id}/{profile_id}")
-async def get_processing_progress(user_id: int, profile_id: int, request: Request):
-    await _get_user_from_token(request)
+async def get_processing_progress(user_id: int, profile_id: int):
+    """Get current processing progress"""
     task_id = f"{user_id}_{profile_id}"
     status = progress_tracker.get_task_status(task_id)
     
@@ -306,8 +350,8 @@ async def get_processing_progress(user_id: int, profile_id: int, request: Reques
     return status
 
 @router.get("/progress-stream/{user_id}/{profile_id}")
-async def stream_processing_progress(user_id: int, profile_id: int, request: Request):
-    await _get_user_from_token(request)
+async def stream_processing_progress(user_id: int, profile_id: int):
+    """Stream processing progress updates using SSE"""
     
     async def event_generator():
         task_id = f"{user_id}_{profile_id}"
@@ -316,16 +360,19 @@ async def stream_processing_progress(user_id: int, profile_id: int, request: Req
             status = progress_tracker.get_task_status(task_id)
             
             if not status:
+                # Task hasn't started yet
                 yield f"data: {json.dumps({'status': 'waiting'})}\n\n"
                 await asyncio.sleep(1)
                 continue
             
+            # Send current status
             yield f"data: {json.dumps(status)}\n\n"
             
+            # Stop streaming if task is done
             if status["status"] in ["completed", "failed"]:
                 break
             
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)  # Update every 500ms
     
     return StreamingResponse(
         event_generator(),
@@ -342,24 +389,26 @@ async def stream_processing_progress(user_id: int, profile_id: int, request: Req
 async def add_paper_from_arxiv(
     user_id: int,
     profile_id: int,
-    request: Request,
     arxiv_id: str = Body(..., embed=True)
 ):
-    await _get_user_from_token(request)
+    """Add a paper from arXiv by downloading it"""
     import requests
     from pathlib import Path
     
     try:
+        # Download PDF from arXiv
         pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
         
         print(f"Downloading paper {arxiv_id} from arXiv...")
         response = requests.get(pdf_url, timeout=30)
         response.raise_for_status()
         
+        # Check if it's actually a PDF
         content_type = response.headers.get('Content-Type', '')
         if 'application/pdf' not in content_type.lower():
             raise HTTPException(status_code=400, detail=f"Failed to download PDF for {arxiv_id}. arXiv may have returned an error page.")
         
+        # Save to user's directory
         user_pdf_dir = USER_PDF_DIR / str(user_id) / str(profile_id)
         user_pdf_dir.mkdir(parents=True, exist_ok=True)
         
