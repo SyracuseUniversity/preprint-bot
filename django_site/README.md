@@ -69,7 +69,8 @@ brew install pgvector
 chmod +x setup_database.sh
 ./setup_database.sh
 #    → prompts for DB name, user, password, etc.
-#    → creates the database and user, writes django_site/.env
+#    → creates the database, user, and extensions
+#    → writes django_site/.env
 
 # 2. Create a virtual environment and install dependencies
 cd django_site
@@ -77,19 +78,21 @@ python3 -m venv venv
 source venv/bin/activate          # On Windows WSL this is the same
 pip install -r requirements.txt
 
-# 3. Generate and run migrations (creates ALL tables — extensions, app, Django)
-python manage.py makemigrations core
+# 3. Run migrations (creates all tables)
 python manage.py migrate
 
-# 4. Start the dev server
+# 4. Create an admin/site account (one login for both /admin/ and the site)
+python manage.py createsuperuser
+
+# 5. Start the dev server
 python manage.py runserver 0.0.0.0:8001
 ```
 
-Visit http://localhost:8001 and register a new account.
+Visit http://localhost:8001 to use the site, or http://localhost:8001/admin/
+to browse data.
 
-> **Note:** `makemigrations core` only needs to run once (or whenever you
-> change `models.py`). The generated migration files go into
-> `core/migrations/` and should be committed to version control.
+> **Note:** The initial migration is shipped in `core/migrations/0001_initial.py`.
+> You only need to run `makemigrations core` if you change `models.py` later.
 
 > **WSL note:** PostgreSQL won't auto-start when you open a new terminal.
 > Run `sudo pg_ctlcluster 16 main start` each time, or add it to your

@@ -83,12 +83,8 @@ DATABASES = {
 }
 
 # ---------------------------------------------------------------------------
-# Custom authentication backend (uses the existing 'users' table)
+# Authentication — uses PBUser (email-based login via ModelBackend)
 # ---------------------------------------------------------------------------
-
-AUTHENTICATION_BACKENDS = [
-    "core.auth_backend.PreprintBotBackend",
-]
 
 # Where Django auth redirects
 LOGIN_URL = "/auth/login/"
@@ -128,6 +124,9 @@ USER_PDF_DIR = PDF_DATA_DIR / "user_pdfs"
 USER_PROCESSED_DIR = PDF_DATA_DIR / "user_processed"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Use our custom user model for Django's auth system
+AUTH_USER_MODEL = "core.PBUser"
 
 # ---------------------------------------------------------------------------
 # FastAPI backend URL (used for operations that still hit the API)

@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import (
     PBUser, Profile, Corpus, Paper, Section,
     Summary, RecommendationRun, Recommendation,
@@ -6,9 +7,27 @@ from .models import (
 
 
 @admin.register(PBUser)
-class PBUserAdmin(admin.ModelAdmin):
-    list_display = ("id", "email", "name", "created_at")
+class PBUserAdmin(BaseUserAdmin):
+    """Admin for the custom email-based user model."""
+
+    list_display = ("id", "email", "name", "is_staff", "is_active", "created_at")
     search_fields = ("email", "name")
+    ordering = ("-created_at",)
+
+    # Fields shown when editing an existing user
+    fieldsets = (
+        (None, {"fields": ("email", "password")}),
+        ("Personal info", {"fields": ("name",)}),
+        ("Permissions", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
+    )
+
+    # Fields shown when creating a new user via admin
+    add_fieldsets = (
+        (None, {
+            "classes": ("wide",),
+            "fields": ("email", "name", "password1", "password2", "is_staff", "is_superuser"),
+        }),
+    )
 
 
 @admin.register(Profile)

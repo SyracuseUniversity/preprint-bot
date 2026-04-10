@@ -1,8 +1,8 @@
 """
 Django views for the Preprint Bot web interface.
 
-All views that require login check for a PBUser stored on the Django session
-(not Django's built-in auth.User).
+Authentication uses Django's built-in auth system with PBUser as
+the custom user model (AUTH_USER_MODEL).
 """
 
 import json
@@ -15,6 +15,7 @@ from pathlib import Path
 
 from django.conf import settings as django_settings
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.db.models import Max, Subquery, OuterRef
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -24,11 +25,8 @@ from django.views.decorators.http import require_POST
 from .arxiv_categories import ARXIV_CODE_TO_LABEL, ARXIV_CATEGORY_TREE, label_for
 from .auth_backend import (
     authenticate_pbuser,
-    get_current_pbuser,
-    hash_password,
     login_pbuser,
     logout_pbuser,
-    verify_password,
 )
 from .forms import (
     ArxivIdForm,
@@ -59,20 +57,18 @@ ARXIV_ID_RE = re.compile(
 # ── Decorator ──────────────────────────────────────────────────────────────
 
 def pbuser_required(view_func):
-    """Redirect to login if no PBUser is on the session, preserving the
+    """Redirect to login if not authenticated, preserving the
     originally requested URL so we can bounce back after sign-in."""
 
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
-        pb_user = get_current_pbuser(request)
-        if pb_user is None:
+        if not request.user.is_authenticated:
             from django.utils.http import urlencode
 
             login_url = "/auth/login/"
-            # Preserve the page the user was trying to reach
             next_url = request.get_full_path()
             return redirect(f"{login_url}?{urlencode({'next': next_url})}")
-        request.pb_user = pb_user
+        request.pb_user = request.user  # convenience alias for templates
         return view_func(request, *args, **kwargs)
 
     return wrapper
@@ -81,7 +77,7 @@ def pbuser_required(view_func):
 # ── Auth views ─────────────────────────────────────────────────────────────
 
 def login_view(request):
-    if get_current_pbuser(request):
+    if request.user.is_authenticated:
         return redirect("dashboard")
 
     next_url = request.GET.get("next", request.POST.get("next", ""))
@@ -101,7 +97,7 @@ def login_view(request):
 
 
 def register_view(request):
-    if get_current_pbuser(request):
+    if request.user.is_authenticated:
         return redirect("dashboard")
 
     form = RegisterForm(request.POST or None)
@@ -113,10 +109,10 @@ def register_view(request):
         if PBUser.objects.filter(email__iexact=email).exists():
             messages.error(request, "An account with that email already exists.")
         else:
-            pb_user = PBUser.objects.create(
+            pb_user = PBUser.objects.create_user(
                 email=email,
+                password=password,
                 name=name,
-                password_hash=hash_password(password),
             )
             login_pbuser(request, pb_user)
             messages.success(request, "Account created successfully!")
@@ -170,7 +166,7 @@ def reset_password_view(request):
             if pr.expires_at < timezone.now():
                 messages.error(request, "Token has expired.")
             else:
-                pr.user.password_hash = hash_password(new_password)
+                pr.user.set_password(new_password)
                 pr.user.save()
                 pr.used_at = timezone.now()
                 pr.save()
@@ -669,4 +665,4 @@ def settings_view(request):
 # ── Help page ──────────────────────────────────────────────────────────────
 
 def help_view(request):
-    return render(request, "help.html", {"pb_user": get_current_pbuser(request)})
+    return render(request, "help.html")

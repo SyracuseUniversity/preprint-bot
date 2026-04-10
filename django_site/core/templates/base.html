@@ -17,7 +17,7 @@
 <body>
 
   {# ── Navigation ────────────────────────────────────────── #}
-  {% if pb_user %}
+  {% if request.user.is_authenticated %}
   <nav class="topnav">
     <span class="brand">Preprint Bot</span>
     <button class="nav-toggle" onclick="document.querySelector('.topnav').classList.toggle('open')" aria-label="Toggle navigation">
@@ -30,7 +30,7 @@
       <a href="{% url 'settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}active{% endif %}">Settings</a>
     </div>
     <div class="user-area">
-      <span>{{ pb_user.name|default:pb_user.email }}</span>
+      <span>{{ request.user.name|default:request.user.email }}</span>
       <a href="{% url 'help' %}" target="_blank">Help</a>
       <a href="{% url 'logout' %}">Sign out</a>
     </div>
