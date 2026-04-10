@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Help – Preprint Bot{% endblock %}
+
+{% block content %}
+<h1>Help &amp; Documentation</h1>
+<p class="subtitle">A guide to using Preprint Bot to track arXiv research.</p>
+
+<div class="card">
+  <h2>Getting Started</h2>
+
+  <h3>1. Sign in or Create an Account</h3>
+  <p>Use your email and password to sign in. If you are new, click <strong>Create Account</strong> on the login screen.</p>
+
+  <h3 style="margin-top:1rem;">2. Create a Profile</h3>
+  <p>Navigate to <strong>Profiles → + New Profile</strong>. Each profile represents a research interest area. Fill out:</p>
+  <ul style="margin-left:1.5rem; margin-top:.35rem;">
+    <li><strong>Name</strong> – e.g. "AI Research"</li>
+    <li><strong>arXiv Categories</strong> – the sub-fields to track (at least one required)</li>
+    <li><strong>Threshold</strong> – how strict the matching should be (lower = more results)</li>
+    <li><strong>Keywords</strong> – optional extra search terms</li>
+  </ul>
+
+  <h3 style="margin-top:1rem;">3. Upload Your Papers</h3>
+  <p>In the profile list, expand the <strong>Papers</strong> section to upload PDFs or add papers by arXiv ID. These papers teach the system your research taste.</p>
+
+  <h3 style="margin-top:1rem;">4. View Recommendations</h3>
+  <p>After the daily pipeline runs, check the <strong>Dashboard</strong> for the latest matches or use the <strong>Recommendations</strong> tab to filter and search across all dates.</p>
+</div>
+
+<div class="card">
+  <h2>Page Guide</h2>
+
+  <h3>Dashboard</h3>
+  <p>Displays your profile/corpus counts and the most recent day's recommendations across all profiles.</p>
+
+  <h3 style="margin-top:.75rem;">Profiles</h3>
+  <p>Create, edit, and delete profiles. Upload PDFs or add arXiv papers directly. Each profile has its own frequency, threshold, and category settings.</p>
+
+  <h3 style="margin-top:.75rem;">Recommendations</h3>
+  <p>Browse the full history of recommended papers. Filter by profile, date range, minimum score, keyword search, or specific arXiv categories.</p>
+
+  <h3 style="margin-top:.75rem;">Settings</h3>
+  <p>Update your display name and email. View your account ID and creation date.</p>
+</div>
+
+<div class="card">
+  <h2>Troubleshooting</h2>
+
+  <h3>No recommendations showing?</h3>
+  <ul style="margin-left:1.5rem; margin-top:.35rem;">
+    <li>Make sure you have uploaded at least a few papers to a profile.</li>
+    <li>The pipeline runs daily after arXiv publishes (around 9 PM EST). New profiles may take a day.</li>
+    <li>Try lowering your threshold – a very high value will filter out most papers.</li>
+    <li>Check that you selected active categories (e.g. cs.LG receives many daily submissions).</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Contact</h2>
+  <p>If something looks wrong, email <strong>preprintbot@syr.edu</strong> with details about the issue.</p>
+</div>
+{% endblock %}

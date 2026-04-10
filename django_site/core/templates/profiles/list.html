@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Profiles – Preprint Bot{% endblock %}
+
+{% block content %}
+<div class="flex-between mb-2">
+  <div>
+    <h1>Profiles</h1>
+    <p class="subtitle">Manage your research interest profiles and uploaded papers.</p>
+  </div>
+  <a href="{% url 'profile_create' %}" class="btn btn-primary">+ New Profile</a>
+</div>
+
+{% if not profile_data %}
+  <div class="card">
+    <p class="text-dim">No profiles yet. Click <strong>+ New Profile</strong> to get started.</p>
+  </div>
+{% endif %}
+
+{% for item in profile_data %}
+  {% with p=item.profile %}
+  <div class="card">
+    {# ── Header row ──────────────────────────────── #}
+    <div class="flex-between">
+      <h2 style="margin:0;">{{ p.name }}</h2>
+      <div style="display:flex; gap:.4rem;">
+        <a href="{% url 'profile_edit' p.pk %}" class="btn btn-sm">Edit</a>
+        <form method="post" action="{% url 'profile_delete' p.pk %}" style="display:inline;"
+              onsubmit="return confirm('Delete profile \'{{ p.name }}\'? This cannot be undone.');">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        </form>
+      </div>
+    </div>
+
+    {# ── Meta grid ───────────────────────────────── #}
+    <div class="grid-3" style="margin-top:.75rem;">
+      <div>
+        <span class="text-sm text-dim">Frequency</span><br>
+        <strong>{{ p.frequency|title }}</strong>
+      </div>
+      <div>
+        <span class="text-sm text-dim">Threshold</span><br>
+        <strong>{{ p.threshold }}</strong>
+      </div>
+      <div>
+        <span class="text-sm text-dim">Max Papers</span><br>
+        <strong>{{ p.top_x|default:"∞" }}</strong>
+      </div>
+    </div>
+
+    {# ── Keywords ────────────────────────────────── #}
+    {% if p.keywords %}
+    <div style="margin-top:.6rem;">
+      <span class="text-sm text-dim">Keywords</span><br>
+      {% for kw in p.keywords %}<span class="tag">{{ kw }}</span>{% endfor %}
+    </div>
+    {% endif %}
+
+    {# ── Categories ──────────────────────────────── #}
+    {% if item.categories_display %}
+    <div style="margin-top:.5rem;">
+      <span class="text-sm text-dim">Categories</span><br>
+      {% for lbl in item.categories_display %}<span class="tag">{{ lbl }}</span>{% endfor %}
+    </div>
+    {% endif %}
+
+    <hr>
+
+    {# ── Uploaded papers ─────────────────────────── #}
+    <details>
+      <summary style="cursor:pointer; font-weight:600; font-size:.9rem;">
+        📄 Papers ({{ item.pdf_files|length }})
+      </summary>
+
+      <div style="margin-top:.5rem;">
+        {% if item.pdf_files %}
+          {% for pdf in item.pdf_files %}
+          <div class="flex-between" style="padding:.35rem 0; border-bottom:1px solid var(--border);">
+            <span class="text-sm">{{ pdf.name }}</span>
+            <form method="post" action="{% url 'paper_delete' p.pk pdf.name %}" style="display:inline;">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete {{ pdf.name }}?');">🗑</button>
+            </form>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="text-sm text-dim">No papers uploaded yet.</p>
+        {% endif %}
+      </div>
+
+      <hr>
+
+      {# ── Upload form ───────────────────────────── #}
+      <form method="post" action="{% url 'paper_upload' p.pk %}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="form-group">
+          <label>Upload PDFs</label>
+          <input type="file" name="files" accept=".pdf" multiple>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Upload</button>
+      </form>
+
+      <hr>
+
+      {# ── Add from arXiv ────────────────────────── #}
+      <form method="post" action="{% url 'paper_add_arxiv' p.pk %}">
+        {% csrf_token %}
+        <div class="form-group">
+          <label>Add from arXiv</label>
+          <textarea name="arxiv_ids" rows="2" placeholder="2301.12345, 2302.67890 (comma or newline separated)"></textarea>
+          <div class="form-help">Accepts IDs, arXiv URLs, or arXiv: prefixed IDs.</div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Add from arXiv</button>
+      </form>
+    </details>
+  </div>
+  {% endwith %}
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – Preprint Bot{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+<p class="subtitle">Welcome back, {{ pb_user.name|default:pb_user.email }}.</p>
+
+{# ── Stats row ─────────────────────────────────────── #}
+<div class="stats">
+  <div class="stat-box">
+    <div class="stat-value">{{ profiles|length }}</div>
+    <div class="stat-label">Profiles</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value">{{ corpora|length }}</div>
+    <div class="stat-label">Corpora</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-value">{{ today_count }}</div>
+    <div class="stat-label">Latest Recs</div>
+  </div>
+</div>
+
+{# ── Latest recommendations ────────────────────────── #}
+<h2>Latest Recommendations</h2>
+
+{% if not today_recs %}
+  <div class="card">
+    <p class="text-dim">No recommendations yet. <a href="{% url 'profile_list' %}">Create a profile</a> and wait for the next pipeline run.</p>
+  </div>
+{% else %}
+  {% for rec in today_recs %}
+  <div class="card">
+    <div class="flex-between mb-1">
+      <h3 style="flex:1;">{{ rec.title }}</h3>
+      <span class="score-badge">{{ rec.score|floatformat:3 }}</span>
+    </div>
+
+    {% if rec.arxiv_id %}
+      <span class="text-sm text-dim text-mono">{{ rec.arxiv_id }}</span>
+    {% endif %}
+
+    {% if rec.summary_text %}
+      <p class="mt-1" style="font-size:.9rem;">{{ rec.summary_text }}</p>
+    {% elif rec.abstract %}
+      <p class="mt-1 text-dim" style="font-size:.88rem;">{{ rec.abstract|truncatewords:40 }}</p>
+    {% endif %}
+
+    {% if rec.arxiv_id %}
+      <a href="https://arxiv.org/abs/{{ rec.arxiv_id }}" target="_blank" class="btn btn-sm mt-1">View on arXiv →</a>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  {% if today_count > 20 %}
+    <p class="text-sm text-dim" style="text-align:center;">Showing top 20 of {{ today_count }}. <a href="{% url 'recommendations' %}">View all →</a></p>
+  {% endif %}
+{% endif %}
+{% endblock %}

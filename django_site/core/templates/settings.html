@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Settings – Preprint Bot{% endblock %}
+
+{% block content %}
+<h1>Settings</h1>
+<p class="subtitle">Manage your account.</p>
+
+<div class="card">
+  <h2>Profile Information</h2>
+  <form method="post">
+    {% csrf_token %}
+    <div class="grid-2">
+      <div class="form-group">
+        <label>Name</label>
+        {{ form.name }}
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        {{ form.email }}
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Save Changes</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Account Details</h2>
+  <div class="grid-2">
+    <div>
+      <span class="text-sm text-dim">User ID</span><br>
+      <span class="text-mono">{{ pb_user.pk }}</span>
+    </div>
+    <div>
+      <span class="text-sm text-dim">Created</span><br>
+      <span>{{ pb_user.created_at|date:"N j, Y" }}</span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Danger Zone</h2>
+  <p class="text-sm text-dim mb-1">Need to change your password?</p>
+  <a href="{% url 'forgot_password' %}" class="btn btn-danger">Reset Password</a>
+</div>
+{% endblock %}

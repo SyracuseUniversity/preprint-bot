@@ -1,0 +1,51 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Preprint Bot{% endblock %}</title>
+
+  {# ── Fonts ───────────────────────────────────────────── #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="{% static 'core/style.css' %}">
+
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+  {# ── Navigation ────────────────────────────────────────── #}
+  {% if pb_user %}
+  <nav class="topnav">
+    <span class="brand">Preprint Bot</span>
+    <button class="nav-toggle" onclick="document.querySelector('.topnav').classList.toggle('open')" aria-label="Toggle navigation">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="nav-links">
+      <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="{% url 'profile_list' %}" class="{% if 'profile' in request.resolver_match.url_name %}active{% endif %}">Profiles</a>
+      <a href="{% url 'recommendations' %}" class="{% if request.resolver_match.url_name == 'recommendations' %}active{% endif %}">Recommendations</a>
+      <a href="{% url 'settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}active{% endif %}">Settings</a>
+    </div>
+    <div class="user-area">
+      <span>{{ pb_user.name|default:pb_user.email }}</span>
+      <a href="{% url 'help' %}" target="_blank">Help</a>
+      <a href="{% url 'logout' %}">Sign out</a>
+    </div>
+  </nav>
+  {% endif %}
+
+  {# ── Messages ──────────────────────────────────────────── #}
+  <div class="container">
+    {% for msg in messages %}
+      <div class="alert alert-{{ msg.tags }}">{{ msg }}</div>
+    {% endfor %}
+
+    {% block content %}{% endblock %}
+  </div>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>
