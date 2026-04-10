@@ -350,6 +350,47 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: .35rem; }
 }
 .date-header:first-child { margin-top: 0; }
 
+/* ── Tabs (paper management) ──────────────────────────── */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 1rem;
+}
+.tab-btn {
+  background: none;
+  border: none;
+  padding: .5rem 1rem;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;          /* overlap the bar border */
+  transition: color .15s, border-color .15s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── Spinner ─────────────────────────────────────────── */
+.spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  vertical-align: middle;
+  margin-right: .4rem;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ── Misc ─────────────────────────────────────────────── */
 .text-dim { color: var(--text-dim); }
 .text-sm  { font-size: .8rem; }

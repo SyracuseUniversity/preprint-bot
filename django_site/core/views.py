@@ -432,8 +432,6 @@ def paper_delete_view(request, profile_id, filename):
 @require_POST
 def paper_add_arxiv_view(request, profile_id):
     """Add papers from arXiv by ID – downloads the PDF into the profile dir."""
-    import requests as http_requests
-
     pb_user = request.pb_user
     profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
 
@@ -444,22 +442,11 @@ def paper_add_arxiv_view(request, profile_id):
         messages.error(request, "No valid arXiv IDs provided.")
         return redirect("profile_list")
 
-    pdf_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
-    pdf_dir.mkdir(parents=True, exist_ok=True)
-
-    success = 0
-    for aid in arxiv_ids:
-        try:
-            resp = http_requests.get(f"https://arxiv.org/pdf/{aid}.pdf", timeout=30)
-            resp.raise_for_status()
-            if "application/pdf" in resp.headers.get("Content-Type", ""):
-                (pdf_dir / f"{aid}.pdf").write_bytes(resp.content)
-                success += 1
-        except Exception:
-            messages.warning(request, f"Failed to download {aid}.")
-
+    success, failed = _download_arxiv_pdfs(pb_user, profile, arxiv_ids)
     if success:
         messages.success(request, f"Added {success} paper(s) from arXiv.")
+    for fid in failed:
+        messages.warning(request, f"Failed to download {fid}.")
 
     return redirect("profile_list")
 
@@ -480,6 +467,92 @@ def _parse_arxiv_ids(raw: str) -> list[str]:
         if ARXIV_ID_RE.match(token) and token not in ids:
             ids.append(token)
     return ids
+
+
+def _download_arxiv_pdfs(pb_user, profile, arxiv_ids):
+    """Download PDFs for a list of arXiv IDs into the profile dir.
+
+    Returns (success_count, failed_ids).
+    """
+    import requests as http_requests
+
+    pdf_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
+    pdf_dir.mkdir(parents=True, exist_ok=True)
+
+    success = 0
+    failed = []
+    for aid in arxiv_ids:
+        try:
+            resp = http_requests.get(f"https://arxiv.org/pdf/{aid}.pdf", timeout=30)
+            resp.raise_for_status()
+            if "application/pdf" in resp.headers.get("Content-Type", ""):
+                (pdf_dir / f"{aid}.pdf").write_bytes(resp.content)
+                success += 1
+            else:
+                failed.append(aid)
+        except Exception:
+            failed.append(aid)
+    return success, failed
+
+
+@pbuser_required
+def paper_search_arxiv_api_view(request, profile_id):
+    """JSON API: search arXiv by title/author for inline results."""
+    pb_user = request.pb_user
+    profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
+
+    title_q = request.GET.get("title", "").strip()
+    author_q = request.GET.get("author", "").strip()
+
+    if not title_q and not author_q:
+        return JsonResponse({"error": "Enter a title or author."}, status=400)
+
+    try:
+        import arxiv as arxiv_lib
+
+        parts = []
+        if title_q:
+            parts.append(f'ti:"{title_q}"')
+        if author_q:
+            parts.append(f'au:"{author_q}"')
+        query_string = " AND ".join(parts)
+
+        client = arxiv_lib.Client()
+        search = arxiv_lib.Search(
+            query=query_string,
+            max_results=25,
+            sort_by=arxiv_lib.SortCriterion.SubmittedDate,
+            sort_order=arxiv_lib.SortOrder.Descending,
+        )
+
+        # Existing papers for this profile (to grey-out already-added ones)
+        pdf_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
+        existing_ids = set()
+        if pdf_dir.exists():
+            for f in pdf_dir.glob("*.pdf"):
+                stem = re.sub(r"v\d+$", "", f.stem)  # strip version suffix
+                existing_ids.add(stem)
+
+        results = []
+        for paper in client.results(search):
+            aid = paper.get_short_id().split("v")[0]  # strip version
+            results.append({
+                "arxiv_id": aid,
+                "title": paper.title,
+                "authors": ", ".join(a.name for a in paper.authors),
+                "published": paper.published.strftime("%Y-%m-%d"),
+                "already_added": aid in existing_ids,
+            })
+
+        return JsonResponse({"results": results})
+
+    except ImportError:
+        return JsonResponse(
+            {"error": "The 'arxiv' package is not installed. Run: pip install arxiv"},
+            status=500,
+        )
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
 
 
 # ── Recommendations ────────────────────────────────────────────────────────

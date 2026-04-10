@@ -66,12 +66,13 @@
 
     <hr>
 
-    {# ── Uploaded papers ─────────────────────────── #}
+    {# ── Papers section ──────────────────────────── #}
     <details>
       <summary style="cursor:pointer; font-weight:600; font-size:.9rem;">
         📄 Papers ({{ item.pdf_files|length }})
       </summary>
 
+      {# ── Paper list ──────────────────────────── #}
       <div style="margin-top:.5rem;">
         {% if item.pdf_files %}
           {% for pdf in item.pdf_files %}
@@ -90,30 +91,198 @@
 
       <hr>
 
-      {# ── Upload form ───────────────────────────── #}
-      <form method="post" action="{% url 'paper_upload' p.pk %}" enctype="multipart/form-data">
-        {% csrf_token %}
-        <div class="form-group">
-          <label>Upload PDFs</label>
-          <input type="file" name="files" accept=".pdf" multiple>
+      {# ── Tabbed add-paper interface ────────── #}
+      <div class="paper-tabs" data-profile="{{ p.pk }}">
+        <div class="tab-bar">
+          <button type="button" class="tab-btn active" data-tab="upload-{{ p.pk }}">Upload PDF</button>
+          <button type="button" class="tab-btn" data-tab="byid-{{ p.pk }}">Add by ID</button>
+          <button type="button" class="tab-btn" data-tab="search-{{ p.pk }}">Search arXiv</button>
         </div>
-        <button type="submit" class="btn btn-sm btn-primary">Upload</button>
-      </form>
 
-      <hr>
-
-      {# ── Add from arXiv ────────────────────────── #}
-      <form method="post" action="{% url 'paper_add_arxiv' p.pk %}">
-        {% csrf_token %}
-        <div class="form-group">
-          <label>Add from arXiv</label>
-          <textarea name="arxiv_ids" rows="2" placeholder="2301.12345, 2302.67890 (comma or newline separated)"></textarea>
-          <div class="form-help">Accepts IDs, arXiv URLs, or arXiv: prefixed IDs.</div>
+        {# ── Tab 1: Upload PDF ────────────── #}
+        <div class="tab-panel active" id="upload-{{ p.pk }}">
+          <form method="post" action="{% url 'paper_upload' p.pk %}" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="form-group">
+              <label>Choose PDF files</label>
+              <input type="file" name="files" accept=".pdf" multiple>
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary">Upload</button>
+          </form>
         </div>
-        <button type="submit" class="btn btn-sm btn-primary">Add from arXiv</button>
-      </form>
+
+        {# ── Tab 2: Add by ID ─────────────── #}
+        <div class="tab-panel" id="byid-{{ p.pk }}">
+          <form method="post" action="{% url 'paper_add_arxiv' p.pk %}">
+            {% csrf_token %}
+            <div class="form-group">
+              <label>arXiv IDs</label>
+              <textarea name="arxiv_ids" rows="2"
+                        placeholder="2301.12345, 2302.67890 (comma or newline separated)"></textarea>
+              <div class="form-help">Accepts IDs, arXiv URLs, or arXiv: prefixed IDs.</div>
+            </div>
+            <button type="submit" class="btn btn-sm btn-primary">Add from arXiv</button>
+          </form>
+        </div>
+
+        {# ── Tab 3: Search arXiv ──────────── #}
+        <div class="tab-panel" id="search-{{ p.pk }}">
+          <div class="grid-2" style="gap:.75rem;">
+            <div class="form-group">
+              <label>Title</label>
+              <input type="text" class="search-title" placeholder="e.g. neural network…">
+            </div>
+            <div class="form-group">
+              <label>Author</label>
+              <input type="text" class="search-author" placeholder="e.g. LeCun…">
+            </div>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary search-btn"
+                  data-url="{% url 'paper_search_arxiv_api' p.pk %}">Search</button>
+
+          {# spinner shown while waiting #}
+          <div class="search-spinner" style="display:none; margin-top:.75rem;">
+            <span class="spinner"></span> Searching arXiv…
+          </div>
+
+          {# results injected here by JS #}
+          <div class="search-results" style="margin-top:.75rem;"></div>
+        </div>
+      </div>{# /paper-tabs #}
     </details>
   </div>
   {% endwith %}
 {% endfor %}
+
+{# ── Tab switching + AJAX search JS ─────────────────── #}
+<script>
+/* ── Tab switching ──────────────────────────────────── */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tabs = btn.closest('.paper-tabs');
+    tabs.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    tabs.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.tab).classList.add('active');
+  });
+});
+
+/* ── arXiv search ───────────────────────────────────── */
+document.querySelectorAll('.search-btn').forEach(btn => {
+  btn.addEventListener('click', () => doSearch(btn));
+});
+
+/* trigger search on Enter inside title/author inputs */
+document.querySelectorAll('.search-title, .search-author').forEach(input => {
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      doSearch(input.closest('.tab-panel').querySelector('.search-btn'));
+    }
+  });
+});
+
+function doSearch(btn) {
+  const panel   = btn.closest('.tab-panel');
+  const title   = panel.querySelector('.search-title').value.trim();
+  const author  = panel.querySelector('.search-author').value.trim();
+  const spinner = panel.querySelector('.search-spinner');
+  const box     = panel.querySelector('.search-results');
+
+  if (!title && !author) { box.innerHTML = '<p class="text-dim">Enter a title or author.</p>'; return; }
+
+  spinner.style.display = '';
+  box.innerHTML = '';
+  btn.disabled = true;
+
+  const url = btn.dataset.url
+    + '?title=' + encodeURIComponent(title)
+    + '&author=' + encodeURIComponent(author);
+
+  fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(r => r.json())
+    .then(data => {
+      spinner.style.display = 'none';
+      btn.disabled = false;
+
+      if (data.error) {
+        box.innerHTML = '<p style="color:var(--danger);">' + esc(data.error) + '</p>';
+        return;
+      }
+      if (!data.results || data.results.length === 0) {
+        box.innerHTML = '<p class="text-dim">No papers found.</p>';
+        return;
+      }
+
+      /* reuse the profile's add-arxiv URL from Tab 2's form */
+      const addUrl = btn.closest('.paper-tabs').querySelector('[action*="add-arxiv"]').action;
+
+      let html = '<div class="flex-between mb-1">'
+        + '<span class="text-sm text-dim">' + data.results.length
+        + ' result' + (data.results.length !== 1 ? 's' : '') + '</span>'
+        + '<div style="display:flex;gap:.4rem;">'
+        + '<button type="button" class="btn btn-sm" onclick="toggleAllCb(this,true)">Select All</button>'
+        + '<button type="button" class="btn btn-sm" onclick="toggleAllCb(this,false)">Deselect All</button>'
+        + '</div></div>';
+
+      html += '<form method="post" action="' + esc(addUrl) + '">'
+        + '<input type="hidden" name="csrfmiddlewaretoken" value="' + getCSRF() + '">'
+        + '<input type="hidden" name="arxiv_ids" class="bulk-ids-field">';
+
+      data.results.forEach(r => {
+        const disabled = r.already_added ? ' disabled checked' : '';
+        const badge = r.already_added
+          ? ' <span class="tag" style="margin-left:.4rem;">already added</span>' : '';
+        html += '<div style="padding:.5rem 0; border-bottom:1px solid var(--border);'
+          + ' display:flex; gap:.6rem; align-items:flex-start;">'
+          + '<input type="checkbox" class="arxiv-cb" value="' + esc(r.arxiv_id) + '"'
+          + disabled + ' style="margin-top:.35rem;">'
+          + '<div style="flex:1;">'
+          + '<a href="https://arxiv.org/abs/' + esc(r.arxiv_id)
+          + '" target="_blank" style="font-weight:600;">' + esc(r.title) + '</a>'
+          + '<div class="text-sm text-dim" style="margin-top:.15rem;">' + esc(r.authors) + '</div>'
+          + '<div class="text-sm text-dim">Published ' + esc(r.published)
+          + ' · ' + esc(r.arxiv_id) + badge + '</div>'
+          + '</div></div>';
+      });
+
+      html += '<button type="submit" class="btn btn-sm btn-primary" style="margin-top:.75rem;"'
+        + ' onclick="return collectBulk(this);">Add Selected to Profile</button></form>';
+
+      box.innerHTML = html;
+    })
+    .catch(err => {
+      spinner.style.display = 'none';
+      btn.disabled = false;
+      box.innerHTML = '<p style="color:var(--danger);">Search failed: ' + esc(String(err)) + '</p>';
+    });
+}
+
+/* ── Helpers ────────────────────────────────────────── */
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function getCSRF() {
+  const el = document.querySelector('[name=csrfmiddlewaretoken]');
+  return el ? el.value : '';
+}
+
+function toggleAllCb(btn, checked) {
+  btn.closest('.search-results')
+     .querySelectorAll('.arxiv-cb:not([disabled])')
+     .forEach(cb => cb.checked = checked);
+}
+
+function collectBulk(btn) {
+  const form = btn.closest('form');
+  const ids = Array.from(form.querySelectorAll('.arxiv-cb:checked:not([disabled])'))
+                   .map(cb => cb.value);
+  if (ids.length === 0) { alert('Select at least one paper.'); return false; }
+  form.querySelector('.bulk-ids-field').value = ids.join(', ');
+  return true;
+}
+</script>
 {% endblock %}
