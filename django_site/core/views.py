@@ -714,6 +714,7 @@ def _query_profile_recommendations(pb_user, profile):
 @pbuser_required
 def settings_view(request):
     pb_user = request.pb_user
+    profiles = Profile.objects.filter(user=pb_user).order_by("name")
 
     if request.method == "POST":
         form = UserSettingsForm(request.POST)
@@ -732,7 +733,84 @@ def settings_view(request):
     else:
         form = UserSettingsForm(initial={"name": pb_user.name or "", "email": pb_user.email})
 
-    return render(request, "settings.html", {"pb_user": pb_user, "form": form})
+    # Are ALL profiles paused?
+    all_paused = profiles.exists() and not profiles.filter(email_notify=True).exists()
+
+    return render(request, "settings.html", {
+        "pb_user": pb_user,
+        "form": form,
+        "profiles": profiles,
+        "all_paused": all_paused,
+    })
+
+
+@pbuser_required
+@require_POST
+def toggle_profile_email_view(request, profile_id):
+    """Toggle email_notify for a single profile."""
+    pb_user = request.pb_user
+    profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
+    profile.email_notify = not profile.email_notify
+    profile.save(update_fields=["email_notify"])
+    state = "enabled" if profile.email_notify else "paused"
+    messages.success(request, f"Emails {state} for '{profile.name}'.")
+    # Redirect back to wherever the user came from
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or "profile_list"
+    return redirect(next_url)
+
+
+@pbuser_required
+@require_POST
+def pause_all_emails_view(request):
+    """Pause or resume emails for every profile the user owns."""
+    pb_user = request.pb_user
+    action = request.POST.get("action", "pause")  # "pause" or "resume"
+    new_value = action == "resume"
+    Profile.objects.filter(user=pb_user).update(email_notify=new_value)
+    word = "resumed" if new_value else "paused"
+    messages.success(request, f"Email notifications {word} for all profiles.")
+    return redirect("settings")
+
+
+@pbuser_required
+@require_POST
+def deactivate_account_view(request):
+    """Deactivate the account (sets is_active=False, logs out).
+
+    An admin can reactivate the account later via /admin/.
+    """
+    pb_user = request.pb_user
+    # Pause all emails so the pipeline stops sending immediately
+    Profile.objects.filter(user=pb_user).update(email_notify=False)
+    pb_user.is_active = False
+    pb_user.save(update_fields=["is_active"])
+    logout_pbuser(request)
+    messages.success(request, "Your account has been deactivated.")
+    return redirect("login")
+
+
+@pbuser_required
+@require_POST
+def delete_account_view(request):
+    """Permanently delete the account and all associated data."""
+    pb_user = request.pb_user
+
+    # Require the user to type "DELETE" as confirmation
+    confirmation = request.POST.get("confirmation", "").strip()
+    if confirmation != "DELETE":
+        messages.error(request, "Please type DELETE to confirm account deletion.")
+        return redirect("settings")
+
+    # Remove uploaded PDFs from disk
+    pdf_dir = django_settings.USER_PDF_DIR / str(pb_user.pk)
+    if pdf_dir.exists():
+        shutil.rmtree(pdf_dir, ignore_errors=True)
+
+    # Delete the user (cascades to profiles, corpora, papers, etc.)
+    pb_user.delete()
+    logout_pbuser(request)
+    messages.success(request, "Your account and all data have been permanently deleted.")
+    return redirect("login")
 
 
 # ── Help page ──────────────────────────────────────────────────────────────

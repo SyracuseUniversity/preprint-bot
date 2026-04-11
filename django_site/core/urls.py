@@ -29,6 +29,10 @@ urlpatterns = [
 
     # Settings
     path("settings/", views.settings_view, name="settings"),
+    path("settings/toggle-email/<int:profile_id>/", views.toggle_profile_email_view, name="toggle_profile_email"),
+    path("settings/pause-all-emails/", views.pause_all_emails_view, name="pause_all_emails"),
+    path("settings/deactivate/", views.deactivate_account_view, name="deactivate_account"),
+    path("settings/delete-account/", views.delete_account_view, name="delete_account"),
 
     # Help
     path("help/", views.help_view, name="help"),

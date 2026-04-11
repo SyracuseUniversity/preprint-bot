@@ -22,7 +22,15 @@
     {# ── Header row ──────────────────────────────── #}
     <div class="flex-between">
       <h2 style="margin:0;">{{ p.name }}</h2>
-      <div style="display:flex; gap:.4rem;">
+      <div style="display:flex; gap:.4rem; align-items:center;">
+        <form method="post" action="{% url 'toggle_profile_email' p.pk %}" style="display:inline;">
+          {% csrf_token %}
+          {% if p.email_notify %}
+            <button type="submit" class="btn btn-sm" title="Email notifications are on – click to pause">Emails: On</button>
+          {% else %}
+            <button type="submit" class="btn btn-sm btn-danger" title="Email notifications are paused – click to resume">Emails: Off</button>
+          {% endif %}
+        </form>
         <a href="{% url 'profile_edit' p.pk %}" class="btn btn-sm">Edit</a>
         <form method="post" action="{% url 'profile_delete' p.pk %}" style="display:inline;"
               onsubmit="return confirm('Delete profile \'{{ p.name }}\'? This cannot be undone.');">
