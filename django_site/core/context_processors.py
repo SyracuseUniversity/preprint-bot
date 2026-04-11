@@ -4,6 +4,8 @@ Custom context processor that injects commonly needed values into every template
 
 from datetime import date, timedelta
 
+from django.conf import settings as django_settings
+
 
 def date_helpers(request):
     """Inject today / week_ago / month_ago for quick-filter buttons."""
@@ -12,4 +14,12 @@ def date_helpers(request):
         "today": today.isoformat(),
         "week_ago": (today - timedelta(days=7)).isoformat(),
         "month_ago": (today - timedelta(days=30)).isoformat(),
+    }
+
+
+def site_settings(request):
+    """Expose selected settings to every template."""
+    return {
+        "SUPPORT_EMAIL": getattr(django_settings, "SUPPORT_EMAIL", "support@example.com"),
+        "SITE_NAME": getattr(django_settings, "SITE_NAME", "Preprint Bot"),
     }

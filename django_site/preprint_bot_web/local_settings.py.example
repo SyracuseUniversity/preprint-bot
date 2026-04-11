@@ -1,0 +1,50 @@
+# preprint_bot_web/local_settings.py
+#
+# Local overrides for development or production.
+# This file is imported at the end of settings.py and can override
+# any setting defined there.
+#
+# Copy this file to local_settings.py and edit as needed.
+# DO NOT commit local_settings.py to version control.
+
+# ── Security ──────────────────────────────────────────────────────────────
+# Generate a real key: python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+# SECRET_KEY = "your-production-secret-key-here"
+
+# DEBUG = False
+
+# ALLOWED_HOSTS = ["preprint-bot.example.com"]
+
+# ── Database ──────────────────────────────────────────────────────────────
+# Override individual fields or the entire DATABASES dict.
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.postgresql",
+#         "NAME": "preprint_bot",
+#         "USER": "preprint_user",
+#         "PASSWORD": "actual-production-password",
+#         "HOST": "db.internal.example.com",
+#         "PORT": "5432",
+#     }
+# }
+
+# ── Site-specific ─────────────────────────────────────────────────────────
+# SUPPORT_EMAIL = "support@example.com"
+# SITE_NAME = "Preprint Bot"
+
+# ── Static files (production) ─────────────────────────────────────────────
+# STATIC_ROOT = "/var/www/preprint-bot/static/"
+
+# ── Email backend (production) ────────────────────────────────────────────
+# EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+# EMAIL_HOST = "smtp.example.com"
+# EMAIL_PORT = 587
+# EMAIL_USE_TLS = True
+# EMAIL_HOST_USER = "noreply@example.com"
+# EMAIL_HOST_PASSWORD = "smtp-password"
+# DEFAULT_FROM_EMAIL = "Preprint Bot <noreply@example.com>"
+
+# ── PDF storage ───────────────────────────────────────────────────────────
+# PDF_DATA_DIR = Path("/data/preprint-bot/pdf_data")
+# USER_PDF_DIR = PDF_DATA_DIR / "user_pdfs"
+# USER_PROCESSED_DIR = PDF_DATA_DIR / "user_processed"

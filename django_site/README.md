@@ -100,16 +100,31 @@ to browse data.
 
 ## Environment Variables
 
-| Variable             | Default          | Description                         |
-|----------------------|------------------|-------------------------------------|
-| `DATABASE_NAME`      | `preprint_bot`   | PostgreSQL database name            |
-| `DATABASE_USER`      | `postgres`       | PostgreSQL user                     |
-| `DATABASE_PASSWORD`  | (empty)          | PostgreSQL password                 |
-| `DATABASE_HOST`      | `localhost`      | PostgreSQL host                     |
-| `DATABASE_PORT`      | `5432`           | PostgreSQL port                     |
-| `DJANGO_SECRET_KEY`  | (dev fallback)   | Set a real key in production        |
-| `DJANGO_DEBUG`       | `True`           | Set to `False` in production        |
-| `PDF_DATA_DIR`       | `../pdf_data`    | Root of the PDF storage tree        |
+| Variable             | Default              | Description                         |
+|----------------------|----------------------|-------------------------------------|
+| `DATABASE_NAME`      | `preprint_bot`       | PostgreSQL database name            |
+| `DATABASE_USER`      | `postgres`           | PostgreSQL user                     |
+| `DATABASE_PASSWORD`  | (empty)              | PostgreSQL password                 |
+| `DATABASE_HOST`      | `localhost`          | PostgreSQL host                     |
+| `DATABASE_PORT`      | `5432`               | PostgreSQL port                     |
+| `DJANGO_SECRET_KEY`  | (dev fallback)       | Set a real key in production        |
+| `DJANGO_DEBUG`       | `True`               | Set to `False` in production        |
+| `PDF_DATA_DIR`       | `../pdf_data`        | Root of the PDF storage tree        |
+| `SUPPORT_EMAIL`      | `support@example.com`| Shown on the help page              |
+| `SITE_NAME`          | `Preprint Bot`       | Site display name                   |
+
+## Local Settings
+
+For production or per-developer overrides, copy the example file:
+
+```bash
+cp preprint_bot_web/local_settings.py.example preprint_bot_web/local_settings.py
+```
+
+Edit `local_settings.py` to set `SECRET_KEY`, `DEBUG = False`,
+`ALLOWED_HOSTS`, database credentials, etc. This file is imported last
+in `settings.py` and overrides anything above it. It is excluded from
+version control via `.gitignore`.
 
 ## Project Structure
 
@@ -117,8 +132,10 @@ to browse data.
 django_site/
 ├── manage.py
 ├── requirements.txt
+├── .gitignore
 ├── preprint_bot_web/          # Django project package
 │   ├── settings.py
+│   ├── local_settings.py.example
 │   ├── urls.py
 │   └── wsgi.py
 └── core/                      # Main application

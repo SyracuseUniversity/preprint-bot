@@ -60,6 +60,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "core.context_processors.date_helpers",
+                "core.context_processors.site_settings",
             ],
         },
     },
@@ -133,3 +134,21 @@ AUTH_USER_MODEL = "core.PBUser"
 # ---------------------------------------------------------------------------
 
 FASTAPI_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+
+# ---------------------------------------------------------------------------
+# Site-specific settings
+# ---------------------------------------------------------------------------
+
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@example.com")
+SITE_NAME = os.getenv("SITE_NAME", "Preprint Bot")
+
+# ---------------------------------------------------------------------------
+# Local overrides (not committed to version control)
+# ---------------------------------------------------------------------------
+# Create preprint_bot_web/local_settings.py to override any setting above.
+# See local_settings.py.example for a template.
+
+try:
+    from .local_settings import *  # noqa: F401, F403
+except ImportError:
+    pass
