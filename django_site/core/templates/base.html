@@ -19,7 +19,7 @@
   {# ── Navigation ────────────────────────────────────────── #}
   {% if request.user.is_authenticated %}
   <nav class="topnav">
-    <span class="brand">Preprint Bot</span>
+    <a href="{% url 'dashboard' %}" class="brand">Preprint Bot</a>
     <button class="nav-toggle" onclick="document.querySelector('.topnav').classList.toggle('open')" aria-label="Toggle navigation">
       <span></span><span></span><span></span>
     </button>

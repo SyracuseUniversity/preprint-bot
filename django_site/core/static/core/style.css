@@ -52,6 +52,7 @@ a:hover { text-decoration: underline; }
   font-weight: 700;
   font-size: 1.15rem;
   color: #fff;
+  text-decoration: none;
   letter-spacing: -.02em;
 }
 .topnav .nav-links { display: flex; gap: .25rem; flex: 1; }
