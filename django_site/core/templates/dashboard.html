@@ -7,10 +7,10 @@
 
 {# ── Stats row ─────────────────────────────────────── #}
 <div class="stats">
-  <div class="stat-box">
+  <a href="{% url 'profile_list' %}" class="stat-box" style="text-decoration:none; color:inherit;">
     <div class="stat-value">{{ profiles|length }}</div>
     <div class="stat-label">Profiles</div>
-  </div>
+  </a>
   <div class="stat-box">
     <div class="stat-value">{{ corpora|length }}</div>
     <div class="stat-label">Corpora</div>
