@@ -391,6 +391,43 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: .35rem; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Beta banner ──────────────────────────────────────────── */
+.beta-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .75rem;
+  background: var(--accent-dim);
+  color: var(--text);
+  font-size: .82rem;
+  padding: .4rem 1rem;
+  text-align: center;
+}
+.beta-banner a { font-weight: 600; }
+.banner-close {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: var(--text-dim);
+  padding: 0 .25rem;
+  line-height: 1;
+}
+.banner-close:hover { color: var(--text); }
+
+/* ── Footer ──────────────────────────────────────────────── */
+.site-footer {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  margin-top: 2rem;
+  font-size: .8rem;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+}
+.site-footer a { color: var(--text-dim); text-decoration: underline; }
+.site-footer a:hover { color: var(--text); }
+.footer-sep { margin: 0 .35rem; opacity: .5; }
+
 /* ── Misc ─────────────────────────────────────────────── */
 .text-dim { color: var(--text-dim); }
 .text-sm  { font-size: .8rem; }

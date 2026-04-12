@@ -112,6 +112,7 @@ to browse data.
 | `PDF_DATA_DIR`       | `../pdf_data`        | Root of the PDF storage tree        |
 | `SUPPORT_EMAIL`      | `support@example.com`| Shown on the help page              |
 | `SITE_NAME`          | `Preprint Bot`       | Site display name                   |
+| `SHOW_BETA_BANNER`   | `True`               | Dismissable beta feedback banner    |
 
 ## Local Settings
 

@@ -31,6 +31,7 @@
 # ── Site-specific ─────────────────────────────────────────────────────────
 # SUPPORT_EMAIL = "support@example.com"
 # SITE_NAME = "Preprint Bot"
+# SHOW_BETA_BANNER = False          # set to False once out of beta
 
 # ── Static files (production) ─────────────────────────────────────────────
 # STATIC_ROOT = "/var/www/preprint-bot/static/"

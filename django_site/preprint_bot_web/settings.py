@@ -141,6 +141,7 @@ FASTAPI_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@example.com")
 SITE_NAME = os.getenv("SITE_NAME", "Preprint Bot")
+SHOW_BETA_BANNER = os.getenv("SHOW_BETA_BANNER", "True").lower() in ("true", "1", "yes")
 
 # ---------------------------------------------------------------------------
 # Local overrides (not committed to version control)

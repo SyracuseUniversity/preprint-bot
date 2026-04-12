@@ -37,6 +37,27 @@
   </nav>
   {% endif %}
 
+  {# ── Beta banner (dismissable, localStorage remembers) ── #}
+  {% if SHOW_BETA_BANNER %}
+  <div class="beta-banner" id="beta-banner">
+    <span>This site is in beta — feedback welcome at
+      <a href="mailto:{{ SUPPORT_EMAIL }}">{{ SUPPORT_EMAIL }}</a>
+    </span>
+    <button type="button" class="banner-close" onclick="dismissBanner()" aria-label="Dismiss">&times;</button>
+  </div>
+  <script>
+    function dismissBanner() {
+      document.getElementById('beta-banner').style.display = 'none';
+      try { localStorage.setItem('beta_banner_dismissed', '1'); } catch(e) {}
+    }
+    try {
+      if (localStorage.getItem('beta_banner_dismissed') === '1') {
+        document.getElementById('beta-banner').style.display = 'none';
+      }
+    } catch(e) {}
+  </script>
+  {% endif %}
+
   {# ── Messages ──────────────────────────────────────────── #}
   <div class="container">
     {% for msg in messages %}
@@ -45,6 +66,15 @@
 
     {% block content %}{% endblock %}
   </div>
+
+  {# ── Footer ────────────────────────────────────────────── #}
+  <footer class="site-footer">
+    <span>{{ SITE_NAME }}</span>
+    <span class="footer-sep">·</span>
+    <span>Questions or feedback? <a href="mailto:{{ SUPPORT_EMAIL }}">{{ SUPPORT_EMAIL }}</a></span>
+    <span class="footer-sep">·</span>
+    <a href="{% url 'help' %}">Help</a>
+  </footer>
 
   {% block extra_scripts %}{% endblock %}
 </body>

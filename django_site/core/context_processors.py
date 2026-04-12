@@ -22,4 +22,5 @@ def site_settings(request):
     return {
         "SUPPORT_EMAIL": getattr(django_settings, "SUPPORT_EMAIL", "support@example.com"),
         "SITE_NAME": getattr(django_settings, "SITE_NAME", "Preprint Bot"),
+        "SHOW_BETA_BANNER": getattr(django_settings, "SHOW_BETA_BANNER", True),
     }
