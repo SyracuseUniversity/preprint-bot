@@ -872,7 +872,7 @@ def profiles_page(user: Dict):
                                         st.session_state["edit_profile_name"] = profile['name']
                                         st.rerun()
 
-                                col1, col2, col3, col4 = st.columns(4)
+                                col1, col2, col3 = st.columns(3)
                                 with col1:
                                     st.write("**Frequency**")
                                     st.write(profile['frequency'])
@@ -880,14 +880,8 @@ def profiles_page(user: Dict):
                                     st.write("**Threshold**")
                                     st.write(profile['threshold'])
                                 with col3:
-                                    st.write("**Max Papers**")
+                                    st.write("**Max Papers/Day**")
                                     st.write(str(profile.get('top_x', 10)))
-                                with col4:
-                                    st.write("**Keywords**")
-                                    keywords_display = ', '.join(profile['keywords'][:3])
-                                    if len(profile['keywords']) > 3:
-                                        keywords_display += f" (+{len(profile['keywords']) - 3} more)"
-                                    st.write(keywords_display)
                                 
                                 # Categories display (From main branch)
                                 if profile.get('categories'):
@@ -1391,7 +1385,6 @@ def profiles_page(user: Dict):
                     default_freq = profile['frequency']
                     default_threshold = profile['threshold']
                     default_top_x = profile.get('top_x', 10)
-                    default_keywords = ', '.join(profile['keywords'])
                     if st.session_state.get("loaded_profile_id") != selected_profile_id:
                         st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
                         st.session_state["loaded_profile_id"] = selected_profile_id
@@ -1406,9 +1399,9 @@ def profiles_page(user: Dict):
                 default_freq = "weekly"
                 default_threshold = "medium"
                 default_top_x = 10
-                default_keywords = ""
                 if mode == "Create new":
                     st.session_state["profile_cat_tree_selected"] = []
+                    st.session_state.pop("loaded_profile_id", None)
 
             # Form for create/edit
             if mode == "Create new" or selected_profile_id:
@@ -1417,23 +1410,11 @@ def profiles_page(user: Dict):
 
                 freq = st.selectbox(
                     "Email Frequency",
-                    ["daily", "weekly", "monthly"],
-                    index=["daily", "weekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "monthly"] else 1,
+                    ["none", "daily", "weekly", "monthly"],
+                    index=["none", "daily", "weekly", "monthly"].index(default_freq) if default_freq in ["none", "daily", "weekly", "monthly"] else 2,
                     key="profile_freq_input"
                 )
 
-                keywords = st.text_input(
-                    "Keywords (comma-separated, optional)",
-                    value=default_keywords,
-                    placeholder="machine learning, neural networks, optimization",
-                    key="profile_keywords_input"
-                )
-
-                # # Category tree - sits right below keywords
-                # st.write("**Select arXiv Categories** (required)")
-                # if st.session_state.get("profile_cat_tree_selected"):
-                #     cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in st.session_state["profile_cat_tree_selected"]]
-                #     st.caption("Currently selected: " + ", ".join(cat_labels))
                 try:
                     NO_DOT_CATEGORIES = {
                         "gr-qc", "hep-ex", "hep-lat", "hep-ph", "hep-th",
@@ -1457,6 +1438,8 @@ def profiles_page(user: Dict):
                     st.error("Error loading category tree")
 
                 with st.expander("⚙️ Advanced Options"):
+                    st.write("**Similarity Threshold**")
+                    st.caption("Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.4) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers.")
                     col_low, col_med, col_high = st.columns([1, 1, 1])
                     with col_low:
                         st.markdown("**Low**")
@@ -1466,18 +1449,17 @@ def profiles_page(user: Dict):
                         st.markdown("<div style='text-align: right'><b>High</b></div>", unsafe_allow_html=True)
 
                     threshold_val = st.slider(
-                        "Threshold",
+                        "Similarity Threshold",
                         min_value=0.40,
                         max_value=0.75,
                         value=float(default_threshold) if isinstance(default_threshold, (int, float)) else 0.575,
                         step=0.01,
                         label_visibility="collapsed",
                         key="profile_threshold_input",
-                        help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.4) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers."
                     )
 
                     top_x = st.slider(
-                        "Maximum recommendations to show",
+                        "Maximum recommendations per day",
                         min_value=5,
                         max_value=999,
                         value=default_top_x if selected_profile_id else 999,
@@ -1485,49 +1467,6 @@ def profiles_page(user: Dict):
                         key="profile_top_x_input",
                         help="Set to 999 for unlimited. If unsure, leave as is."
                     )
-                    
-                    keywords = st.text_input(
-                        "Keywords (comma-separated, optional)",
-                        value=default_keywords,
-                        placeholder="machine learning, neural networks, optimization"
-                    )
-
-                    st.write("**Select arXiv Categories** (required)")
-                    if selected_profile_id and st.session_state.get("profile_cat_tree_selected"):
-                        cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in st.session_state["profile_cat_tree_selected"]]
-                        st.caption("Currently selected: " + ", ".join(cat_labels))
-                    try:
-                        selected_cats = st_ant_tree(
-                            treeData=ARXIV_CATEGORY_TREE,
-                            treeCheckable=True,
-                            showSearch=True,
-                            placeholder="Select categories",
-                            max_height=300,
-                            only_children_select=True
-                        )
-                    except Exception as e:
-                        log_error("profiles_page.category_tree", e)
-                        st.error("Error loading category tree")
-                        selected_cats = []
-
-                    with st.expander("⚙️ Advanced Options"):
-                        col_low, col_med, col_high = st.columns([1, 1, 1])
-                        with col_low:
-                            st.markdown("**Low**")
-                        with col_med:
-                            st.markdown("<div style='text-align: center'><b>Medium</b></div>", unsafe_allow_html=True)
-                        with col_high:
-                            st.markdown("<div style='text-align: right'><b>High</b></div>", unsafe_allow_html=True)
-
-                        threshold_val = st.slider(
-                            "Threshold",
-                            min_value=0.40,
-                            max_value=0.75,
-                            value=float(default_threshold) if isinstance(default_threshold, (int, float)) else 0.575,
-                            step=0.01,
-                            label_visibility="collapsed",
-                            help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.4) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers."
-                        )
 
                 submit = st.button(
                     "Create Profile" if mode == "Create new" else "Update Profile",
@@ -1548,7 +1487,7 @@ def profiles_page(user: Dict):
                                 st.error(f"Profile name '{clean_name}' already exists. Please choose a different name.")
                                 return
 
-                            kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
+                            kw_list = []
 
                             # Use categories from session state (set by tree widget above)
                             categories_list = st.session_state.get("profile_cat_tree_selected", [])
@@ -2355,7 +2294,7 @@ def main():
         
         with h_col1:
             st.write(f"Logged in as: **{user.get('name') or user['email']}** (ID: {user.get('id')})")
-            st.write("Please send feedback to preprintbot@syr.edu")
+            st.write("If you have feedback or would like your account deleted, please contact preprintbot@syr.edu")
             
         with h_col2:
             if st.button("Help", use_container_width=True):
