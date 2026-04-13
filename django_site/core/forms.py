@@ -122,20 +122,6 @@ class ProfileForm(forms.Form):
 
 # ── Paper upload ───────────────────────────────────────────────────────────
 
-class PaperUploadForm(forms.Form):
-    # The profile list template uses a raw <input type="file" multiple> instead
-    # of rendering this form, so we keep it minimal.
-    files = forms.FileField(required=False)
-
-
-class ArxivIdForm(forms.Form):
-    arxiv_ids = forms.CharField(
-        widget=forms.Textarea(attrs={
-            "rows": 3,
-            "placeholder": "2301.12345, 2302.67890\nor one per line",
-        }),
-    )
-
 
 # ── Settings ───────────────────────────────────────────────────────────────
 
