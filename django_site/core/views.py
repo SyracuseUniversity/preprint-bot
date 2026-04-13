@@ -28,10 +28,8 @@ from .auth_backend import (
     logout_pbuser,
 )
 from .forms import (
-    ArxivIdForm,
     ForgotPasswordForm,
     LoginForm,
-    PaperUploadForm,
     ProfileForm,
     RegisterForm,
     ResetPasswordForm,

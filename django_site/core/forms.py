@@ -3,7 +3,6 @@ Django forms for authentication, profile CRUD, and paper uploads.
 """
 
 from django import forms
-from .models import Profile
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────
