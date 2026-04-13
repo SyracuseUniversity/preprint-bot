@@ -60,7 +60,7 @@ class Migration(migrations.Migration):
                         verbose_name="ID",
                     ),
                 ),
-                ("password", models.CharField(max_length=128, verbose_name="password")),
+                ("password", models.CharField(default="", max_length=128, verbose_name="password")),
                 (
                     "last_login",
                     models.DateTimeField(
@@ -242,35 +242,6 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.CreateModel(
-            name="PasswordReset",
-            fields=[
-                (
-                    "id",
-                    models.BigAutoField(
-                        auto_created=True,
-                        primary_key=True,
-                        serialize=False,
-                        verbose_name="ID",
-                    ),
-                ),
-                ("token", models.TextField(unique=True)),
-                ("expires_at", models.DateTimeField()),
-                ("used_at", models.DateTimeField(blank=True, null=True)),
-                ("created_at", models.DateTimeField(auto_now_add=True)),
-                (
-                    "user",
-                    models.ForeignKey(
-                        on_delete=django.db.models.deletion.CASCADE,
-                        related_name="password_resets",
-                        to=settings.AUTH_USER_MODEL,
-                    ),
-                ),
-            ],
-            options={
-                "db_table": "password_resets",
-            },
-        ),
-        migrations.CreateModel(
             name="Profile",
             fields=[
                 (
@@ -389,7 +360,7 @@ class Migration(migrations.Migration):
                         verbose_name="ID",
                     ),
                 ),
-                ("threshold", models.CharField(blank=True, max_length=20, null=True)),
+                ("threshold", models.FloatField(blank=True, null=True)),
                 ("method", models.CharField(blank=True, max_length=20, null=True)),
                 ("total_papers_fetched", models.IntegerField(default=0)),
                 ("target_date", models.DateField(blank=True, null=True)),

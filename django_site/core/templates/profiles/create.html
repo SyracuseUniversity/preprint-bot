@@ -27,11 +27,11 @@
       <label>Similarity Threshold</label>
       {{ form.threshold }}
       <input type="range" id="threshold-slider" min="0.40" max="0.75" step="0.01"
-             value="{{ form.threshold.value|default:'0.575' }}"
+             value="{{ form.threshold.value|default:'0.6' }}"
              oninput="document.getElementById('id_threshold').value=this.value; document.getElementById('threshold-display').textContent=this.value;">
       <div style="display:flex; justify-content:space-between; font-size:.75rem; color:var(--text-dim);">
         <span>Low (0.40)</span>
-        <span id="threshold-display" style="font-weight:600;">{{ form.threshold.value|default:"0.575" }}</span>
+        <span id="threshold-display" style="font-weight:600;">{{ form.threshold.value|default:"0.6" }}</span>
         <span>High (0.75)</span>
       </div>
       <div class="form-help">Lower = more results, higher = stricter matching.</div>
@@ -80,8 +80,8 @@
 // Renders the ARXIV_CATEGORY_TREE as nested checkboxes and
 // serialises selected leaf values into the hidden #id_categories input.
 
-const TREE = {{ category_tree_json|safe }};
-const INITIAL = {{ initial_categories_json|default:"[]"|safe }};
+const TREE = JSON.parse('{{ category_tree_json|escapejs }}');
+const INITIAL = JSON.parse('{{ initial_categories_json|default:"[]"|escapejs }}');
 
 function buildTree(nodes, container) {
   nodes.forEach(node => {

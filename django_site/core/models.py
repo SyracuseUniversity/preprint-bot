@@ -245,7 +245,7 @@ class RecommendationRun(models.Model):
     user = models.ForeignKey(PBUser, on_delete=models.CASCADE, related_name="recommendation_runs")
     user_corpus = models.ForeignKey(Corpus, on_delete=models.CASCADE, related_name="user_runs")
     ref_corpus = models.ForeignKey(Corpus, on_delete=models.CASCADE, related_name="ref_runs")
-    threshold = models.CharField(max_length=20, blank=True, null=True)
+    threshold = models.FloatField(blank=True, null=True)
     method = models.CharField(max_length=20, blank=True, null=True)
     total_papers_fetched = models.IntegerField(default=0)
     target_date = models.DateField(blank=True, null=True)
@@ -295,19 +295,6 @@ class AuthToken(models.Model):
 
     class Meta:
         db_table = "auth_tokens"
-
-
-# ── Password resets ────────────────────────────────────────────────────────
-
-class PasswordReset(models.Model):
-    user = models.ForeignKey(PBUser, on_delete=models.CASCADE, related_name="password_resets")
-    token = models.TextField(unique=True)
-    expires_at = models.DateTimeField()
-    used_at = models.DateTimeField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "password_resets"
 
 
 # ── Email logs ─────────────────────────────────────────────────────────────

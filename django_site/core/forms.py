@@ -47,9 +47,6 @@ class ForgotPasswordForm(forms.Form):
 
 
 class ResetPasswordForm(forms.Form):
-    token = forms.CharField(
-        widget=forms.TextInput(attrs={"placeholder": "Paste your reset token"}),
-    )
     new_password = forms.CharField(
         widget=forms.PasswordInput(attrs={"placeholder": "New password"}),
     )
@@ -86,7 +83,7 @@ class ProfileForm(forms.Form):
     threshold = forms.FloatField(
         min_value=0.40,
         max_value=0.75,
-        initial=0.575,
+        initial=0.6,
         widget=forms.HiddenInput(),  # actual input is the range slider in the template
         help_text="Lower = more results, higher = stricter matching.",
     )
@@ -113,10 +110,14 @@ class ProfileForm(forms.Form):
         return [kw.strip() for kw in raw.split(",") if kw.strip()]
 
     def clean_categories(self):
+        from .arxiv_categories import ARXIV_CODE_TO_LABEL
         raw = self.cleaned_data.get("categories", "")
         cats = [c.strip() for c in raw.split(",") if c.strip()]
         if not cats:
             raise forms.ValidationError("Select at least one arXiv category.")
+        invalid = [c for c in cats if c not in ARXIV_CODE_TO_LABEL]
+        if invalid:
+            raise forms.ValidationError(f"Unknown category code(s): {', '.join(invalid)}")
         return cats
 
 

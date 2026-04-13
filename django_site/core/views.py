@@ -53,14 +53,15 @@ ARXIV_ID_RE = re.compile(
 
 def _safe_pdf_path(base_dir, filename):
     """Resolve a filename within base_dir, rejecting path traversal."""
-    # Strip to basename only (no directory components)
-    safe_name = Path(filename).name
+    safe_name = Path(filename).name  # strip directory components
     if not safe_name or not safe_name.lower().endswith(".pdf"):
         return None
-    resolved = (base_dir / safe_name).resolve()
-    # Ensure the resolved path is still inside the expected directory
-    if not str(resolved).startswith(str(base_dir.resolve())):
-        return None
+    base_resolved = base_dir.resolve()
+    resolved = (base_resolved / safe_name).resolve()
+    try:
+        resolved.relative_to(base_resolved)
+    except ValueError:
+        return None  # path escapes the base directory
     return resolved
 
 
@@ -141,53 +142,51 @@ def logout_view(request):
 
 def forgot_password_view(request):
     form = ForgotPasswordForm(request.POST or None)
-    token_display = None
+    reset_link = None
     if request.method == "POST" and form.is_valid():
         email = form.cleaned_data["email"]
         try:
             pb_user = PBUser.objects.get(email__iexact=email)
-            import secrets
+            from django.contrib.auth.tokens import default_token_generator
+            from django.utils.http import urlsafe_base64_encode
+            from django.utils.encoding import force_bytes
 
-            token = secrets.token_urlsafe(32)
-            from .models import PasswordReset
-
-            PasswordReset.objects.create(
-                user=pb_user,
-                token=token,
-                expires_at=timezone.now() + timedelta(hours=1),
-            )
-            # In production, send via email. For dev, display it.
+            uid = urlsafe_base64_encode(force_bytes(pb_user.pk))
+            token = default_token_generator.make_token(pb_user)
+            # In production, email this link. In dev, display it.
             if django_settings.DEBUG:
-                token_display = token
-            messages.success(request, "If that email exists, a reset token has been generated.")
+                reset_link = request.build_absolute_uri(
+                    f"/auth/reset-password/{uid}/{token}/"
+                )
         except PBUser.DoesNotExist:
-            messages.success(request, "If that email exists, a reset token has been generated.")
+            pass  # don't reveal whether the email exists
+        messages.success(request, "If that email exists, a reset link has been generated.")
 
     return render(
-        request, "auth/forgot_password.html", {"form": form, "token_display": token_display}
+        request, "auth/forgot_password.html", {"form": form, "reset_link": reset_link}
     )
 
 
-def reset_password_view(request):
+def reset_password_view(request, uidb64, token):
+    from django.contrib.auth.tokens import default_token_generator
+    from django.utils.http import urlsafe_base64_decode
+
+    try:
+        uid = urlsafe_base64_decode(uidb64).decode()
+        pb_user = PBUser.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, PBUser.DoesNotExist):
+        pb_user = None
+
+    if pb_user is None or not default_token_generator.check_token(pb_user, token):
+        messages.error(request, "Invalid or expired reset link.")
+        return redirect("forgot_password")
+
     form = ResetPasswordForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        from .models import PasswordReset
-
-        token = form.cleaned_data["token"]
-        new_password = form.cleaned_data["new_password"]
-        try:
-            pr = PasswordReset.objects.get(token=token, used_at__isnull=True)
-            if pr.expires_at < timezone.now():
-                messages.error(request, "Token has expired.")
-            else:
-                pr.user.set_password(new_password)
-                pr.user.save()
-                pr.used_at = timezone.now()
-                pr.save()
-                messages.success(request, "Password updated. Please log in.")
-                return redirect("login")
-        except PasswordReset.DoesNotExist:
-            messages.error(request, "Invalid or already-used token.")
+        pb_user.set_password(form.cleaned_data["new_password"])
+        pb_user.save()
+        messages.success(request, "Password updated. Please log in.")
+        return redirect("login")
 
     return render(request, "auth/reset_password.html", {"form": form})
 
@@ -368,7 +367,7 @@ def profile_edit_view(request, profile_id):
         form = ProfileForm(initial={
             "name": profile.name,
             "frequency": profile.frequency,
-            "threshold": profile.threshold if profile.threshold is not None else 0.575,
+            "threshold": profile.threshold if profile.threshold is not None else 0.6,
             "top_x": profile.top_x or 10,
             "keywords": ", ".join(profile.keywords or []),
             "categories": ",".join(profile.categories or []),
@@ -506,8 +505,11 @@ def _download_arxiv_pdfs(pb_user, profile, arxiv_ids):
 
     Returns (success_count, failed_ids).
     """
+    import logging
     import requests as http_requests
 
+    MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB
+    logger = logging.getLogger(__name__)
     pdf_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
     pdf_dir.mkdir(parents=True, exist_ok=True)
 
@@ -517,12 +519,17 @@ def _download_arxiv_pdfs(pb_user, profile, arxiv_ids):
         try:
             resp = http_requests.get(f"https://arxiv.org/pdf/{aid}.pdf", timeout=30)
             resp.raise_for_status()
-            if "application/pdf" in resp.headers.get("Content-Type", ""):
+            if "application/pdf" not in resp.headers.get("Content-Type", ""):
+                logger.warning("arXiv returned non-PDF content for %s", aid)
+                failed.append(aid)
+            elif len(resp.content) > MAX_PDF_BYTES:
+                logger.warning("arXiv PDF for %s exceeds size limit (%d bytes)", aid, len(resp.content))
+                failed.append(aid)
+            else:
                 (pdf_dir / f"{aid}.pdf").write_bytes(resp.content)
                 success += 1
-            else:
-                failed.append(aid)
-        except Exception:
+        except Exception as exc:
+            logger.exception("Failed to download arXiv PDF %s", aid)
             failed.append(aid)
     return success, failed
 
