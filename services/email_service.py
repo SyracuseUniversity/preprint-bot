@@ -95,7 +95,7 @@ def send_recommendations_digest(
     papers: List[Dict],
     run_date: str,
 ) -> tuple[bool, str, str]:
-    subject = f"Preprint Bot: {len(papers)} new recommendations for '{profile_name}' ({run_date})"
+    subject = f"Preprint Bot: Showing 10 out of {len(papers)} new recommendations for '{profile_name}' ({run_date})"
     html_body = build_digest_html(profile_name, papers, run_date)
     success = send_email(to_address, subject, html_body)
     return success, subject, html_body
