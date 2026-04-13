@@ -2320,7 +2320,8 @@ def main():
         
         with h_col1:
             st.write(f"Logged in as: **{user.get('name') or user['email']}** (ID: {user.get('id')})")
-            st.write("If you have feedback or would like your account deleted, please contact preprintbot@syr.edu")
+            st.write("Your feedback is welcome! To send comments, please [open an issue on our GitHub repo](https://github.com/SyracuseUniversity/preprint-bot/issues), or send an email to preprintbot@syr.edu."
+            st.write('To delete your account please email preprintbot@syr.edu with "Delete <accountname>" in the subject, replacing <accountname> with your account name.')
             
         with h_col2:
             if st.button("Help", use_container_width=True):
