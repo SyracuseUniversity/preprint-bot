@@ -1388,6 +1388,12 @@ def profiles_page(user: Dict):
                     if st.session_state.get("loaded_profile_id") != selected_profile_id:
                         st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
                         st.session_state["loaded_profile_id"] = selected_profile_id
+                        # Reset widget state to match loaded profile
+                        st.session_state["profile_name_input"] = profile['name']
+                        st.session_state["profile_freq_input"] = profile['frequency']
+                        st.session_state["profile_threshold_input"] = float(profile['threshold']) if isinstance(profile['threshold'], (int, float)) else 0.575
+                        st.session_state["profile_top_x_input"] = profile.get('top_x', 10)
+                        st.session_state["profile_email_enabled"] = profile['frequency'] != "none"
                 except Exception as e:
                     log_error("profiles_page.load_profile_defaults", e, {
                         "profile_id": selected_profile_id
@@ -1402,18 +1408,33 @@ def profiles_page(user: Dict):
                 if mode == "Create new":
                     st.session_state["profile_cat_tree_selected"] = []
                     st.session_state.pop("loaded_profile_id", None)
+                    # Reset widget state to defaults
+                    st.session_state["profile_name_input"] = ""
+                    st.session_state["profile_freq_input"] = "weekly"
+                    st.session_state["profile_threshold_input"] = 0.575
+                    st.session_state["profile_top_x_input"] = 10
+                    st.session_state["profile_email_enabled"] = True
 
             # Form for create/edit
             if mode == "Create new" or selected_profile_id:
 
                 name = st.text_input("Profile Name", value=default_name, key="profile_name_input")
 
-                freq = st.selectbox(
-                    "Email Frequency",
-                    ["none", "daily", "weekly", "monthly"],
-                    index=["none", "daily", "weekly", "monthly"].index(default_freq) if default_freq in ["none", "daily", "weekly", "monthly"] else 2,
-                    key="profile_freq_input"
+                email_enabled = st.checkbox(
+                    "Enable email notifications",
+                    value=default_freq != "none",
+                    key="profile_email_enabled"
                 )
+
+                if email_enabled:
+                    freq = st.selectbox(
+                        "Email Frequency",
+                        ["daily", "weekly", "monthly"],
+                        index=["daily", "weekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "monthly"] else 1,
+                        key="profile_freq_input"
+                    )
+                else:
+                    freq = "none"
 
                 try:
                     NO_DOT_CATEGORIES = {
