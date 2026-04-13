@@ -1393,7 +1393,7 @@ def profiles_page(user: Dict):
                         st.session_state["profile_freq_input"] = profile['frequency']
                         st.session_state["profile_threshold_input"] = float(profile['threshold']) if isinstance(profile['threshold'], (int, float)) else 0.575
                         st.session_state["profile_top_x_input"] = profile.get('top_x', 10)
-                        st.session_state["profile_email_enabled"] = profile['frequency'] != "none"
+                        st.session_state["profile_email_enabled"] = profile.get('email_notify', True)
                 except Exception as e:
                     log_error("profiles_page.load_profile_defaults", e, {
                         "profile_id": selected_profile_id
@@ -1422,7 +1422,6 @@ def profiles_page(user: Dict):
 
                 email_enabled = st.checkbox(
                     "Enable email notifications",
-                    value=default_freq != "none",
                     key="profile_email_enabled"
                 )
 
@@ -1434,7 +1433,7 @@ def profiles_page(user: Dict):
                         key="profile_freq_input"
                     )
                 else:
-                    freq = "none"
+                    freq = default_freq if default_freq in ["daily", "weekly", "monthly"] else "weekly"
 
                 try:
                     NO_DOT_CATEGORIES = {
@@ -1524,6 +1523,7 @@ def profiles_page(user: Dict):
                                     "name": clean_name,
                                     "keywords": kw_list,
                                     "categories": categories_list,
+                                    "email_notify": email_enabled,
                                     "frequency": freq,
                                     "threshold": threshold_val,
                                     "top_x": top_x
@@ -1536,6 +1536,7 @@ def profiles_page(user: Dict):
                                     "name": clean_name,
                                     "keywords": kw_list,
                                     "categories": categories_list,
+                                    "email_notify": email_enabled,
                                     "frequency": freq,
                                     "threshold": threshold_val,
                                     "top_x": top_x
@@ -1558,6 +1559,7 @@ def profiles_page(user: Dict):
                         st.warning("Create this profile?")
 
                         st.write(f"**Name:** {data['name']}")
+                        st.write(f"**Email Notifications:** {'Enabled' if data.get('email_notify', True) else 'Disabled'}")
                         st.write(f"**Frequency:** {data['frequency']}")
                         st.write(f"**Threshold:** {data['threshold']}")
                         st.write(f"**Max Papers:** {data['top_x']}")
@@ -1576,6 +1578,7 @@ def profiles_page(user: Dict):
                                         name=data['name'],
                                         keywords=data['keywords'],
                                         categories=data.get('categories', []),
+                                        email_notify=data.get('email_notify', True),
                                         frequency=data['frequency'],
                                         threshold=data['threshold'],
                                         top_x=data['top_x']
@@ -1618,6 +1621,7 @@ def profiles_page(user: Dict):
                         st.warning("Update this profile?")
 
                         st.write(f"**Name:** {data['name']}")
+                        st.write(f"**Email Notifications:** {'Enabled' if data.get('email_notify', True) else 'Disabled'}")
                         st.write(f"**Frequency:** {data['frequency']}")
                         st.write(f"**Threshold:** {data['threshold']}")
                         st.write(f"**Max Papers:** {data['top_x']}")
@@ -1635,6 +1639,7 @@ def profiles_page(user: Dict):
                                         name=data['name'],
                                         keywords=data['keywords'],
                                         categories=data['categories'],
+                                        email_notify=data.get('email_notify', True),
                                         frequency=data['frequency'],
                                         threshold=data['threshold'],
                                         top_x=data['top_x']
