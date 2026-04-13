@@ -85,7 +85,7 @@
         {% if item.pdf_files %}
           {% for pdf in item.pdf_files %}
           <div class="flex-between" style="padding:.35rem 0; border-bottom:1px solid var(--border);">
-            <span class="text-sm">{{ pdf.name }}</span>
+            <a href="{% url 'paper_view' p.pk pdf.name %}" target="_blank" class="text-sm">{{ pdf.name }}</a>
             <form method="post" action="{% url 'paper_delete' p.pk pdf.name %}" style="display:inline;">
               {% csrf_token %}
               <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete {{ pdf.name }}?');">🗑</button>

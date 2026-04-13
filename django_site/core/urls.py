@@ -21,6 +21,7 @@ urlpatterns = [
     # Paper management (within a profile)
     path("profiles/<int:profile_id>/upload/", views.paper_upload_view, name="paper_upload"),
     path("profiles/<int:profile_id>/papers/<str:filename>/delete/", views.paper_delete_view, name="paper_delete"),
+    path("profiles/<int:profile_id>/papers/<str:filename>/", views.paper_view, name="paper_view"),
     path("profiles/<int:profile_id>/add-arxiv/", views.paper_add_arxiv_view, name="paper_add_arxiv"),
     path("profiles/<int:profile_id>/search-arxiv/", views.paper_search_arxiv_api_view, name="paper_search_arxiv_api"),
 

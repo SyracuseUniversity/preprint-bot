@@ -431,6 +431,22 @@ def paper_delete_view(request, profile_id, filename):
 
 
 @pbuser_required
+def paper_view(request, profile_id, filename):
+    """Serve an uploaded PDF for viewing in the browser."""
+    from django.http import FileResponse, Http404
+
+    pb_user = request.pb_user
+    profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
+    pdf_path = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk) / filename
+
+    if not pdf_path.exists():
+        raise Http404("File not found.")
+
+    # content_type tells the browser to display it; as_attachment=False opens inline
+    return FileResponse(open(pdf_path, "rb"), content_type="application/pdf")
+
+
+@pbuser_required
 @require_POST
 def paper_add_arxiv_view(request, profile_id):
     """Add papers from arXiv by ID – downloads the PDF into the profile dir."""
