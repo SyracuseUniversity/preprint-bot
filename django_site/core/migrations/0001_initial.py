@@ -9,6 +9,7 @@
 
 import django.contrib.postgres.fields
 import django.db.models.deletion
+import django.db.models.functions
 import pgvector.django.vector
 from django.conf import settings
 from django.db import migrations, models
@@ -106,6 +107,12 @@ class Migration(migrations.Migration):
             options={
                 "db_table": "users",
                 "swappable": "AUTH_USER_MODEL",
+                "constraints": [
+                    models.UniqueConstraint(
+                        django.db.models.functions.Lower("email"),
+                        name="users_email_ci_unique",
+                    ),
+                ],
             },
         ),
         migrations.CreateModel(

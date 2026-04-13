@@ -2,7 +2,7 @@
 Django settings for preprint_bot_web project.
 
 Connects to the same PostgreSQL database used by the FastAPI backend.
-Uses managed = False on models so Django doesn't try to alter existing tables.
+Models are fully managed by Django — migrations create and alter tables.
 """
 
 import os
@@ -113,10 +113,10 @@ USE_TZ = True
 # Static / Media files
 # ---------------------------------------------------------------------------
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-MEDIA_URL = "media/"
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 # PDF storage paths (mirrors FastAPI config)

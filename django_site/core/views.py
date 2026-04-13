@@ -15,11 +15,10 @@ from pathlib import Path
 
 from django.conf import settings as django_settings
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
-from django.db.models import Max, Subquery, OuterRef
-from django.http import JsonResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from .arxiv_categories import ARXIV_CODE_TO_LABEL, ARXIV_CATEGORY_TREE, label_for
@@ -52,6 +51,19 @@ from .models import (
 ARXIV_ID_RE = re.compile(
     r"^(\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z-]+)?/\d{7})$", re.IGNORECASE
 )
+
+
+def _safe_pdf_path(base_dir, filename):
+    """Resolve a filename within base_dir, rejecting path traversal."""
+    # Strip to basename only (no directory components)
+    safe_name = Path(filename).name
+    if not safe_name or not safe_name.lower().endswith(".pdf"):
+        return None
+    resolved = (base_dir / safe_name).resolve()
+    # Ensure the resolved path is still inside the expected directory
+    if not str(resolved).startswith(str(base_dir.resolve())):
+        return None
+    return resolved
 
 
 # ── Decorator ──────────────────────────────────────────────────────────────
@@ -89,8 +101,10 @@ def login_view(request):
         pb_user = authenticate_pbuser(request, email, password)
         if pb_user:
             login_pbuser(request, pb_user)
-            # Redirect to the page the user originally requested, or dashboard
-            return redirect(next_url if next_url else "dashboard")
+            # Validate next URL to prevent open redirect
+            if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+                return redirect(next_url)
+            return redirect("dashboard")
         messages.error(request, "Invalid email or password.")
 
     return render(request, "auth/login.html", {"form": form, "next": next_url})
@@ -121,6 +135,7 @@ def register_view(request):
     return render(request, "auth/register.html", {"form": form})
 
 
+@require_POST
 def logout_view(request):
     logout_pbuser(request)
     return redirect("login")
@@ -144,7 +159,8 @@ def forgot_password_view(request):
                 expires_at=timezone.now() + timedelta(hours=1),
             )
             # In production, send via email. For dev, display it.
-            token_display = token
+            if django_settings.DEBUG:
+                token_display = token
             messages.success(request, "If that email exists, a reset token has been generated.")
         except PBUser.DoesNotExist:
             messages.success(request, "If that email exists, a reset token has been generated.")
@@ -232,6 +248,13 @@ def _get_latest_recommendations(pb_user):
 
     most_recent = max(d for d, _, _ in recs_with_dates)
 
+    # Prefetch summaries for all papers from the most recent date
+    paper_ids = {paper.pk for dt, _, paper in recs_with_dates if dt == most_recent}
+    summaries_map = {
+        s.paper_id: s.summary_text or ""
+        for s in Summary.objects.filter(paper_id__in=paper_ids)
+    }
+
     # Filter to that date, deduplicate by arxiv_id keeping highest score
     seen = {}
     for dt, rec, paper in recs_with_dates:
@@ -239,21 +262,12 @@ def _get_latest_recommendations(pb_user):
             continue
         aid = paper.arxiv_id or f"_pk_{paper.pk}"
         if aid not in seen or rec.score > seen[aid]["score"]:
-            # Try to get summary
-            summary_text = ""
-            try:
-                s = Summary.objects.filter(paper=paper).first()
-                if s:
-                    summary_text = s.summary_text or ""
-            except Exception:
-                pass
-
             seen[aid] = {
                 "title": paper.title,
                 "score": rec.score,
                 "arxiv_id": paper.arxiv_id,
                 "abstract": paper.abstract or "",
-                "summary_text": summary_text,
+                "summary_text": summaries_map.get(paper.pk, ""),
                 "submitted_date": paper.submitted_date,
             }
 
@@ -398,8 +412,9 @@ def paper_upload_view(request, profile_id):
     uploaded = request.FILES.getlist("files")
     count = 0
     for f in uploaded:
-        if f.name.endswith(".pdf"):
-            dest = pdf_dir / f.name
+        safe_name = Path(f.name).name  # strip directory components
+        if safe_name.lower().endswith(".pdf"):
+            dest = pdf_dir / safe_name
             with open(dest, "wb") as out:
                 for chunk in f.chunks():
                     out.write(chunk)
@@ -419,11 +434,14 @@ def paper_delete_view(request, profile_id, filename):
     """Delete a single uploaded PDF."""
     pb_user = request.pb_user
     profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
-    pdf_path = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk) / filename
+    base_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
+    pdf_path = _safe_pdf_path(base_dir, filename)
 
-    if pdf_path.exists():
+    if not pdf_path:
+        messages.error(request, "Invalid filename.")
+    elif pdf_path.exists():
         pdf_path.unlink()
-        messages.success(request, f"Deleted {filename}.")
+        messages.success(request, f"Deleted {pdf_path.name}.")
     else:
         messages.error(request, "File not found.")
 
@@ -433,16 +451,14 @@ def paper_delete_view(request, profile_id, filename):
 @pbuser_required
 def paper_view(request, profile_id, filename):
     """Serve an uploaded PDF for viewing in the browser."""
-    from django.http import FileResponse, Http404
-
     pb_user = request.pb_user
     profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
-    pdf_path = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk) / filename
+    base_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
+    pdf_path = _safe_pdf_path(base_dir, filename)
 
-    if not pdf_path.exists():
+    if not pdf_path or not pdf_path.exists():
         raise Http404("File not found.")
 
-    # content_type tells the browser to display it; as_attachment=False opens inline
     return FileResponse(open(pdf_path, "rb"), content_type="application/pdf")
 
 
@@ -570,7 +586,10 @@ def paper_search_arxiv_api_view(request, profile_id):
             status=500,
         )
     except Exception as exc:
-        return JsonResponse({"error": str(exc)}, status=500)
+        import logging
+        logging.getLogger(__name__).exception("arXiv search failed")
+        detail = str(exc) if django_settings.DEBUG else "Search failed. Please try again."
+        return JsonResponse({"error": detail}, status=500)
 
 
 # ── Recommendations ────────────────────────────────────────────────────────
@@ -601,12 +620,18 @@ def recommendations_view(request):
     recs = _query_profile_recommendations(pb_user, selected_profile)
 
     # Apply filters
-    min_score = float(request.GET.get("min_score", 0))
+    try:
+        min_score = float(request.GET.get("min_score", 0))
+    except (ValueError, TypeError):
+        min_score = 0
     date_from = request.GET.get("date_from")
     date_to = request.GET.get("date_to")
     keyword = request.GET.get("q", "").strip()
     cat_filter = request.GET.getlist("cat")
-    page = int(request.GET.get("page", 1))
+    try:
+        page = int(request.GET.get("page", 1))
+    except (ValueError, TypeError):
+        page = 1
 
     if min_score > 0:
         recs = [r for r in recs if r["score"] >= min_score]
@@ -689,11 +714,18 @@ def _query_profile_recommendations(pb_user, profile):
         Recommendation.objects.filter(run__in=runs)
         .select_related("paper", "run")
         .order_by("-score")
-    )
+    )[:5000]
+
+    # Prefetch summaries for all papers in one query
+    paper_ids = {rec.paper_id for rec in recs_qs}
+    summaries_map = {
+        s.paper_id: s.summary_text or ""
+        for s in Summary.objects.filter(paper_id__in=paper_ids, mode="abstract")
+    }
 
     # Deduplicate by arxiv_id keeping highest score
     seen = {}
-    for rec in recs_qs[:5000]:
+    for rec in recs_qs:
         paper = rec.paper
         aid = paper.arxiv_id or f"_pk_{paper.pk}"
         if aid in seen and rec.score <= seen[aid]["score"]:
@@ -703,21 +735,13 @@ def _query_profile_recommendations(pb_user, profile):
         date_obj = dt.date() if dt else None
         date_str = dt.strftime("%d %B %Y") if dt else "Unknown Date"
 
-        summary_text = ""
-        try:
-            s = Summary.objects.filter(paper=paper, mode="abstract").first()
-            if s:
-                summary_text = s.summary_text or ""
-        except Exception:
-            pass
-
         seen[aid] = {
             "title": paper.title,
             "score": rec.score,
             "rank": rec.rank,
             "arxiv_id": paper.arxiv_id,
             "abstract": paper.abstract or "",
-            "summary_text": summary_text,
+            "summary_text": summaries_map.get(paper.pk, ""),
             "date_obj": date_obj,
             "date_str": date_str,
             "categories": paper.categories_list,

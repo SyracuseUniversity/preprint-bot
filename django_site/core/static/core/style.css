@@ -78,6 +78,16 @@ a:hover { text-decoration: underline; }
   gap: .75rem;
 }
 .topnav .user-area a { color: rgba(255,255,255,.7); font-size: .8rem; }
+.nav-logout-btn {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,.7);
+  font-size: .8rem;
+  font-family: var(--font-body);
+  cursor: pointer;
+  padding: 0;
+}
+.nav-logout-btn:hover { color: #fff; text-decoration: underline; }
 
 /* ── Container ────────────────────────────────────────── */
 .container { max-width: var(--max-w); width: 100%; margin: 0 auto; padding: 1.75rem 1.5rem 3rem; flex: 1; }

@@ -31,8 +31,11 @@
     </div>
     <div class="user-area">
       <span>{{ request.user.name|default:request.user.email }}</span>
-      <a href="{% url 'help' %}" target="_blank">Help</a>
-      <a href="{% url 'logout' %}">Sign out</a>
+      <a href="{% url 'help' %}" target="_blank" rel="noopener noreferrer">Help</a>
+      <form method="post" action="{% url 'logout' %}" style="display:inline;">
+        {% csrf_token %}
+        <button type="submit" class="nav-logout-btn">Sign out</button>
+      </form>
     </div>
   </nav>
   {% endif %}

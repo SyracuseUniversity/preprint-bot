@@ -6,13 +6,10 @@ Table names match the original schema so the FastAPI backend still works.
 """
 
 from django.db import models
+from django.db.models.functions import Lower
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.contrib.postgres.fields import ArrayField
-
-try:
-    from pgvector.django import VectorField
-except ImportError:
-    VectorField = None
+from pgvector.django import VectorField
 
 
 # ── Users ──────────────────────────────────────────────────────────────────
@@ -23,7 +20,7 @@ class PBUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:
             raise ValueError("Email is required")
-        email = self.normalize_email(email)
+        email = self.normalize_email(email).lower()  # fully lowercase
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
@@ -57,6 +54,16 @@ class PBUser(AbstractBaseUser, PermissionsMixin):
     class Meta:
         db_table = "users"
         swappable = "AUTH_USER_MODEL"
+        constraints = [
+            models.UniqueConstraint(
+                Lower("email"),
+                name="users_email_ci_unique",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.email = self.email.strip().lower()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name or self.email
@@ -205,10 +212,7 @@ class Embedding(models.Model):
     section = models.ForeignKey(
         Section, on_delete=models.CASCADE, blank=True, null=True, related_name="embeddings"
     )
-    if VectorField:
-        embedding = VectorField(dimensions=384)
-    else:
-        embedding = models.TextField(help_text="Install pgvector-django for proper vector support")
+    embedding = VectorField(dimensions=384)
     type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="abstract")
     model_name = models.CharField(max_length=100)
     created_at = models.DateTimeField(auto_now_add=True)

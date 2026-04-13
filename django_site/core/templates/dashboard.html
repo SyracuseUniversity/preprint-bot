@@ -43,7 +43,7 @@
     {% endif %}
 
     {% if rec.arxiv_id %}
-      <a href="https://arxiv.org/abs/{{ rec.arxiv_id }}" target="_blank" class="btn btn-sm mt-1">View on arXiv →</a>
+      <a href="https://arxiv.org/abs/{{ rec.arxiv_id }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm mt-1">View on arXiv →</a>
     {% endif %}
   </div>
   {% endfor %}

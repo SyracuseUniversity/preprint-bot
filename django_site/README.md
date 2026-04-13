@@ -144,7 +144,7 @@ django_site/
     ├── views.py               # All view functions
     ├── urls.py                # URL routing
     ├── forms.py               # Django forms
-    ├── auth_backend.py        # Custom PBKDF2 auth against users table
+    ├── auth_backend.py        # Auth helper wrappers around Django's built-in auth
     ├── arxiv_categories.py    # Category tree data + helpers
     ├── context_processors.py  # Template context helpers
     ├── admin.py               # Django admin registration
@@ -171,7 +171,7 @@ django_site/
 
 | Aspect              | Streamlit version               | Django version                    |
 |---------------------|---------------------------------|-----------------------------------|
-| Auth                | Cookie-based API tokens         | Django sessions + PBKDF2 backend  |
+| Auth                | Cookie-based API tokens         | Django sessions + ModelBackend    |
 | State               | `st.session_state`              | Django sessions + GET params      |
 | Category picker     | `st_ant_tree` widget            | Pure JS checkbox tree             |
 | Pagination          | `st.rerun()` loop               | Standard `?page=N` GET params     |

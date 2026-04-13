@@ -33,7 +33,7 @@
         </form>
         <a href="{% url 'profile_edit' p.pk %}" class="btn btn-sm">Edit</a>
         <form method="post" action="{% url 'profile_delete' p.pk %}" style="display:inline;"
-              onsubmit="return confirm('Delete profile \'{{ p.name }}\'? This cannot be undone.');">
+              onsubmit="return confirm('Delete profile \'{{ p.name|escapejs }}\'? This cannot be undone.');">
           {% csrf_token %}
           <button type="submit" class="btn btn-sm btn-danger">Delete</button>
         </form>
@@ -85,10 +85,10 @@
         {% if item.pdf_files %}
           {% for pdf in item.pdf_files %}
           <div class="flex-between" style="padding:.35rem 0; border-bottom:1px solid var(--border);">
-            <a href="{% url 'paper_view' p.pk pdf.name %}" target="_blank" class="text-sm">{{ pdf.name }}</a>
+            <a href="{% url 'paper_view' p.pk pdf.name %}" target="_blank" rel="noopener noreferrer" class="text-sm">{{ pdf.name }}</a>
             <form method="post" action="{% url 'paper_delete' p.pk pdf.name %}" style="display:inline;">
               {% csrf_token %}
-              <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete {{ pdf.name }}?');">🗑</button>
+              <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete {{ pdf.name|escapejs }}?');">🗑</button>
             </form>
           </div>
           {% endfor %}
@@ -248,7 +248,7 @@ function doSearch(btn) {
           + disabled + ' style="margin-top:.35rem;">'
           + '<div style="flex:1;">'
           + '<a href="https://arxiv.org/abs/' + esc(r.arxiv_id)
-          + '" target="_blank" style="font-weight:600;">' + esc(r.title) + '</a>'
+          + '" target="_blank" rel="noopener noreferrer" style="font-weight:600;">' + esc(r.title) + '</a>'
           + '<div class="text-sm text-dim" style="margin-top:.15rem;">' + esc(r.authors) + '</div>'
           + '<div class="text-sm text-dim">Published ' + esc(r.published)
           + ' · ' + esc(r.arxiv_id) + badge + '</div>'
