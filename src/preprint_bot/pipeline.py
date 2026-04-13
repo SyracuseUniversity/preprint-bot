@@ -87,7 +87,8 @@ async def fetch_papers_for_arxiv_day(target_date, categories):
                 try:
                     resp = await client.get(url)
                     if resp.status_code == 429:
-                        wait = backoff * (2 ** attempt)
+                        retry_after = resp.headers.get('Retry-After')
+                        wait = int(retry_after) if retry_after else backoff * (2 ** attempt)
                         print(f"  {cat}: 429 rate limited, waiting {wait}s (attempt {attempt + 1}/{max_retries})")
                         await asyncio.sleep(wait)
                         continue
