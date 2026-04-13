@@ -185,7 +185,9 @@ def dashboard_view(request):
     pb_user = request.pb_user
 
     profiles = Profile.objects.filter(user=pb_user)
-    corpora = Corpus.objects.filter(user=pb_user)
+
+    # Total recommendations across all profiles
+    total_recs = ProfileRecommendation.objects.filter(profile__in=profiles).count()
 
     # Gather today's recommendations across all profiles
     today_recs = _get_latest_recommendations(pb_user)
@@ -196,7 +198,7 @@ def dashboard_view(request):
         {
             "pb_user": pb_user,
             "profiles": profiles,
-            "corpora": corpora,
+            "total_recs": total_recs,
             "today_recs": today_recs[:20],
             "today_count": len(today_recs),
         },

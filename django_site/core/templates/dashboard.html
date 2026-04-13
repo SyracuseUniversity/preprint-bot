@@ -11,14 +11,10 @@
     <div class="stat-value">{{ profiles|length }}</div>
     <div class="stat-label">Profiles</div>
   </a>
-  <div class="stat-box">
-    <div class="stat-value">{{ corpora|length }}</div>
-    <div class="stat-label">Corpora</div>
-  </div>
-  <div class="stat-box">
-    <div class="stat-value">{{ today_count }}</div>
-    <div class="stat-label">Latest Recs</div>
-  </div>
+  <a href="{% url 'recommendations' %}" class="stat-box" style="text-decoration:none; color:inherit;">
+    <div class="stat-value">{{ total_recs }}</div>
+    <div class="stat-label">Total Recommendations</div>
+  </a>
 </div>
 
 {# ── Latest recommendations ────────────────────────── #}
