@@ -872,7 +872,7 @@ def profiles_page(user: Dict):
                                         st.session_state["edit_profile_name"] = profile['name']
                                         st.rerun()
 
-                                col1, col2, col3, col4 = st.columns(4)
+                                col1, col2, col3 = st.columns(3)
                                 with col1:
                                     st.write("**Frequency**")
                                     st.write(profile['frequency'])
@@ -880,14 +880,8 @@ def profiles_page(user: Dict):
                                     st.write("**Threshold**")
                                     st.write(profile['threshold'])
                                 with col3:
-                                    st.write("**Max Papers**")
+                                    st.write("**Max Papers/Day**")
                                     st.write(str(profile.get('top_x', 10)))
-                                with col4:
-                                    st.write("**Keywords**")
-                                    keywords_display = ', '.join(profile['keywords'][:3])
-                                    if len(profile['keywords']) > 3:
-                                        keywords_display += f" (+{len(profile['keywords']) - 3} more)"
-                                    st.write(keywords_display)
                                 
                                 # Categories display (From main branch)
                                 if profile.get('categories'):
@@ -1391,10 +1385,15 @@ def profiles_page(user: Dict):
                     default_freq = profile['frequency']
                     default_threshold = profile['threshold']
                     default_top_x = profile.get('top_x', 10)
-                    default_keywords = ', '.join(profile['keywords'])
                     if st.session_state.get("loaded_profile_id") != selected_profile_id:
                         st.session_state["profile_cat_tree_selected"] = profile.get('categories', [])
                         st.session_state["loaded_profile_id"] = selected_profile_id
+                        # Reset widget state to match loaded profile
+                        st.session_state["profile_name_input"] = profile['name']
+                        st.session_state["profile_freq_input"] = profile['frequency']
+                        st.session_state["profile_threshold_input"] = float(profile['threshold']) if isinstance(profile['threshold'], (int, float)) else 0.575
+                        st.session_state["profile_top_x_input"] = profile.get('top_x', 10)
+                        st.session_state["profile_email_enabled"] = profile.get('email_notify', True)
                 except Exception as e:
                     log_error("profiles_page.load_profile_defaults", e, {
                         "profile_id": selected_profile_id
@@ -1406,34 +1405,36 @@ def profiles_page(user: Dict):
                 default_freq = "weekly"
                 default_threshold = "medium"
                 default_top_x = 10
-                default_keywords = ""
                 if mode == "Create new":
                     st.session_state["profile_cat_tree_selected"] = []
+                    st.session_state.pop("loaded_profile_id", None)
+                    # Reset widget state to defaults
+                    st.session_state["profile_name_input"] = ""
+                    st.session_state["profile_freq_input"] = "weekly"
+                    st.session_state["profile_threshold_input"] = 0.575
+                    st.session_state["profile_top_x_input"] = 10
+                    st.session_state["profile_email_enabled"] = True
 
             # Form for create/edit
             if mode == "Create new" or selected_profile_id:
 
                 name = st.text_input("Profile Name", value=default_name, key="profile_name_input")
 
-                freq = st.selectbox(
-                    "Email Frequency",
-                    ["daily", "weekly", "monthly"],
-                    index=["daily", "weekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "monthly"] else 1,
-                    key="profile_freq_input"
+                email_enabled = st.checkbox(
+                    "Enable email notifications",
+                    key="profile_email_enabled"
                 )
 
-                keywords = st.text_input(
-                    "Keywords (comma-separated, optional)",
-                    value=default_keywords,
-                    placeholder="machine learning, neural networks, optimization",
-                    key="profile_keywords_input"
-                )
+                if email_enabled:
+                    freq = st.selectbox(
+                        "Email Frequency",
+                        ["daily", "weekly", "monthly"],
+                        index=["daily", "weekly", "monthly"].index(default_freq) if default_freq in ["daily", "weekly", "monthly"] else 1,
+                        key="profile_freq_input"
+                    )
+                else:
+                    freq = default_freq if default_freq in ["daily", "weekly", "monthly"] else "weekly"
 
-                # # Category tree - sits right below keywords
-                # st.write("**Select arXiv Categories** (required)")
-                # if st.session_state.get("profile_cat_tree_selected"):
-                #     cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in st.session_state["profile_cat_tree_selected"]]
-                #     st.caption("Currently selected: " + ", ".join(cat_labels))
                 try:
                     NO_DOT_CATEGORIES = {
                         "gr-qc", "hep-ex", "hep-lat", "hep-ph", "hep-th",
@@ -1457,6 +1458,8 @@ def profiles_page(user: Dict):
                     st.error("Error loading category tree")
 
                 with st.expander("⚙️ Advanced Options"):
+                    st.write("**Similarity Threshold**")
+                    st.caption("Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.4) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers.")
                     col_low, col_med, col_high = st.columns([1, 1, 1])
                     with col_low:
                         st.markdown("**Low**")
@@ -1466,18 +1469,17 @@ def profiles_page(user: Dict):
                         st.markdown("<div style='text-align: right'><b>High</b></div>", unsafe_allow_html=True)
 
                     threshold_val = st.slider(
-                        "Threshold",
+                        "Similarity Threshold",
                         min_value=0.40,
                         max_value=0.75,
                         value=float(default_threshold) if isinstance(default_threshold, (int, float)) else 0.575,
                         step=0.01,
                         label_visibility="collapsed",
                         key="profile_threshold_input",
-                        help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.4) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers."
                     )
 
                     top_x = st.slider(
-                        "Maximum recommendations to show",
+                        "Maximum recommendations per day",
                         min_value=5,
                         max_value=999,
                         value=default_top_x if selected_profile_id else 999,
@@ -1485,49 +1487,6 @@ def profiles_page(user: Dict):
                         key="profile_top_x_input",
                         help="Set to 999 for unlimited. If unsure, leave as is."
                     )
-                    
-                    keywords = st.text_input(
-                        "Keywords (comma-separated, optional)",
-                        value=default_keywords,
-                        placeholder="machine learning, neural networks, optimization"
-                    )
-
-                    st.write("**Select arXiv Categories** (required)")
-                    if selected_profile_id and st.session_state.get("profile_cat_tree_selected"):
-                        cat_labels = [ARXIV_CODE_TO_LABEL.get(c, c) for c in st.session_state["profile_cat_tree_selected"]]
-                        st.caption("Currently selected: " + ", ".join(cat_labels))
-                    try:
-                        selected_cats = st_ant_tree(
-                            treeData=ARXIV_CATEGORY_TREE,
-                            treeCheckable=True,
-                            showSearch=True,
-                            placeholder="Select categories",
-                            max_height=300,
-                            only_children_select=True
-                        )
-                    except Exception as e:
-                        log_error("profiles_page.category_tree", e)
-                        st.error("Error loading category tree")
-                        selected_cats = []
-
-                    with st.expander("⚙️ Advanced Options"):
-                        col_low, col_med, col_high = st.columns([1, 1, 1])
-                        with col_low:
-                            st.markdown("**Low**")
-                        with col_med:
-                            st.markdown("<div style='text-align: center'><b>Medium</b></div>", unsafe_allow_html=True)
-                        with col_high:
-                            st.markdown("<div style='text-align: right'><b>High</b></div>", unsafe_allow_html=True)
-
-                        threshold_val = st.slider(
-                            "Threshold",
-                            min_value=0.40,
-                            max_value=0.75,
-                            value=float(default_threshold) if isinstance(default_threshold, (int, float)) else 0.575,
-                            step=0.01,
-                            label_visibility="collapsed",
-                            help="Controls how similar a paper must be to your uploaded papers to be recommended. Low (0.4) casts a wider net and returns more results. High (0.75) is stricter and only returns closely matched papers."
-                        )
 
                 submit = st.button(
                     "Create Profile" if mode == "Create new" else "Update Profile",
@@ -1548,7 +1507,7 @@ def profiles_page(user: Dict):
                                 st.error(f"Profile name '{clean_name}' already exists. Please choose a different name.")
                                 return
 
-                            kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
+                            kw_list = []
 
                             # Use categories from session state (set by tree widget above)
                             categories_list = st.session_state.get("profile_cat_tree_selected", [])
@@ -1564,6 +1523,7 @@ def profiles_page(user: Dict):
                                     "name": clean_name,
                                     "keywords": kw_list,
                                     "categories": categories_list,
+                                    "email_notify": email_enabled,
                                     "frequency": freq,
                                     "threshold": threshold_val,
                                     "top_x": top_x
@@ -1576,6 +1536,7 @@ def profiles_page(user: Dict):
                                     "name": clean_name,
                                     "keywords": kw_list,
                                     "categories": categories_list,
+                                    "email_notify": email_enabled,
                                     "frequency": freq,
                                     "threshold": threshold_val,
                                     "top_x": top_x
@@ -1598,6 +1559,7 @@ def profiles_page(user: Dict):
                         st.warning("Create this profile?")
 
                         st.write(f"**Name:** {data['name']}")
+                        st.write(f"**Email Notifications:** {'Enabled' if data.get('email_notify', True) else 'Disabled'}")
                         st.write(f"**Frequency:** {data['frequency']}")
                         st.write(f"**Threshold:** {data['threshold']}")
                         st.write(f"**Max Papers:** {data['top_x']}")
@@ -1616,6 +1578,7 @@ def profiles_page(user: Dict):
                                         name=data['name'],
                                         keywords=data['keywords'],
                                         categories=data.get('categories', []),
+                                        email_notify=data.get('email_notify', True),
                                         frequency=data['frequency'],
                                         threshold=data['threshold'],
                                         top_x=data['top_x']
@@ -1658,6 +1621,7 @@ def profiles_page(user: Dict):
                         st.warning("Update this profile?")
 
                         st.write(f"**Name:** {data['name']}")
+                        st.write(f"**Email Notifications:** {'Enabled' if data.get('email_notify', True) else 'Disabled'}")
                         st.write(f"**Frequency:** {data['frequency']}")
                         st.write(f"**Threshold:** {data['threshold']}")
                         st.write(f"**Max Papers:** {data['top_x']}")
@@ -1675,6 +1639,7 @@ def profiles_page(user: Dict):
                                         name=data['name'],
                                         keywords=data['keywords'],
                                         categories=data['categories'],
+                                        email_notify=data.get('email_notify', True),
                                         frequency=data['frequency'],
                                         threshold=data['threshold'],
                                         top_x=data['top_x']
@@ -2355,7 +2320,8 @@ def main():
         
         with h_col1:
             st.write(f"Logged in as: **{user.get('name') or user['email']}** (ID: {user.get('id')})")
-            st.write("Please send feedback to preprintbot@syr.edu")
+            st.write("Your feedback is welcome! To send comments, please [open an issue on our GitHub repo](https://github.com/SyracuseUniversity/preprint-bot/issues), or send an email to preprintbot@syr.edu."
+            st.write('To delete your account please email preprintbot@syr.edu with "Delete <accountname>" in the subject, replacing <accountname> with your account name.')
             
         with h_col2:
             if st.button("Help", use_container_width=True):
