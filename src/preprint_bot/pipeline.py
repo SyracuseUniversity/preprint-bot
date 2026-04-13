@@ -78,26 +78,45 @@ async def fetch_papers_for_arxiv_day(target_date, categories):
                 f"&start=0&max_results=100"
                 "&sortBy=submittedDate&sortOrder=descending"
             )
-            try:
-                resp = await client.get(url)
-                resp.raise_for_status()
-                feed = feedparser.parse(resp.text)
-                new_count = 0
-                for entry in feed.entries:
-                    arxiv_id = entry.id.split('/')[-1]
-                    if arxiv_id not in seen_ids:
-                        seen_ids.add(arxiv_id)
-                        all_entries.append(entry)
-                        new_count += 1
-                print(f"  {cat}: {new_count} new papers")
-                await asyncio.sleep(3)
-            except Exception as e:
-                print(f"  Error fetching {cat}: {e}")
-                continue
+
+            max_retries = 4
+            backoff = 10
+            success = False
+
+            for attempt in range(max_retries):
+                try:
+                    resp = await client.get(url)
+                    if resp.status_code == 429:
+                        retry_after = resp.headers.get('Retry-After')
+                        wait = int(retry_after) if retry_after else backoff * (2 ** attempt)
+                        print(f"  {cat}: 429 rate limited, waiting {wait}s (attempt {attempt + 1}/{max_retries})")
+                        await asyncio.sleep(wait)
+                        continue
+                    resp.raise_for_status()
+                    feed = feedparser.parse(resp.text)
+                    new_count = 0
+                    for entry in feed.entries:
+                        arxiv_id = entry.id.split('/')[-1]
+                        if arxiv_id not in seen_ids:
+                            seen_ids.add(arxiv_id)
+                            all_entries.append(entry)
+                            new_count += 1
+                    print(f"  {cat}: {new_count} new papers")
+                    success = True
+                    break
+                except Exception as e:
+                    wait = backoff * (2 ** attempt)
+                    print(f"  Error fetching {cat} (attempt {attempt + 1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(wait)
+
+            if not success:
+                print(f"  {cat}: failed after {max_retries} attempts, skipping")
+
+            await asyncio.sleep(5)
 
     print(f"Total papers for {target_date.strftime('%Y-%m-%d')}: {len(all_entries)}")
     return all_entries
-
 
 async def fetch_and_store_arxiv(
     api_client: APIClient,
