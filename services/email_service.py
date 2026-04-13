@@ -21,9 +21,9 @@ def truncate_to_sentences(text: str, n: int = 3) -> tuple[str, bool]:
     return ' '.join(sentences[:n]), True
 
 
-def build_digest_html(profile_name: str, papers: List[Dict], run_date: str) -> str:
-    rows = ""
+def build_digest_html(profile_name: str, papers: List[Dict], run_date: str, shown: int, total: int) -> str:
     papers = papers[:10]
+    rows = ""
     for i, paper in enumerate(papers, 1):
         arxiv_id = paper.get("arxiv_id", "")
         title = paper.get("title", "No title")
@@ -46,6 +46,8 @@ def build_digest_html(profile_name: str, papers: List[Dict], run_date: str) -> s
         </tr>
         """
 
+    count_line = f"Showing {shown} out of {total} recommendations" if total > 10 else f"Showing {total} out of {total} recommendations"
+
     return f"""
     <html><body style="font-family:Arial,sans-serif;background:#f9f9f9;margin:0;padding:0;">
     <div style="max-width:700px;margin:30px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
@@ -55,6 +57,7 @@ def build_digest_html(profile_name: str, papers: List[Dict], run_date: str) -> s
         </div>
         <div style="padding:24px 32px;">
             <p style="font-size:15px;color:#333;">Here are your top recommendations for profile <strong>{profile_name}</strong>:</p>
+            <p style="font-size:13px;color:#888;margin-top:-8px;">{count_line}</p>
             <table style="width:100%;border-collapse:collapse;">
                 {rows}
             </table>
@@ -95,7 +98,9 @@ def send_recommendations_digest(
     papers: List[Dict],
     run_date: str,
 ) -> tuple[bool, str, str]:
-    subject = f"Preprint Bot: Showing 10 out of {len(papers)} new recommendations for '{profile_name}' ({run_date})"
-    html_body = build_digest_html(profile_name, papers, run_date)
+    total = len(papers)
+    shown = min(total, 10)
+    subject = f"Preprint Bot: {total} new recommendations for '{profile_name}' ({run_date})"
+    html_body = build_digest_html(profile_name, papers, run_date, shown, total)
     success = send_email(to_address, subject, html_body)
     return success, subject, html_body
