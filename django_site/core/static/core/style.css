@@ -385,6 +385,16 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: .35rem; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
 
+/* ── Search results scroll ────────────────────────────── */
+.search-results-scroll {
+  max-height: 31rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 .75rem;
+  margin-top: .5rem;
+}
+
 /* ── Spinner ─────────────────────────────────────────── */
 .spinner {
   display: inline-block;

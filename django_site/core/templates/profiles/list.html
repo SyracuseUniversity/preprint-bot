@@ -235,7 +235,8 @@ function doSearch(btn) {
 
       html += '<form method="post" action="' + esc(addUrl) + '">'
         + '<input type="hidden" name="csrfmiddlewaretoken" value="' + getCSRF() + '">'
-        + '<input type="hidden" name="arxiv_ids" class="bulk-ids-field">';
+        + '<input type="hidden" name="arxiv_ids" class="bulk-ids-field">'
+        + '<div class="search-results-scroll">';
 
       data.results.forEach(r => {
         const disabled = r.already_added ? ' disabled checked' : '';
@@ -254,7 +255,8 @@ function doSearch(btn) {
           + '</div></div>';
       });
 
-      html += '<button type="submit" class="btn btn-sm btn-primary" style="margin-top:.75rem;"'
+      html += '</div>'  /* close .search-results-scroll */
+        + '<button type="submit" class="btn btn-sm btn-primary" style="margin-top:.75rem;"'
         + ' onclick="return collectBulk(this);">Add Selected to Profile</button></form>';
 
       box.innerHTML = html;
