@@ -2093,7 +2093,7 @@ def recommendations_page(user: Dict):
                         else:
                             st.caption(f"{total_for_this_date} paper(s)")
                         
-                        for rec in recs:
+                        for rec in recs: 
                             try:
                                 with st.container(border=True):
                                     col1, col2 = st.columns([5, 1])
