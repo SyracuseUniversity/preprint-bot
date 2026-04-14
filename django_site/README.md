@@ -154,10 +154,12 @@ django_site/
     ├── views.py               # All view functions
     ├── urls.py                # URL routing
     ├── forms.py               # Django forms
+    ├── tests.py               # Unit tests (run with `manage.py test core`)
     ├── auth_backend.py        # Auth helper wrappers around Django's built-in auth
     ├── arxiv_categories.py    # Category tree data + helpers
     ├── context_processors.py  # Template context helpers
     ├── admin.py               # Django admin registration
+    ├── static/core/style.css  # Site-wide styles
     └── templates/
         ├── base.html          # Shared layout, nav, CSS
         ├── dashboard.html
@@ -186,6 +188,26 @@ django_site/
 | File uploads        | Streamlit `file_uploader`       | Standard `<form enctype=…>`       |
 | Real-time progress  | SSE polling                     | Not implemented (use pipeline CLI)|
 
+## Testing
+
+```bash
+cd django_site
+python manage.py test core -v 2
+```
+
+Tests are in `core/tests.py`. The current suite covers pure functions and form
+validation (all `SimpleTestCase`, no database required to run):
+
+- **`ParseArxivIdsTests`** — arXiv ID extraction from bare IDs, URLs, versioned
+  PDFs, legacy IDs, query strings, comma/newline separation, deduplication.
+- **`SafePdfPathTests`** — path traversal protection, extension validation,
+  directory component stripping.
+- **`CleanCategoriesTests`** — leaf-only category validation, parent group
+  rejection, whitespace handling, XSS injection rejection.
+
+CI runs these automatically via GitHub Actions (`.github/workflows/test.yml`,
+`django-tests` job) using a PostgreSQL + pgvector service container.
+
 ## Notes
 
 - The Django site does **not** run the recommendation pipeline itself.
@@ -198,4 +220,11 @@ django_site/
 
 - The arXiv "Add from arXiv" feature in the profile page downloads PDFs
   via `requests` and saves them to the `pdf_data/user_pdfs/` directory,
-  just like the Streamlit version.
+  just like the Streamlit version. A 3-second delay is inserted between
+  consecutive downloads to comply with arXiv's rate limit guidelines.
+
+- The arXiv search API endpoint enforces a per-session cooldown (3 seconds
+  between searches) to prevent excessive requests to arXiv.
+
+- Profile category validation only accepts leaf arXiv categories (e.g.
+  `cs.AI`, `hep-th`), not parent group codes like `cs` or `physics`.

@@ -8,6 +8,7 @@ the custom user model (AUTH_USER_MODEL).
 import json
 import re
 import shutil
+import time
 from collections import defaultdict
 from datetime import datetime
 from functools import wraps
@@ -537,7 +538,10 @@ def _download_arxiv_pdfs(pb_user, profile, arxiv_ids):
 
     success = 0
     failed = []
-    for aid in arxiv_ids:
+    for i, aid in enumerate(arxiv_ids):
+        # Respect arXiv rate limits: no more than one request every 3 seconds
+        if i > 0:
+            time.sleep(3)
         # Legacy arXiv IDs contain slashes (e.g. hep-th/9901001); sanitize for filenames
         safe_aid = aid.replace("/", "_")
         try:
@@ -569,6 +573,18 @@ def paper_search_arxiv_api_view(request, profile_id):
     """JSON API: search arXiv by title/author for inline results."""
     pb_user = request.pb_user
     profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
+
+    # Rate limit: one search per 3 seconds per session
+    SEARCH_COOLDOWN = 3  # seconds
+    now = time.time()
+    last_search = request.session.get("arxiv_search_ts", 0)
+    if now - last_search < SEARCH_COOLDOWN:
+        wait = int(SEARCH_COOLDOWN - (now - last_search)) + 1
+        return JsonResponse(
+            {"error": f"Please wait {wait}s before searching again."},
+            status=429,
+        )
+    request.session["arxiv_search_ts"] = now
 
     title_q = request.GET.get("title", "").strip().replace('"', "")
     author_q = request.GET.get("author", "").strip().replace('"', "")
