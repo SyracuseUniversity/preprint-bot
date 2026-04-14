@@ -342,3 +342,302 @@ class CleanCategoriesTests(SimpleTestCase):
         form = self._make_form('cs.AI,</script><script>alert(1)</script>')
         self.assertFalse(form.is_valid())
         self.assertIn("categories", form.errors)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Tier 2 tests — auth flows, profile CRUD, form validation (need DB)
+# ══════════════════════════════════════════════════════════════════════════
+
+from django.test import TestCase
+
+from core.models import PBUser, Profile
+
+
+class AuthFlowTests(TestCase):
+    """Tests for registration, login, logout, and access control."""
+
+    def setUp(self):
+        self.user = PBUser.objects.create_user(
+            email="test@example.com",
+            password="SecurePass123!",
+            name="Test User",
+        )
+
+    # ── Registration ──────────────────────────────────────
+
+    def test_register_creates_user(self):
+        resp = self.client.post("/auth/register/", {
+            "email": "new@example.com",
+            "name": "New User",
+            "password": "GoodPassword99!",
+            "confirm_password": "GoodPassword99!",
+        })
+        self.assertEqual(resp.status_code, 302)  # redirect to dashboard
+        self.assertTrue(PBUser.objects.filter(email="new@example.com").exists())
+
+    def test_register_logs_in_automatically(self):
+        self.client.post("/auth/register/", {
+            "email": "auto@example.com",
+            "name": "",
+            "password": "GoodPassword99!",
+            "confirm_password": "GoodPassword99!",
+        })
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 200)  # dashboard, not redirect to login
+
+    def test_register_duplicate_email_rejected(self):
+        resp = self.client.post("/auth/register/", {
+            "email": "test@example.com",
+            "name": "",
+            "password": "AnotherPass99!",
+            "confirm_password": "AnotherPass99!",
+        })
+        self.assertEqual(resp.status_code, 200)  # stays on register page
+        self.assertEqual(PBUser.objects.filter(email="test@example.com").count(), 1)
+
+    def test_register_case_insensitive_duplicate(self):
+        resp = self.client.post("/auth/register/", {
+            "email": "TEST@EXAMPLE.COM",
+            "name": "",
+            "password": "AnotherPass99!",
+            "confirm_password": "AnotherPass99!",
+        })
+        self.assertEqual(resp.status_code, 200)  # rejected — already exists
+        self.assertEqual(PBUser.objects.count(), 1)
+
+    def test_register_password_mismatch(self):
+        resp = self.client.post("/auth/register/", {
+            "email": "mismatch@example.com",
+            "name": "",
+            "password": "GoodPassword99!",
+            "confirm_password": "DifferentPassword99!",
+        })
+        self.assertEqual(resp.status_code, 200)  # stays on register page
+        self.assertFalse(PBUser.objects.filter(email="mismatch@example.com").exists())
+
+    def test_register_weak_password_rejected(self):
+        resp = self.client.post("/auth/register/", {
+            "email": "weak@example.com",
+            "name": "",
+            "password": "123",
+            "confirm_password": "123",
+        })
+        self.assertEqual(resp.status_code, 200)  # stays on register page
+        self.assertFalse(PBUser.objects.filter(email="weak@example.com").exists())
+
+    # ── Login ─────────────────────────────────────────────
+
+    def test_login_valid_credentials(self):
+        resp = self.client.post("/auth/login/", {
+            "email": "test@example.com",
+            "password": "SecurePass123!",
+        })
+        self.assertRedirects(resp, "/", fetch_redirect_response=False)
+
+    def test_login_case_insensitive_email(self):
+        resp = self.client.post("/auth/login/", {
+            "email": "TEST@Example.COM",
+            "password": "SecurePass123!",
+        })
+        self.assertRedirects(resp, "/", fetch_redirect_response=False)
+
+    def test_login_wrong_password(self):
+        resp = self.client.post("/auth/login/", {
+            "email": "test@example.com",
+            "password": "WrongPassword!",
+        })
+        self.assertEqual(resp.status_code, 200)  # stays on login page
+
+    def test_login_inactive_user_rejected(self):
+        self.user.is_active = False
+        self.user.save()
+        resp = self.client.post("/auth/login/", {
+            "email": "test@example.com",
+            "password": "SecurePass123!",
+        })
+        self.assertEqual(resp.status_code, 200)  # stays on login page
+
+    def test_authenticated_user_redirected_from_login(self):
+        self.client.login(username="test@example.com", password="SecurePass123!")
+        resp = self.client.get("/auth/login/")
+        self.assertEqual(resp.status_code, 302)  # redirected to dashboard
+
+    # ── Logout ────────────────────────────────────────────
+
+    def test_logout_requires_post(self):
+        self.client.login(username="test@example.com", password="SecurePass123!")
+        resp = self.client.get("/auth/logout/")
+        self.assertEqual(resp.status_code, 405)  # method not allowed
+
+    def test_logout_clears_session(self):
+        self.client.login(username="test@example.com", password="SecurePass123!")
+        self.client.post("/auth/logout/")
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 302)  # redirected to login
+
+    # ── Access control ────────────────────────────────────
+
+    def test_unauthenticated_redirected_to_login(self):
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/auth/login/", resp.url)
+
+    def test_next_url_preserved(self):
+        resp = self.client.get("/profiles/")
+        self.assertIn("next=", resp.url)
+        self.assertIn("/profiles/", resp.url)
+
+
+class ProfileCRUDTests(TestCase):
+    """Tests for profile create, edit, delete, and ownership."""
+
+    def setUp(self):
+        self.user = PBUser.objects.create_user(
+            email="owner@example.com",
+            password="SecurePass123!",
+        )
+        self.other_user = PBUser.objects.create_user(
+            email="other@example.com",
+            password="SecurePass123!",
+        )
+        self.client.login(username="owner@example.com", password="SecurePass123!")
+
+    def _valid_profile_data(self, **overrides):
+        data = {
+            "name": "AI Research",
+            "frequency": "weekly",
+            "threshold": "0.6",
+            "top_x": "25",
+            "categories": "cs.AI,cs.LG",
+        }
+        data.update(overrides)
+        return data
+
+    # ── Create ────────────────────────────────────────────
+
+    def test_create_profile(self):
+        resp = self.client.post("/profiles/create/", self._valid_profile_data())
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(
+            Profile.objects.filter(user=self.user, name="AI Research").exists()
+        )
+
+    def test_create_profile_stores_categories(self):
+        self.client.post("/profiles/create/", self._valid_profile_data())
+        profile = Profile.objects.get(user=self.user, name="AI Research")
+        self.assertEqual(profile.categories, ["cs.AI", "cs.LG"])
+
+    def test_create_profile_stores_threshold(self):
+        self.client.post(
+            "/profiles/create/",
+            self._valid_profile_data(threshold="0.45"),
+        )
+        profile = Profile.objects.get(user=self.user)
+        self.assertAlmostEqual(profile.threshold, 0.45)
+
+    def test_create_duplicate_name_rejected(self):
+        self.client.post("/profiles/create/", self._valid_profile_data())
+        resp = self.client.post("/profiles/create/", self._valid_profile_data())
+        self.assertEqual(resp.status_code, 200)  # stays on form
+        self.assertEqual(
+            Profile.objects.filter(user=self.user, name__iexact="AI Research").count(),
+            1,
+        )
+
+    def test_create_duplicate_name_case_insensitive(self):
+        self.client.post("/profiles/create/", self._valid_profile_data())
+        resp = self.client.post(
+            "/profiles/create/",
+            self._valid_profile_data(name="ai research"),
+        )
+        self.assertEqual(resp.status_code, 200)  # rejected
+        self.assertEqual(Profile.objects.filter(user=self.user).count(), 1)
+
+    def test_create_missing_categories_rejected(self):
+        resp = self.client.post(
+            "/profiles/create/",
+            self._valid_profile_data(categories=""),
+        )
+        self.assertEqual(resp.status_code, 200)  # stays on form
+        self.assertEqual(Profile.objects.filter(user=self.user).count(), 0)
+
+    # ── Edit ──────────────────────────────────────────────
+
+    def test_edit_profile(self):
+        self.client.post("/profiles/create/", self._valid_profile_data())
+        profile = Profile.objects.get(user=self.user)
+        resp = self.client.post(
+            f"/profiles/{profile.pk}/edit/",
+            self._valid_profile_data(name="Renamed"),
+        )
+        self.assertEqual(resp.status_code, 302)
+        profile.refresh_from_db()
+        self.assertEqual(profile.name, "Renamed")
+
+    def test_edit_preserves_other_fields(self):
+        self.client.post(
+            "/profiles/create/",
+            self._valid_profile_data(top_x="50"),
+        )
+        profile = Profile.objects.get(user=self.user)
+        self.client.post(
+            f"/profiles/{profile.pk}/edit/",
+            self._valid_profile_data(name="Updated", top_x="100"),
+        )
+        profile.refresh_from_db()
+        self.assertEqual(profile.top_x, 100)
+
+    # ── Delete ────────────────────────────────────────────
+
+    def test_delete_profile(self):
+        self.client.post("/profiles/create/", self._valid_profile_data())
+        profile = Profile.objects.get(user=self.user)
+        resp = self.client.post(f"/profiles/{profile.pk}/delete/")
+        self.assertEqual(resp.status_code, 302)
+        self.assertFalse(Profile.objects.filter(pk=profile.pk).exists())
+
+    # ── Ownership ─────────────────────────────────────────
+
+    def test_cannot_edit_other_users_profile(self):
+        profile = Profile.objects.create(
+            user=self.other_user, name="Other", categories=["cs.AI"],
+        )
+        resp = self.client.post(
+            f"/profiles/{profile.pk}/edit/",
+            self._valid_profile_data(),
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    def test_cannot_delete_other_users_profile(self):
+        profile = Profile.objects.create(
+            user=self.other_user, name="Other", categories=["cs.AI"],
+        )
+        resp = self.client.post(f"/profiles/{profile.pk}/delete/")
+        self.assertEqual(resp.status_code, 404)
+        self.assertTrue(Profile.objects.filter(pk=profile.pk).exists())
+
+
+class RegisterFormValidationTests(SimpleTestCase):
+    """Additional form-level tests for RegisterForm."""
+
+    def test_password_mismatch_error(self):
+        from core.forms import RegisterForm
+        form = RegisterForm(data={
+            "email": "x@example.com",
+            "name": "",
+            "password": "GoodPassword99!",
+            "confirm_password": "DifferentPassword99!",
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn("Passwords do not match", str(form.errors))
+
+    def test_weak_password_error(self):
+        from core.forms import RegisterForm
+        form = RegisterForm(data={
+            "email": "x@example.com",
+            "name": "",
+            "password": "abc",
+            "confirm_password": "abc",
+        })
+        self.assertFalse(form.is_valid())
+

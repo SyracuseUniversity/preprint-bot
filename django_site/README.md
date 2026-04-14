@@ -195,8 +195,10 @@ cd django_site
 python manage.py test core -v 2
 ```
 
-Tests are in `core/tests.py`. The current suite covers pure functions and form
-validation (all `SimpleTestCase`, no database required to run):
+Tests are in `core/tests.py`. The current suite covers pure functions, form
+validation, auth flows, and profile CRUD:
+
+**Tier 1** — pure functions and form validation (`SimpleTestCase`, no database):
 
 - **`ParseArxivIdsTests`** — arXiv ID extraction from bare IDs, URLs, versioned
   PDFs, legacy IDs, query strings, comma/newline separation, deduplication.
@@ -204,6 +206,17 @@ validation (all `SimpleTestCase`, no database required to run):
   directory component stripping.
 - **`CleanCategoriesTests`** — leaf-only category validation, parent group
   rejection, whitespace handling, XSS injection rejection.
+
+**Tier 2** — auth flows and profile CRUD (`TestCase`, requires database):
+
+- **`AuthFlowTests`** — registration, duplicate/case-insensitive email rejection,
+  weak password rejection, login, logout (POST-only), inactive user blocked,
+  access control redirects with `?next=` preservation.
+- **`ProfileCRUDTests`** — create, edit, delete, duplicate name rejection
+  (case-insensitive), category/threshold storage, ownership enforcement (404 on
+  another user's profile).
+- **`RegisterFormValidationTests`** — password mismatch and Django password
+  validator enforcement at the form level.
 
 CI runs these automatically via GitHub Actions (`.github/workflows/test.yml`,
 `django-tests` job) using a PostgreSQL + pgvector service container.
