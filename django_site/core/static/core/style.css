@@ -55,6 +55,7 @@ a:hover { text-decoration: underline; }
   text-decoration: none;
   letter-spacing: -.02em;
 }
+.topnav .nav-menu { display: contents; }  /* transparent wrapper on desktop */
 .topnav .nav-links { display: flex; gap: .25rem; flex: 1; }
 .topnav .nav-links a {
   color: rgba(255,255,255,.7);
@@ -267,35 +268,44 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: .35rem; }
   h1 { font-size: 1.5rem; }
   h2 { font-size: 1.1rem; }
 
-  /* Nav: show hamburger, collapse links */
+  /* Nav: show hamburger, dropdown overlay */
   .nav-toggle { display: block; }
 
   .topnav {
-    flex-wrap: wrap;
     padding: .65rem 1rem;
-    gap: 0;
+    gap: .75rem;
+    position: sticky;
+    top: 0;
   }
   .topnav .brand { flex: 1; }
 
-  .topnav .nav-links,
-  .topnav .user-area {
+  .topnav .nav-menu {
     display: none;
-    width: 100%;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-nav);
+    flex-direction: column;
+    padding: .5rem 1rem 1rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,.25);
+    z-index: 99;
+  }
+  .topnav.open .nav-menu {
+    display: flex;
+  }
+  .topnav .nav-links {
+    display: flex;
     flex-direction: column;
     gap: .15rem;
-    padding-top: .5rem;
-  }
-  .topnav.open .nav-links,
-  .topnav.open .user-area {
-    display: flex;
   }
   .topnav .nav-links a {
     padding: .5rem .75rem;
   }
   .topnav .user-area {
-    padding-top: .35rem;
+    padding-top: .5rem;
     border-top: 1px solid rgba(255,255,255,.1);
-    margin-top: .35rem;
+    margin-top: .5rem;
     flex-direction: row;
     flex-wrap: wrap;
   }

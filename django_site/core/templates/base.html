@@ -23,19 +23,21 @@
     <button class="nav-toggle" onclick="document.querySelector('.topnav').classList.toggle('open')" aria-label="Toggle navigation">
       <span></span><span></span><span></span>
     </button>
-    <div class="nav-links">
-      <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Dashboard</a>
-      <a href="{% url 'profile_list' %}" class="{% if 'profile' in request.resolver_match.url_name %}active{% endif %}">Profiles</a>
-      <a href="{% url 'recommendations' %}" class="{% if request.resolver_match.url_name == 'recommendations' %}active{% endif %}">Recommendations</a>
-      <a href="{% url 'settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}active{% endif %}">Settings</a>
-    </div>
-    <div class="user-area">
-      <span>{{ request.user.name|default:request.user.email }}</span>
-      <a href="{% url 'help' %}" target="_blank" rel="noopener noreferrer">Help</a>
-      <form method="post" action="{% url 'logout' %}" style="display:inline;">
-        {% csrf_token %}
-        <button type="submit" class="nav-logout-btn">Sign out</button>
-      </form>
+    <div class="nav-menu">
+      <div class="nav-links">
+        <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="{% url 'profile_list' %}" class="{% if 'profile' in request.resolver_match.url_name %}active{% endif %}">Profiles</a>
+        <a href="{% url 'recommendations' %}" class="{% if request.resolver_match.url_name == 'recommendations' %}active{% endif %}">Recommendations</a>
+        <a href="{% url 'settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}active{% endif %}">Settings</a>
+      </div>
+      <div class="user-area">
+        <span>{{ request.user.name|default:request.user.email }}</span>
+        <a href="{% url 'help' %}" target="_blank" rel="noopener noreferrer">Help</a>
+        <form method="post" action="{% url 'logout' %}" style="display:inline;">
+          {% csrf_token %}
+          <button type="submit" class="nav-logout-btn">Sign out</button>
+        </form>
+      </div>
     </div>
   </nav>
   {% endif %}
