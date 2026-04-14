@@ -327,9 +327,15 @@ class CleanCategoriesTests(SimpleTestCase):
         self.assertIn("not.real", form.errors["categories"][0])
 
     def test_parent_group_rejected(self):
-        """Parent values like 'cs' or 'physics_group' are not leaf categories."""
+        """Parent codes like 'cs' are not leaf categories."""
         form = self._make_form("cs")
         self.assertFalse(form.is_valid())
+        self.assertIn("categories", form.errors)
+
+    def test_completely_bogus_code_rejected(self):
+        form = self._make_form("fake.CATEGORY")
+        self.assertFalse(form.is_valid())
+        self.assertIn("categories", form.errors)
 
     def test_script_injection_rejected(self):
         """XSS attempt should fail validation."""

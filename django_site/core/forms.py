@@ -100,12 +100,12 @@ class ProfileForm(forms.Form):
     )
 
     def clean_categories(self):
-        from .arxiv_categories import ARXIV_CODE_TO_LABEL
+        from .arxiv_categories import ARXIV_LEAF_CODES
         raw = self.cleaned_data.get("categories", "")
         cats = [c.strip() for c in raw.split(",") if c.strip()]
         if not cats:
             raise forms.ValidationError("Select at least one arXiv category.")
-        invalid = [c for c in cats if c not in ARXIV_CODE_TO_LABEL]
+        invalid = [c for c in cats if c not in ARXIV_LEAF_CODES]
         if invalid:
             raise forms.ValidationError(f"Unknown category code(s): {', '.join(invalid)}")
         return cats

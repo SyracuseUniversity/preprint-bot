@@ -272,6 +272,25 @@ def _build_code_to_label() -> Dict[str, str]:
 ARXIV_CODE_TO_LABEL: Dict[str, str] = _build_code_to_label()
 
 
+def _build_leaf_codes() -> set:
+    """Return the set of leaf category codes (no children in the tree)."""
+    leaves: set = set()
+
+    def walk(nodes):
+        for node in nodes:
+            children = node.get("children", [])
+            if children:
+                walk(children)
+            elif node.get("value"):
+                leaves.add(node["value"])
+
+    walk(ARXIV_CATEGORY_TREE)
+    return leaves
+
+
+ARXIV_LEAF_CODES: set = _build_leaf_codes()
+
+
 def label_for(code: str) -> str:
     """Return the human-readable label for an arXiv category code."""
     return ARXIV_CODE_TO_LABEL.get(code, code)
