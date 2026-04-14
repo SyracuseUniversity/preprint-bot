@@ -56,14 +56,6 @@
       </div>
     </div>
 
-    {# ── Keywords ────────────────────────────────── #}
-    {% if p.keywords %}
-    <div style="margin-top:.6rem;">
-      <span class="text-sm text-dim">Keywords</span><br>
-      {% for kw in p.keywords %}<span class="tag">{{ kw }}</span>{% endfor %}
-    </div>
-    {% endif %}
-
     {# ── Categories ──────────────────────────────── #}
     {% if item.categories_display %}
     <div style="margin-top:.5rem;">

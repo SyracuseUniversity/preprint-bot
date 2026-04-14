@@ -85,7 +85,6 @@ class ProfileForm(forms.Form):
         max_value=0.75,
         initial=0.6,
         widget=forms.HiddenInput(),  # actual input is the range slider in the template
-        help_text="Lower = more results, higher = stricter matching.",
     )
     top_x = forms.IntegerField(
         min_value=5,
@@ -94,20 +93,11 @@ class ProfileForm(forms.Form):
         label="Max recommendations",
         help_text="Maximum number of recommendations to return (up to 999).",
     )
-    keywords = forms.CharField(
-        required=False,
-        widget=forms.TextInput(attrs={"placeholder": "machine learning, transformers, ..."}),
-        help_text="Comma-separated.",
-    )
     categories = forms.CharField(
         widget=forms.HiddenInput(),
         required=True,
         help_text="Selected via the category tree widget (stored as comma-separated codes).",
     )
-
-    def clean_keywords(self):
-        raw = self.cleaned_data.get("keywords", "")
-        return [kw.strip() for kw in raw.split(",") if kw.strip()]
 
     def clean_categories(self):
         from .arxiv_categories import ARXIV_CODE_TO_LABEL

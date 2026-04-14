@@ -330,7 +330,6 @@ def profile_create_view(request):
                 Profile.objects.create(
                     user=pb_user,
                     name=name,
-                    keywords=form.cleaned_data["keywords"],
                     categories=form.cleaned_data["categories"],
                     frequency=form.cleaned_data["frequency"],
                     threshold=form.cleaned_data["threshold"],
@@ -362,7 +361,6 @@ def profile_edit_view(request, profile_id):
                 messages.error(request, f"A profile named '{name}' already exists.")
             else:
                 profile.name = name
-                profile.keywords = form.cleaned_data["keywords"]
                 profile.categories = form.cleaned_data["categories"]
                 profile.frequency = form.cleaned_data["frequency"]
                 profile.threshold = form.cleaned_data["threshold"]
@@ -376,7 +374,6 @@ def profile_edit_view(request, profile_id):
             "frequency": profile.frequency,
             "threshold": profile.threshold if profile.threshold is not None else 0.6,
             "top_x": profile.top_x or 10,
-            "keywords": ", ".join(profile.keywords or []),
             "categories": ",".join(profile.categories or []),
         })
 
