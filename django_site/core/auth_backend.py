@@ -14,8 +14,9 @@ def authenticate_pbuser(request, email: str, password: str):
     """Authenticate against the PBUser model.
 
     Django's ModelBackend uses USERNAME_FIELD (email) automatically.
+    Emails are stored lowercase, so we normalize before lookup.
     """
-    return authenticate(request, username=email, password=password)
+    return authenticate(request, username=email.strip().lower(), password=password)
 
 
 def login_pbuser(request, pb_user: PBUser):

@@ -236,8 +236,8 @@ def _get_latest_recommendations(pb_user):
 
     most_recent_date = most_recent.date()
 
-    # Fetch only rows from that date
-    pr_qs = (
+    # Fetch only rows from that date (materialize once to avoid double query)
+    pr_list = list(
         ProfileRecommendation.objects.filter(
             profile__in=profiles,
             recommendation__paper__submitted_date__date=most_recent_date,
@@ -246,7 +246,7 @@ def _get_latest_recommendations(pb_user):
     )
 
     # Prefetch summaries for the papers in one query
-    paper_ids = {pr.recommendation.paper_id for pr in pr_qs}
+    paper_ids = {pr.recommendation.paper_id for pr in pr_list}
     summaries_map = {
         s.paper_id: s.summary_text or ""
         for s in Summary.objects.filter(paper_id__in=paper_ids)
@@ -254,7 +254,7 @@ def _get_latest_recommendations(pb_user):
 
     # Deduplicate by arxiv_id keeping highest score
     seen = {}
-    for pr in pr_qs:
+    for pr in pr_list:
         rec = pr.recommendation
         paper = rec.paper
         aid = paper.arxiv_id or f"_pk_{paper.pk}"
@@ -569,8 +569,8 @@ def paper_search_arxiv_api_view(request, profile_id):
     pb_user = request.pb_user
     profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
 
-    title_q = request.GET.get("title", "").strip()
-    author_q = request.GET.get("author", "").strip()
+    title_q = request.GET.get("title", "").strip().replace('"', "")
+    author_q = request.GET.get("author", "").strip().replace('"', "")
 
     if not title_q and not author_q:
         return JsonResponse({"error": "Enter a title or author."}, status=400)
@@ -744,14 +744,15 @@ def _query_profile_recommendations(pb_user, profile):
 
     # Get runs that used this user corpus
     runs = RecommendationRun.objects.filter(user_corpus=user_corpus)
-    recs_qs = (
+    recs_list = list(
         Recommendation.objects.filter(run__in=runs)
         .select_related("paper", "run")
         .order_by("-score")
-    )[:5000]
+        [:5000]
+    )
 
     # Prefetch summaries for all papers in one query
-    paper_ids = {rec.paper_id for rec in recs_qs}
+    paper_ids = {rec.paper_id for rec in recs_list}
     summaries_map = {
         s.paper_id: s.summary_text or ""
         for s in Summary.objects.filter(paper_id__in=paper_ids, mode="abstract")
@@ -759,7 +760,7 @@ def _query_profile_recommendations(pb_user, profile):
 
     # Deduplicate by arxiv_id keeping highest score
     seen = {}
-    for rec in recs_qs:
+    for rec in recs_list:
         paper = rec.paper
         aid = paper.arxiv_id or f"_pk_{paper.pk}"
         if aid in seen and rec.score <= seen[aid]["score"]:
