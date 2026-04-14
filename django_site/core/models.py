@@ -2,7 +2,11 @@
 Django ORM models for Preprint Bot.
 
 All models are fully managed by Django (migrations create/alter the tables).
-Table names match the original schema so the FastAPI backend still works.
+Table names match the original schema where possible so the FastAPI pipeline
+continues to work.  Note that the Django-managed ``users`` table follows
+Django's auth model (e.g. ``password`` column) rather than the legacy auth
+schema (``password_hash``), so existing FastAPI auth endpoints are not
+guaranteed to work against this schema without updates.
 """
 
 from django.db import models

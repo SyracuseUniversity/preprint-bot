@@ -9,7 +9,7 @@ import json
 import re
 import shutil
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import wraps
 from pathlib import Path
 
@@ -17,7 +17,6 @@ from django.conf import settings as django_settings
 from django.contrib import messages
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
@@ -220,43 +219,44 @@ def dashboard_view(request):
 
 def _get_latest_recommendations(pb_user):
     """Return deduplicated recommendations from the most recent date."""
+    from django.db.models import Max
+
     profiles = Profile.objects.filter(user=pb_user)
     if not profiles.exists():
         return []
 
-    # Get all profile recommendations for this user
-    pr_qs = ProfileRecommendation.objects.filter(
-        profile__in=profiles
-    ).select_related("recommendation__paper", "recommendation__run")
+    # Find the most recent submitted_date in the DB (one query, no Python loop)
+    most_recent = (
+        ProfileRecommendation.objects.filter(profile__in=profiles)
+        .aggregate(latest=Max("recommendation__paper__submitted_date"))
+    )["latest"]
 
-    if not pr_qs.exists():
+    if not most_recent:
         return []
 
-    # Find the most recent submitted_date
-    recs_with_dates = []
-    for pr in pr_qs:
-        rec = pr.recommendation
-        paper = rec.paper
-        if paper.submitted_date:
-            recs_with_dates.append((paper.submitted_date.date(), rec, paper))
+    most_recent_date = most_recent.date()
 
-    if not recs_with_dates:
-        return []
+    # Fetch only rows from that date
+    pr_qs = (
+        ProfileRecommendation.objects.filter(
+            profile__in=profiles,
+            recommendation__paper__submitted_date__date=most_recent_date,
+        )
+        .select_related("recommendation__paper")
+    )
 
-    most_recent = max(d for d, _, _ in recs_with_dates)
-
-    # Prefetch summaries for all papers from the most recent date
-    paper_ids = {paper.pk for dt, _, paper in recs_with_dates if dt == most_recent}
+    # Prefetch summaries for the papers in one query
+    paper_ids = {pr.recommendation.paper_id for pr in pr_qs}
     summaries_map = {
         s.paper_id: s.summary_text or ""
         for s in Summary.objects.filter(paper_id__in=paper_ids)
     }
 
-    # Filter to that date, deduplicate by arxiv_id keeping highest score
+    # Deduplicate by arxiv_id keeping highest score
     seen = {}
-    for dt, rec, paper in recs_with_dates:
-        if dt != most_recent:
-            continue
+    for pr in pr_qs:
+        rec = pr.recommendation
+        paper = rec.paper
         aid = paper.arxiv_id or f"_pk_{paper.pk}"
         if aid not in seen or rec.score > seen[aid]["score"]:
             seen[aid] = {
@@ -268,8 +268,7 @@ def _get_latest_recommendations(pb_user):
                 "submitted_date": paper.submitted_date,
             }
 
-    results = sorted(seen.values(), key=lambda x: x["score"], reverse=True)
-    return results
+    return sorted(seen.values(), key=lambda x: x["score"], reverse=True)
 
 
 # ── Profiles ───────────────────────────────────────────────────────────────
@@ -279,16 +278,24 @@ def profile_list_view(request):
     pb_user = request.pb_user
     profiles = Profile.objects.filter(user=pb_user).order_by("-created_at")
 
-    # Gather paper counts per profile
+    # Prefetch all user corpora and paper counts in two queries (not N+1)
+    user_corpora = {
+        c.name: c for c in Corpus.objects.filter(user=pb_user)
+    }
+    corpus_ids = [c.id for c in user_corpora.values()]
+    from django.db.models import Count
+    paper_counts = dict(
+        Paper.objects.filter(corpus_id__in=corpus_ids)
+        .values_list("corpus_id")
+        .annotate(n=Count("id"))
+        .values_list("corpus_id", "n")
+    )
+
     profile_data = []
     for profile in profiles:
         corpus_name = f"user_{pb_user.pk}_profile_{profile.pk}"
-        paper_count = 0
-        try:
-            corpus = Corpus.objects.get(user=pb_user, name=corpus_name)
-            paper_count = Paper.objects.filter(corpus=corpus).count()
-        except Corpus.DoesNotExist:
-            pass
+        corpus = user_corpora.get(corpus_name)
+        paper_count = paper_counts.get(corpus.id, 0) if corpus else 0
 
         # Count uploaded PDFs on disk
         pdf_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
@@ -403,19 +410,35 @@ def paper_upload_view(request, profile_id):
     pb_user = request.pb_user
     profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
 
+    MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB per file
+
     pdf_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
     pdf_dir.mkdir(parents=True, exist_ok=True)
 
     uploaded = request.FILES.getlist("files")
     count = 0
+    skipped = 0
     for f in uploaded:
         safe_name = Path(f.name).name  # strip directory components
-        if safe_name.lower().endswith(".pdf"):
-            dest = pdf_dir / safe_name
-            with open(dest, "wb") as out:
-                for chunk in f.chunks():
-                    out.write(chunk)
-            count += 1
+        if not safe_name.lower().endswith(".pdf"):
+            skipped += 1
+            continue
+        if f.size > MAX_UPLOAD_BYTES:
+            messages.warning(request, f"Skipped {safe_name}: exceeds 50 MB limit.")
+            skipped += 1
+            continue
+        # Validate PDF magic bytes (%PDF)
+        header = f.read(4)
+        f.seek(0)
+        if header != b"%PDF":
+            messages.warning(request, f"Skipped {safe_name}: not a valid PDF file.")
+            skipped += 1
+            continue
+        dest = pdf_dir / safe_name
+        with open(dest, "wb") as out:
+            for chunk in f.chunks():
+                out.write(chunk)
+        count += 1
 
     if count:
         messages.success(request, f"Uploaded {count} PDF(s).")
@@ -519,6 +542,12 @@ def _download_arxiv_pdfs(pb_user, profile, arxiv_ids):
         try:
             resp = http_requests.get(f"https://arxiv.org/pdf/{aid}.pdf", timeout=30)
             resp.raise_for_status()
+            # Reject early if Content-Length header exceeds limit
+            content_length = resp.headers.get("Content-Length")
+            if content_length and int(content_length) > MAX_PDF_BYTES:
+                logger.warning("arXiv PDF for %s too large per Content-Length (%s bytes)", aid, content_length)
+                failed.append(aid)
+                continue
             if "application/pdf" not in resp.headers.get("Content-Type", ""):
                 logger.warning("arXiv returned non-PDF content for %s", aid)
                 failed.append(aid)
@@ -801,9 +830,11 @@ def toggle_profile_email_view(request, profile_id):
     profile.save(update_fields=["email_notify"])
     state = "enabled" if profile.email_notify else "paused"
     messages.success(request, f"Emails {state} for '{profile.name}'.")
-    # Redirect back to wherever the user came from
-    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or "profile_list"
-    return redirect(next_url)
+    # Redirect back to wherever the user came from, only if local
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER")
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return redirect(next_url)
+    return redirect("profile_list")
 
 
 @pbuser_required

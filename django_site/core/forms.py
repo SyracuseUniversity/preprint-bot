@@ -92,7 +92,7 @@ class ProfileForm(forms.Form):
         max_value=999,
         initial=999,
         label="Max recommendations",
-        help_text="Set to 999 for unlimited.",
+        help_text="Maximum number of recommendations to return (up to 999).",
     )
     keywords = forms.CharField(
         required=False,

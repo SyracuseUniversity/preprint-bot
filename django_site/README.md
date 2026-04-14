@@ -23,6 +23,16 @@ Both the FastAPI backend (which runs the recommendation pipeline) and this
 Django site read/write the same tables. Django models are fully managed
 and create the schema via `makemigrations` / `migrate`.
 
+> **Important:** The initial migration is designed for a **fresh database**.
+> If you have an existing database from the pre-Django Streamlit/FastAPI setup,
+> you have two options:
+> 1. **Fresh start** — create a new database with `setup_database.sh` and
+>    run `python manage.py migrate`. Re-create users via `createsuperuser`.
+> 2. **Adopt existing** — run `python manage.py migrate --fake-initial` to
+>    tell Django the tables already exist. You may need to manually reconcile
+>    schema differences (e.g. the `users.password` column replacing
+>    `users.password_hash`).
+
 ## Prerequisites
 
 - **Python 3.10+**
@@ -148,8 +158,6 @@ django_site/
     ├── arxiv_categories.py    # Category tree data + helpers
     ├── context_processors.py  # Template context helpers
     ├── admin.py               # Django admin registration
-    ├── templatetags/
-    │   └── core_tags.py
     └── templates/
         ├── base.html          # Shared layout, nav, CSS
         ├── dashboard.html
