@@ -249,7 +249,7 @@ def _get_latest_recommendations(pb_user):
     paper_ids = {pr.recommendation.paper_id for pr in pr_list}
     summaries_map = {
         s.paper_id: s.summary_text or ""
-        for s in Summary.objects.filter(paper_id__in=paper_ids)
+        for s in Summary.objects.filter(paper_id__in=paper_ids, mode="abstract")
     }
 
     # Deduplicate by arxiv_id keeping highest score

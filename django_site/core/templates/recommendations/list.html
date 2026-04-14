@@ -125,21 +125,21 @@
 {% if total_pages > 1 %}
 <div class="pagination">
   {% if page > 1 %}
-    <a href="?profile={{ selected_profile.pk }}&page={{ page|add:"-1" }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from }}&date_to={{ filter_date_to }}&q={{ filter_keyword }}{% for c in filter_cats %}&cat={{ c }}{% endfor %}">← Prev</a>
+    <a href="?profile={{ selected_profile.pk }}&page={{ page|add:"-1" }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">← Prev</a>
   {% endif %}
 
   {% for p in pages_range %}
     {% if p == page %}
       <span class="current">{{ p }}</span>
     {% elif p == 1 or p == total_pages or p >= page|add:"-2" and p <= page|add:"2" %}
-      <a href="?profile={{ selected_profile.pk }}&page={{ p }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from }}&date_to={{ filter_date_to }}&q={{ filter_keyword }}{% for c in filter_cats %}&cat={{ c }}{% endfor %}">{{ p }}</a>
+      <a href="?profile={{ selected_profile.pk }}&page={{ p }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">{{ p }}</a>
     {% elif p == page|add:"-3" or p == page|add:"3" %}
       <span class="text-dim">…</span>
     {% endif %}
   {% endfor %}
 
   {% if page < total_pages %}
-    <a href="?profile={{ selected_profile.pk }}&page={{ page|add:"1" }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from }}&date_to={{ filter_date_to }}&q={{ filter_keyword }}{% for c in filter_cats %}&cat={{ c }}{% endfor %}">Next →</a>
+    <a href="?profile={{ selected_profile.pk }}&page={{ page|add:"1" }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">Next →</a>
   {% endif %}
 </div>
 {% endif %}
