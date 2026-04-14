@@ -2139,11 +2139,11 @@ def recommendations_page(user: Dict):
 
         except Exception as e:
             log_error("recommendations_page.main_logic", e, {"user_id": user.get('id')})
-            st.error(f"Error: {str(e)}")
+            st.error(friendly_api_error(e))
 
     except Exception as e:
         log_error("recommendations_page", e, {"user": user})
-        st.error(f"Recommendations page error: {str(e)}")
+        st.error(f"Recommendations page error: {friendly_api_error(e)}")
 
 def settings_page(user: Dict):
     """Settings page"""
