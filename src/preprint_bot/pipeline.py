@@ -69,7 +69,7 @@ async def fetch_papers_for_arxiv_day(target_date, categories):
     print(f"Time window: {start_datetime} to {end_datetime} (UTC)")
     print(f"Categories: {categories}")
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30, headers={"User-Agent": "PreprintBot/1.0 (preprintbot@syr.edu)"}) as client:
         for cat in categories:
             query = f"cat:{cat}+AND+submittedDate:[{start}+TO+{end}]"
             url = (
@@ -364,6 +364,8 @@ async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, 
 
 async def send_all_digests(api_client: APIClient, run_date: str = None):
     run_date = run_date or str(date_type.today())
+    run_date_obj = date_type.fromisoformat(run_date)
+
     print(f"\n{'='*60}")
     print("STEP 8: Sending Email Digests")
     print(f"{'='*60}")
@@ -379,6 +381,21 @@ async def send_all_digests(api_client: APIClient, run_date: str = None):
     for profile in profiles:
         if not profile.get("email_notify", False):
             continue
+
+        frequency = profile.get("frequency", "daily")
+
+        # Check if today is the right day to send for this frequency
+        if frequency == "weekly":
+            # Send on Mondays only
+            if run_date_obj.weekday() != 0:
+                print(f"  - [{profile['name']}] skipped: weekly frequency, not Monday")
+                continue
+        elif frequency == "monthly":
+            # Send on the 1st of each month only
+            if run_date_obj.day != 1:
+                print(f"  - [{profile['name']}] skipped: monthly frequency, not 1st of month")
+                continue
+        # "daily" falls through and always sends
 
         profile_id = profile["id"]
         user_id = profile["user_id"]
