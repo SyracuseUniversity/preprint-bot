@@ -513,8 +513,10 @@ def _parse_arxiv_ids(raw: str) -> list[str]:
         token = re.sub(r"https?://arxiv\.org/(abs|pdf)/", "", token)
         if token.lower().startswith("arxiv:"):
             token = token[6:]
-        # Strip version suffix and .pdf
-        token = re.sub(r"v\d+$", "", token).replace(".pdf", "")
+        # Strip query/fragment suffixes, then .pdf, then trailing version
+        token = re.sub(r"[?#].*$", "", token)
+        token = re.sub(r"\.pdf$", "", token, flags=re.IGNORECASE)
+        token = re.sub(r"v\d+$", "", token)
         if ARXIV_ID_RE.match(token) and token not in ids:
             ids.append(token)
     return ids
@@ -536,6 +538,8 @@ def _download_arxiv_pdfs(pb_user, profile, arxiv_ids):
     success = 0
     failed = []
     for aid in arxiv_ids:
+        # Legacy arXiv IDs contain slashes (e.g. hep-th/9901001); sanitize for filenames
+        safe_aid = aid.replace("/", "_")
         try:
             resp = http_requests.get(f"https://arxiv.org/pdf/{aid}.pdf", timeout=30)
             resp.raise_for_status()
@@ -552,7 +556,7 @@ def _download_arxiv_pdfs(pb_user, profile, arxiv_ids):
                 logger.warning("arXiv PDF for %s exceeds size limit (%d bytes)", aid, len(resp.content))
                 failed.append(aid)
             else:
-                (pdf_dir / f"{aid}.pdf").write_bytes(resp.content)
+                (pdf_dir / f"{safe_aid}.pdf").write_bytes(resp.content)
                 success += 1
         except Exception as exc:
             logger.exception("Failed to download arXiv PDF %s", aid)
