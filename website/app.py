@@ -28,12 +28,29 @@ cookie_manager = stx.CookieManager()
 
 # Configure logging — file only, no StreamHandler so logs don't bleed into the UI
 _log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-_file_handler = logging.FileHandler(LOG_FILE_PATH)
-_file_handler.setFormatter(_log_formatter)
 
 # Root logger: warnings only, file only
 _root_logger = logging.getLogger()
 _root_logger.setLevel(logging.WARNING)
+
+_file_handler = None
+for _existing_handler in _root_logger.handlers:
+    if (
+        isinstance(_existing_handler, logging.FileHandler)
+        and Path(getattr(_existing_handler, "baseFilename", "")) == LOG_FILE_PATH
+    ):
+        _file_handler = _existing_handler
+        break
+
+if _file_handler is None:
+    _file_handler = logging.FileHandler(LOG_FILE_PATH)
+
+_file_handler.setFormatter(_log_formatter)
+
+for _existing_handler in list(_root_logger.handlers):
+    if _existing_handler is not _file_handler:
+        _root_logger.removeHandler(_existing_handler)
+        _existing_handler.close()
 _root_logger.handlers = [_file_handler]
 
 logger = logging.getLogger(__name__)
