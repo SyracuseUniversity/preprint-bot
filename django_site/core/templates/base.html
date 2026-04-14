@@ -20,10 +20,10 @@
   {% if request.user.is_authenticated %}
   <nav class="topnav">
     <a href="{% url 'dashboard' %}" class="brand">Preprint Bot</a>
-    <button class="nav-toggle" onclick="document.querySelector('.topnav').classList.toggle('open')" aria-label="Toggle navigation">
+    <button class="nav-toggle" onclick="const isOpen = document.querySelector('.topnav').classList.toggle('open'); this.setAttribute('aria-expanded', isOpen ? 'true' : 'false');" aria-label="Toggle navigation" aria-controls="nav-menu" aria-expanded="false">
       <span></span><span></span><span></span>
     </button>
-    <div class="nav-menu">
+    <div class="nav-menu" id="nav-menu">
       <div class="nav-links">
         <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Dashboard</a>
         <a href="{% url 'profile_list' %}" class="{% if 'profile' in request.resolver_match.url_name %}active{% endif %}">Profiles</a>

@@ -80,7 +80,7 @@
             <a href="{% url 'paper_view' p.pk pdf.name %}" target="_blank" rel="noopener noreferrer" class="text-sm">{{ pdf.name }}</a>
             <form method="post" action="{% url 'paper_delete' p.pk pdf.name %}" style="display:inline;">
               {% csrf_token %}
-              <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete {{ pdf.name|escapejs }}?');">🗑</button>
+              <button type="submit" class="btn btn-sm btn-danger" aria-label="Delete paper {{ pdf.name }}" onclick="return confirm('Delete {{ pdf.name|escapejs }}?');">🗑</button>
             </form>
           </div>
           {% endfor %}

@@ -100,8 +100,12 @@ def login_view(request):
         pb_user = authenticate_pbuser(request, email, password)
         if pb_user:
             login_pbuser(request, pb_user)
-            # Validate next URL to prevent open redirect
-            if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+            # Validate next URL to prevent open redirect and HTTPS downgrade
+            if next_url and url_has_allowed_host_and_scheme(
+                next_url,
+                allowed_hosts={request.get_host()},
+                require_https=request.is_secure(),
+            ):
                 return redirect(next_url)
             return redirect("dashboard")
         messages.error(request, "Invalid email or password.")
@@ -851,7 +855,11 @@ def toggle_profile_email_view(request, profile_id):
     messages.success(request, f"Emails {state} for '{profile.name}'.")
     # Redirect back to wherever the user came from, only if local
     next_url = request.POST.get("next") or request.META.get("HTTP_REFERER")
-    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
         return redirect(next_url)
     return redirect("profile_list")
 
