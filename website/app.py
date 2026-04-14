@@ -26,16 +26,39 @@ LOG_FILE_PATH = Path(__file__).parent.resolve() / "streamlit_app.log"
 
 cookie_manager = stx.CookieManager()
 
-# Configure logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(LOG_FILE_PATH),
-        logging.StreamHandler()
-    ]
-)
+# Configure logging — file only, no StreamHandler so logs don't bleed into the UI
+_log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Root logger: warnings only, file only
+_root_logger = logging.getLogger()
+_root_logger.setLevel(logging.WARNING)
+
+_file_handler = None
+for _existing_handler in _root_logger.handlers:
+    if (
+        isinstance(_existing_handler, logging.FileHandler)
+        and Path(getattr(_existing_handler, "baseFilename", "")) == LOG_FILE_PATH
+    ):
+        _file_handler = _existing_handler
+        break
+
+if _file_handler is None:
+    _file_handler = logging.FileHandler(LOG_FILE_PATH)
+
+_file_handler.setFormatter(_log_formatter)
+
+for _existing_handler in list(_root_logger.handlers):
+    if _existing_handler is not _file_handler:
+        _root_logger.removeHandler(_existing_handler)
+        _existing_handler.close()
+_root_logger.handlers = [_file_handler]
+
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)  # our module stays verbose, but file-only
+
+# Silence chatty third-party loggers
+for _noisy_logger in ("streamlit", "urllib3", "httpx", "httpcore", "asyncio", "watchdog", "PIL"):
+    logging.getLogger(_noisy_logger).setLevel(logging.WARNING)
 
 # Add website directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -46,6 +69,50 @@ def log_error(func_name: str, error: Exception, context: Dict = None):
     logger.error(f"Traceback: {traceback.format_exc()}")
     if context:
         logger.error(f"Context: {context}")
+
+def friendly_api_error(error: Exception, context: str = "") -> str:
+    msg = str(error).lower()
+
+    if any(k in msg for k in ("incorrect password", "wrong password", "invalid password",
+                               "invalid credentials", "unauthorized", "401")):
+        return "Incorrect email or password. Please try again."
+
+    if any(k in msg for k in ("account already exists", "email already", "already registered",
+                               "duplicate", "unique constraint", "already exists", "409")):
+        return "An account with that email already exists. Try logging in instead."
+
+    if any(k in msg for k in ("token already used", "already used")):
+        return "This reset token has already been used. Please request a new one."
+
+    if any(k in msg for k in ("token expired", "expired token")):
+        return "Your reset token has expired. Please request a new one."
+
+    if any(k in msg for k in ("invalid or expired token", "invalid token")):
+        return "Your reset token is invalid or has expired. Please request a new one."
+
+    if any(k in msg for k in ("user not found", "no account", "404")):
+        if context == "login":
+            return "No account found with that email. Please sign up first."
+        if context == "reset":
+            return "That email address wasn't found. Please check and try again."
+        return "The requested item was not found."
+
+    if any(k in msg for k in ("not found",)):
+        return "The requested item was not found."
+
+    if any(k in msg for k in ("too many", "rate limit", "429")):
+        return "Too many attempts. Please wait a moment and try again."
+
+    if any(k in msg for k in ("weak password", "too short", "password complexity")):
+        return "Password doesn't meet requirements. Please choose a stronger password (min 8 characters)."
+
+    if any(k in msg for k in ("connection", "timeout", "network", "refused", "unreachable")):
+        return "Could not reach the server. Please check your connection and try again."
+
+    if any(k in msg for k in ("500", "internal server", "server error")):
+        return "The server encountered an error. Please try again in a moment."
+
+    return "Something went wrong. Please try again or contact support if the problem persists."
 
 def auto_refresh_during_processing(api, user_id, profile_id, interval=3):
     """Auto-refresh page during processing"""
@@ -478,7 +545,7 @@ def logout():
         st.rerun()
     except Exception as e:
         log_error("logout", e)
-        st.error(f"Logout failed: {str(e)}")
+        st.error(friendly_api_error(e))
 
 def check_duplicate_profile_name(api, user_id: int, name: str, exclude_profile_id: int = None) -> bool:
     """Check if profile name already exists for this user (case-insensitive)"""
@@ -530,11 +597,7 @@ def login_page():
                 st.rerun()
             except Exception as e:
                 log_error("login_page.submit", e, {"email": email})
-                st.error("Login failed. Please check your credentials.")
-                logger.error("Login error", exc_info=True)
-                st.code(traceback.format_exc())
-                with st.expander("Error Details"):
-                     st.code(traceback.format_exc())
+                st.error(friendly_api_error(e, context="login"))
         
         if signup:
             st.session_state['show_signup'] = True
@@ -548,9 +611,7 @@ def login_page():
                 st.rerun()
     except Exception as e:
         log_error("login_page", e)
-        st.error(f"Login page error: {str(e)}")
-        with st.expander("Error Details"):
-            st.code(traceback.format_exc())
+        st.error(friendly_api_error(e))
 
 def signup_page():
     """Signup page"""
@@ -576,7 +637,7 @@ def signup_page():
                 st.error("Passwords don't match")
             else:
                 try:
-                    logger.info(f"Signup attempt for: {email}")
+                    logger.info(f"Signup attempt for: {email[:3]}***@{email.split('@')[-1]}")
                     api = get_api_client()
                     result = api.register(email, password, name or None)
                     set_current_user(result)
@@ -585,103 +646,116 @@ def signup_page():
                     st.rerun()
                 except Exception as e:
                     log_error("signup_page.submit", e, {"email": email})
-                    st.error(f"Registration failed: {str(e)}")
-                    with st.expander("Error Details"):
-                        st.code(traceback.format_exc())
+                    st.error(friendly_api_error(e, context="signup"))
         
         if back:
             st.session_state['show_signup'] = False
             st.rerun()
     except Exception as e:
         log_error("signup_page", e)
-        st.error(f"Signup page error: {str(e)}")
-        with st.expander("Error Details"):
-            st.code(traceback.format_exc())
+        st.error(friendly_api_error(e))
 
 def reset_password_page():
     """Reset password page"""
     try:
         st.subheader("Reset Password")
-        
+
         with st.form("reset_form"):
             token = st.text_input("Reset Token", placeholder="Paste your token here")
             new_password = st.text_input("New Password", type="password")
             confirm = st.text_input("Confirm Password", type="password")
             submit = st.form_submit_button("Reset Password", use_container_width=True)
-        
+
         if submit:
             if not token or not new_password:
                 st.error("Token and new password are required")
             elif new_password != confirm:
                 st.error("Passwords don't match")
             else:
-                try:
-                    logger.info("Password reset attempt")
-                    api = get_api_client()
-                    api.reset_password(token, new_password)
-                    st.success("Password reset successfully! Please log in.")
-                    st.session_state['show_reset'] = False
-                    logger.info("Password reset successful")
-                    st.rerun()
-                except Exception as e:
-                    log_error("reset_password_page.submit", e)
-                    st.error(f"Reset failed: {str(e)}")
-                    with st.expander("Error Details"):
-                        st.code(traceback.format_exc())
-        
+                st.session_state['pending_reset'] = {
+                    "token": token,
+                    "new_password": new_password
+                }
+                st.rerun()
+
+        if st.session_state.get('pending_reset'):
+            with st.container(border=True):
+                st.warning("Are you sure you want to reset your password?")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Yes, reset it", type="primary", use_container_width=True):
+                        try:
+                            logger.info("Password reset attempt")
+                            api = get_api_client()
+                            with st.spinner("Resetting password..."):
+                                api.reset_password(
+                                    st.session_state['pending_reset']['token'],
+                                    st.session_state['pending_reset']['new_password']
+                                )
+                            st.session_state.pop('pending_reset', None)
+                            st.success("Password reset successfully! Please log in.")
+                            st.session_state['show_reset'] = False
+                            logger.info("Password reset successful")
+                            st.rerun()
+                        except Exception as e:
+                            log_error("reset_password_page.submit", e)
+                            st.session_state.pop('pending_reset', None)
+                            st.error(friendly_api_error(e, context="reset"))
+                with col2:
+                    if st.button("Cancel", use_container_width=True):
+                        st.session_state.pop('pending_reset', None)
+                        st.rerun()
+
         if st.button("Back to Login"):
             st.session_state['show_reset'] = False
+            st.session_state.pop('pending_reset', None)
             st.rerun()
+
     except Exception as e:
         log_error("reset_password_page", e)
-        st.error(f"Reset password page error: {str(e)}")
-        with st.expander("Error Details"):
-            st.code(traceback.format_exc())
+        st.error(friendly_api_error(e))
 
 def forgot_password_page():
     """Forgot password page"""
     try:
         st.subheader("Forgot Password")
         st.caption("Enter your email to receive a password reset token (valid for 1 hour)")
-        
+
         with st.form("forgot_form"):
             email = st.text_input("Email", placeholder="you@example.com")
             submit = st.form_submit_button("Send Reset Token", use_container_width=True)
-        
-        if submit:
+
+        if submit and not st.session_state.get('reset_email_sent'):
             if not email:
                 st.error("Please enter your email")
             else:
                 try:
-                    logger.info(f"Password reset request for: {email}")
+                    logger.info(f"Password reset request for: {email[:3]}***@{email.split('@')[-1]}")
                     api = get_api_client()
-                    result = api.request_password_reset(email)
-                    st.success("If that email exists, we've sent a reset token")
+                    with st.spinner("Sending reset email..."):
+                        api.request_password_reset(email)
+                    st.session_state['reset_email_sent'] = True
                     logger.info(f"Password reset token sent: {email}")
-                    
-                    # For development: show the token
-                    if 'token' in result:
-                        st.info(f"Development Mode - Your reset token: {result['token']}")
-                    
-                    # Show button to go to reset page
-                    if st.button("I have a token"):
-                        st.session_state['show_reset'] = True
-                        st.session_state['show_forgot'] = False
-                        st.rerun()
                 except Exception as e:
                     log_error("forgot_password_page.submit", e, {"email": email})
-                    st.error(f"Error: {str(e)}")
-                    with st.expander("Error Details"):
-                        st.code(traceback.format_exc())
-        
+                    st.error(friendly_api_error(e, context="reset"))
+
+        if st.session_state.get('reset_email_sent'):
+            st.success("We've sent a reset token to your email. Check your inbox.")
+            if st.button("I have a token — Reset my password", type="primary", use_container_width=True):
+                st.session_state['show_reset'] = True
+                st.session_state['show_forgot'] = False
+                st.session_state.pop('reset_email_sent', None)
+                st.rerun()
+
         if st.button("Back to Login"):
             st.session_state['show_forgot'] = False
+            st.session_state.pop('reset_email_sent', None)
             st.rerun()
+
     except Exception as e:
         log_error("forgot_password_page", e)
-        st.error(f"Forgot password page error: {str(e)}")
-        with st.expander("Error Details"):
-            st.code(traceback.format_exc())
+        st.error(friendly_api_error(e))
 
 # ==================== MAIN PAGES ====================
 
@@ -803,15 +877,11 @@ def dashboard_page(user: Dict):
         
         except Exception as e:
             log_error("dashboard_page.load_data", e, {"user_id": user.get('id')})
-            st.error(f"Error loading dashboard: {str(e)}")
-            with st.expander("Error Details"):
-                st.code(traceback.format_exc())
+            st.error(friendly_api_error(e))
     
     except Exception as e:
         log_error("dashboard_page", e, {"user": user})
-        st.error(f"Dashboard error: {str(e)}")
-        with st.expander("Error Details"):
-            st.code(traceback.format_exc())
+        st.error(friendly_api_error(e))
 
 
 def profiles_page(user: Dict):
@@ -847,6 +917,8 @@ def profiles_page(user: Dict):
         view = st.segmented_control("", ["List", "Create/Edit"], default=default_view)
         if view != st.session_state.get("profiles_view"):
             st.session_state["profiles_view"] = view
+            if view == "List":
+                st.session_state.pop("_create_initialized", None)
             st.rerun()
         st.session_state["profiles_view"] = view
 
@@ -931,7 +1003,7 @@ def profiles_page(user: Dict):
                                                                     "profile_id": profile['id'],
                                                                     "filename": paper['filename']
                                                                 })
-                                                                st.error(f"Delete failed: {str(e)}")
+                                                                st.error(friendly_api_error(e))
                                                 except Exception as e:
                                                     log_error("profiles_page.display_paper", e, {"paper": paper})
                                     
@@ -1005,9 +1077,7 @@ def profiles_page(user: Dict):
                                                             "profile_id": profile['id'],
                                                             "file_count": len(uploaded_files)
                                                         })
-                                                        st.error(f"Upload failed: {str(e)}")
-                                                        with st.expander("Error Details"):
-                                                            st.code(traceback.format_exc())
+                                                        st.error(friendly_api_error(e))
                                         
                                         # TAB 2: Add from arXiv (Main branch logic with logging)
                                         with arxiv_tab:
@@ -1104,9 +1174,7 @@ def profiles_page(user: Dict):
                                                             "profile_id": profile['id'],
                                                             "input": arxiv_input
                                                         })
-                                                        st.error(f"arXiv import failed: {str(e)}")
-                                                        with st.expander("Error Details"):
-                                                            st.code(traceback.format_exc())
+                                                        st.error(friendly_api_error(e))
 
                                         # TAB 3: Search arXiv (Your custom UI)
                                         with search_tab:
@@ -1164,7 +1232,7 @@ def profiles_page(user: Dict):
                                                                     
                                                         except Exception as e:
                                                             log_error("profiles_page.arxiv_search", e, {"query": query_string})
-                                                            st.error(f"Search failed: {str(e)}")
+                                                            st.error(friendly_api_error(e))
 
                                             if search_key in st.session_state:
                                                 current_results = st.session_state[search_key]
@@ -1275,7 +1343,7 @@ def profiles_page(user: Dict):
                                                                     logger.info(f"Successfully bulk added: {paper['id']}")
                                                                 except Exception as e:
                                                                     log_error("profiles_page.bulk_add", e, {"arxiv_id": paper['id']})
-                                                                    st.error(f"Failed {paper['id']}: {str(e)}")
+                                                                    st.error(friendly_api_error(e))
                                                                     
                                                                 progress_bar.progress((i + 1) / len(selected_papers))
                                                             
@@ -1292,9 +1360,7 @@ def profiles_page(user: Dict):
                                         "user_id": user.get('id'),
                                         "profile_id": profile['id']
                                     })
-                                    st.error(f"Error managing papers: {str(e)}")
-                                    with st.expander("Error Details"):
-                                        st.code(traceback.format_exc())
+                                    st.error(friendly_api_error(e))
                                 
                                 st.divider()
 
@@ -1316,9 +1382,7 @@ def profiles_page(user: Dict):
                                                 log_error("profiles_page.delete_profile", e, {
                                                     "profile_id": profile['id']
                                                 })
-                                                st.error(f"Error: {str(e)}")
-                                                with st.expander("Error Details"):
-                                                    st.code(traceback.format_exc())
+                                                st.error(friendly_api_error(e))
                                     with col_no:
                                         if st.button("Cancel", key=f"no_{profile['id']}"):
                                             st.session_state.pop(confirm_key)
@@ -1333,15 +1397,11 @@ def profiles_page(user: Dict):
                                 "profile_id": profile.get('id'),
                                 "profile_name": profile.get('name')
                             })
-                            st.error(f"Error displaying profile {profile.get('name')}: {str(e)}")
-                            with st.expander("Error Details"):
-                                st.code(traceback.format_exc())
+                            st.error(friendly_api_error(e))
 
             except Exception as e:
                 log_error("profiles_page.list_view", e, {"user_id": user.get('id')})
-                st.error(f"Error loading profiles: {str(e)}")
-                with st.expander("Error Details"):
-                    st.code(traceback.format_exc())
+                st.error(friendly_api_error(e))
 
             return  # End of List view
             
@@ -1352,6 +1412,10 @@ def profiles_page(user: Dict):
 
             # Mode selector
             mode = st.segmented_control("Mode", ["Create new", "Edit existing"], key="profile_mode", default="Create new")
+
+            # When switching to Edit existing, clear the Create new init guard
+            if mode == "Edit existing":
+                st.session_state.pop("_create_initialized", None)
 
             # Initialize session keys
             if "profile_cat_tree_selected" not in st.session_state:
@@ -1398,22 +1462,23 @@ def profiles_page(user: Dict):
                     log_error("profiles_page.load_profile_defaults", e, {
                         "profile_id": selected_profile_id
                     })
-                    st.error(f"Error loading profile: {str(e)}")
+                    st.error(friendly_api_error(e))
                     return
             else:
                 default_name = ""
                 default_freq = "weekly"
                 default_threshold = "medium"
-                default_top_x = 10
+                default_top_x = 999
                 if mode == "Create new":
-                    st.session_state["profile_cat_tree_selected"] = []
-                    st.session_state.pop("loaded_profile_id", None)
-                    # Reset widget state to defaults
-                    st.session_state["profile_name_input"] = ""
-                    st.session_state["profile_freq_input"] = "weekly"
-                    st.session_state["profile_threshold_input"] = 0.575
-                    st.session_state["profile_top_x_input"] = 10
-                    st.session_state["profile_email_enabled"] = True
+                    if st.session_state.get("loaded_profile_id") is not None or st.session_state.get("_create_initialized") is not True:
+                        st.session_state["profile_cat_tree_selected"] = []
+                        st.session_state.pop("loaded_profile_id", None)
+                        st.session_state["profile_name_input"] = ""
+                        st.session_state["profile_freq_input"] = "weekly"
+                        st.session_state["profile_threshold_input"] = 0.575
+                        st.session_state["profile_top_x_input"] = 999
+                        st.session_state["profile_email_enabled"] = True
+                        st.session_state["_create_initialized"] = True
 
             # Form for create/edit
             if mode == "Create new" or selected_profile_id:
@@ -1546,9 +1611,7 @@ def profiles_page(user: Dict):
 
                         except Exception as e:
                             log_error("profiles_page.form_submit", e, {"name": name, "mode": mode})
-                            st.error(f"Error: {str(e)}")
-                            with st.expander("Error Details"):
-                                st.code(traceback.format_exc())
+                            st.error(friendly_api_error(e))
 
             # Creation confirmation panel
             if st.session_state.get("show_profile_create_confirm") and st.session_state.get("pending_profile_create"):
@@ -1588,15 +1651,14 @@ def profiles_page(user: Dict):
                                     logger.info(f"Successfully created profile: {data['name']}")
                                     st.session_state.pop("pending_profile_create", None)
                                     st.session_state.pop("show_profile_create_confirm", None)
+                                    st.session_state.pop("_create_initialized", None)
                                     st.session_state["profile_cat_tree_selected"] = []
                                     st.session_state["profiles_view"] = "List"
                                     time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
                                     log_error("profiles_page.confirm_create", e, {"profile_data": data})
-                                    st.error(f"Error creating profile: {str(e)}")
-                                    with st.expander("Error Details"):
-                                        st.code(traceback.format_exc())
+                                    st.error(friendly_api_error(e))
 
                         with col2:
                             if st.button("Cancel", key="cancel_profile_create"):
@@ -1608,9 +1670,7 @@ def profiles_page(user: Dict):
 
                 except Exception as e:
                     log_error("profiles_page.confirmation_panel", e)
-                    st.error(f"Error in confirmation panel: {str(e)}")
-                    with st.expander("Error Details"):
-                        st.code(traceback.format_exc())
+                    st.error(friendly_api_error(e))
 
             # Update confirmation panel
             if st.session_state.get("show_profile_update_confirm") and st.session_state.get("pending_profile_update"):
@@ -1657,9 +1717,7 @@ def profiles_page(user: Dict):
                                     st.rerun()
                                 except Exception as e:
                                     log_error("profiles_page.confirm_update", e, {"profile_data": data})
-                                    st.error(f"Error updating profile: {str(e)}")
-                                    with st.expander("Error Details"):
-                                        st.code(traceback.format_exc())
+                                    st.error(friendly_api_error(e))
 
                         with col2:
                             if st.button("Cancel", key="cancel_profile_update"):
@@ -1670,21 +1728,15 @@ def profiles_page(user: Dict):
 
                 except Exception as e:
                     log_error("profiles_page.update_confirmation_panel", e)
-                    st.error(f"Error in confirmation panel: {str(e)}")
-                    with st.expander("Error Details"):
-                        st.code(traceback.format_exc())
+                    st.error(friendly_api_error(e))
 
         except Exception as e:
             log_error("profiles_page.create_edit_view", e, {"user_id": user.get('id')})
-            st.error(f"Error in Create/Edit view: {str(e)}")
-            with st.expander("Error Details"):
-                st.code(traceback.format_exc())
+            st.error(friendly_api_error(e))
 
     except Exception as e:
         log_error("profiles_page", e, {"user": user})
-        st.error(f"Profiles page error: {str(e)}")
-        with st.expander("Error Details"):
-            st.code(traceback.format_exc())
+        st.error(friendly_api_error(e))
 
 def recommendations_page(user: Dict):
     """Recommendations page with advanced filtering and date grouping"""
@@ -1703,7 +1755,6 @@ def recommendations_page(user: Dict):
                 st.info("No profiles found. Create a profile first.")
                 return
             
-            # Profile dropdown - NO "All Profiles"
             profile_options = {}
             for p in profiles:
                 profile_options[str(p['id'])] = p['name']
@@ -1712,34 +1763,27 @@ def recommendations_page(user: Dict):
                 "Select Profile",
                 options=list(profile_options.keys()),
                 format_func=lambda x: profile_options[x],
-                index=0  # Default to first profile
+                index=0
             )
 
-            # Get selected profile details
             try:
                 selected_profile = next((p for p in profiles if str(p['id']) == selected), None)
                 profile_categories = selected_profile.get('categories', []) if selected_profile else []
-                logger.debug(f"Selected profile {selected} with {len(profile_categories)} categories")
             except Exception as e:
                 log_error("recommendations_page.get_profile_details", e, {"selected": selected})
                 profile_categories = []
 
-            # Fetch recommendations for selected profile
             try:
                 profile_id_int = int(selected)
                 logger.info(f"Fetching recommendations for profile: {profile_id_int}")
                 recommendations = api.get_profile_recommendations(profile_id_int, limit=5000)
                 logger.debug(f"Fetched {len(recommendations)} recommendations")
             except Exception as e:
-                log_error("recommendations_page.fetch_recommendations", e, {
-                    "profile_id": selected
-                })
+                log_error("recommendations_page.fetch_recommendations", e, {"profile_id": selected})
                 st.error(f"Error fetching recommendations: {str(e)}")
-                with st.expander("Error Details"):
-                    st.code(traceback.format_exc())
                 return
 
-            # DEDUPLICATE by arxiv_id - keep highest score
+            # Deduplicate by arxiv_id - keep highest score
             try:
                 seen_arxiv_ids = {}
                 for rec in recommendations:
@@ -1749,238 +1793,212 @@ def recommendations_page(user: Dict):
                             seen_arxiv_ids[arxiv_id] = rec
                     else:
                         seen_arxiv_ids[f"_no_id_{rec.get('id')}"] = rec
-
                 recommendations = list(seen_arxiv_ids.values())
-                logger.debug(f"After deduplication: {len(recommendations)} recommendations")
             except Exception as e:
                 log_error("recommendations_page.deduplicate", e)
-                st.warning("Error deduplicating recommendations, showing all")
-                    
+
             if not recommendations:
                 st.info("No recommendations yet.")
                 return
-            
-            # Calculate min and max scores from recommendations
+
             try:
                 all_scores = [r['score'] for r in recommendations if r.get('score') is not None]
                 min_score_available = min(all_scores) if all_scores else 0.0
                 max_score_available = max(all_scores) if all_scores else 1.0
-                logger.debug(f"Score range: {min_score_available:.3f} to {max_score_available:.3f}")
             except Exception as e:
                 log_error("recommendations_page.calculate_score_range", e)
                 min_score_available = 0.0
                 max_score_available = 1.0
-            
-            # Advanced filters in expandable section
+
+            # ── Filter state: one dict per profile, persists across reruns ──────
+            _fkey = f"rec_filters_{selected}"
+            if _fkey not in st.session_state:
+                st.session_state[_fkey] = {
+                    "date_from": None,
+                    "date_to":   None,
+                    "min_score": float(min_score_available),
+                    "keyword":   "",
+                    "cats":      [],
+                }
+            _fs = st.session_state[_fkey]
+
+            # Keep min_score in valid range if recommendations change
+            _fs["min_score"] = max(float(min_score_available),
+                                   min(float(max_score_available), _fs["min_score"]))
+
             with st.expander("Filters", expanded=False):
                 try:
-                    # Quick filter buttons
                     col_quick1, col_quick2, col_quick3, col_quick4 = st.columns(4)
-                    
+                    _rerun = False
+
                     with col_quick1:
                         if st.button("Today", use_container_width=True):
-                            st.session_state['rec_date_from'] = date.today()
-                            st.session_state['rec_date_to'] = date.today()
-                            st.rerun()
-                    
+                            _fs["date_from"] = date.today()
+                            _fs["date_to"]   = date.today()
+                            _rerun = True
+
                     with col_quick2:
                         if st.button("Last 7 days", use_container_width=True):
-                            st.session_state['rec_date_from'] = date.today() - timedelta(days=7)
-                            st.session_state['rec_date_to'] = date.today()
-                            st.rerun()
-                    
+                            _fs["date_from"] = date.today() - timedelta(days=7)
+                            _fs["date_to"]   = date.today()
+                            _rerun = True
+
                     with col_quick3:
                         if st.button("Last 30 days", use_container_width=True):
-                            st.session_state['rec_date_from'] = date.today() - timedelta(days=30)
-                            st.session_state['rec_date_to'] = date.today()
-                            st.rerun()
-                    
+                            _fs["date_from"] = date.today() - timedelta(days=30)
+                            _fs["date_to"]   = date.today()
+                            _rerun = True
+
                     with col_quick4:
                         if st.button("All time", use_container_width=True):
-                            st.session_state['rec_date_from'] = None
-                            st.session_state['rec_date_to'] = None
-                            st.rerun()
-                    
+                            _fs["date_from"] = None
+                            _fs["date_to"]   = None
+                            _rerun = True
+
+                    if _rerun:
+                        st.rerun()
+
                     st.divider()
-                    
-                    # Manual date inputs
+
                     col1, col2 = st.columns(2)
-                    
                     with col1:
-                        date_from = st.date_input(
-                            "From date", 
-                            value=st.session_state.get('rec_date_from'),
-                            key="rec_date_from_input"
-                        )
-                        if date_from:
-                            st.session_state['rec_date_from'] = date_from
-                    
+                        _d = st.date_input("From date", value=_fs["date_from"],
+                                           key=f"rec_date_from_input_{selected}")
+                        if _d != _fs["date_from"]:
+                            _fs["date_from"] = _d
+
                     with col2:
-                        date_to = st.date_input(
-                            "To date", 
-                            value=st.session_state.get('rec_date_to'),
-                            key="rec_date_to_input"
-                        )
-                        if date_to:
-                            st.session_state['rec_date_to'] = date_to
-                    
-                    # Minimum score slider with dynamic range
+                        _d = st.date_input("To date", value=_fs["date_to"],
+                                           key=f"rec_date_to_input_{selected}")
+                        if _d != _fs["date_to"]:
+                            _fs["date_to"] = _d
+
                     min_score = st.slider(
-                        "Minimum Score", 
+                        "Minimum Score",
                         min_value=float(min_score_available),
                         max_value=float(max_score_available),
-                        value=float(min_score_available),  # Default to lowest score (show all)
-                        step=0.01, 
-                        key="rec_min_score",
+                        value=_fs["min_score"],
+                        step=0.01,
+                        key=f"rec_min_score_{selected}",
                         help=f"Score range: {min_score_available:.3f} to {max_score_available:.3f}"
                     )
-                    
-                    # Keyword search
-                    keyword_search = st.text_input("Search in title/abstract", placeholder="Enter keywords...")
-                    
-                    # Category filter - Show profile's categories as checkboxes
+                    _fs["min_score"] = min_score
+
+                    keyword_search = st.text_input(
+                        "Search in title/abstract",
+                        value=_fs["keyword"],
+                        placeholder="Enter keywords...",
+                        key=f"rec_keyword_{selected}"
+                    )
+                    _fs["keyword"] = keyword_search
+
                     st.write("**Filter by Categories**")
-                    
                     if profile_categories:
-                        # Initialize session state for category selections if not exists
-                        if f"selected_cats_{selected}" not in st.session_state:
-                            st.session_state[f"selected_cats_{selected}"] = []
-                        
-                        # Create checkboxes for each category in the profile
                         selected_cats = []
-                        
                         for cat in profile_categories:
                             try:
                                 cat_label = ARXIV_CODE_TO_LABEL.get(cat, cat)
                                 is_checked = st.checkbox(
                                     cat_label,
-                                    value=cat in st.session_state[f"selected_cats_{selected}"],
+                                    value=cat in _fs["cats"],
                                     key=f"cat_checkbox_{selected}_{cat}"
                                 )
                                 if is_checked:
                                     selected_cats.append(cat)
                             except Exception as e:
                                 log_error("recommendations_page.category_checkbox", e, {"category": cat})
-                        
-                        # Update session state
-                        st.session_state[f"selected_cats_{selected}"] = selected_cats
-                        
-                        # Add "Clear all" button if any categories are selected
+                        _fs["cats"] = selected_cats
+
                         if selected_cats:
                             if st.button("Clear category filters", key=f"clear_cats_{selected}"):
-                                st.session_state[f"selected_cats_{selected}"] = []
+                                _fs["cats"] = []
                                 st.rerun()
                     else:
                         st.caption("No categories configured for this profile")
-                
+
                 except Exception as e:
                     log_error("recommendations_page.filters", e)
                     st.error("Error loading filters")
-                    with st.expander("Error Details"):
-                        st.code(traceback.format_exc())
-            
-            # Apply filters
-            try:
-                logger.debug("Applying filters to recommendations")
-                filtered = recommendations
-                
-                # Score filter
-                filtered = [r for r in filtered if r['score'] >= min_score]
-                logger.debug(f"After score filter: {len(filtered)} recommendations")
-                
-                # Date filters
-                date_from = st.session_state.get('rec_date_from')
-                date_to = st.session_state.get('rec_date_to')
 
-                if date_from or date_to:
+            # Apply filters — always read from _fs, never widget locals
+            try:
+                filtered = recommendations
+
+                filtered = [r for r in filtered if r.get('score', 0) >= _fs["min_score"]]
+
+                _date_from = _fs["date_from"]
+                _date_to   = _fs["date_to"]
+
+                if _date_from or _date_to:
                     date_filtered = []
                     for r in filtered:
                         submitted_date = r.get('submitted_date')
-                        
                         if submitted_date:
                             try:
                                 if isinstance(submitted_date, str):
-                                    paper_date = datetime.fromisoformat(submitted_date.replace('Z', '').replace('+00:00', '')).date()
+                                    paper_date = datetime.fromisoformat(
+                                        submitted_date.replace('Z', '').replace('+00:00', '')).date()
                                 else:
                                     paper_date = submitted_date.date() if hasattr(submitted_date, 'date') else None
-                                
                                 if paper_date:
-                                    if date_from and paper_date < date_from:
+                                    if _date_from and paper_date < _date_from:
                                         continue
-                                    if date_to and paper_date > date_to:
+                                    if _date_to and paper_date > _date_to:
                                         continue
-                                    
                                     date_filtered.append(r)
                             except Exception as e:
-                                log_error("recommendations_page.filter_date", e, {
-                                    "submitted_date": submitted_date
-                                })
+                                log_error("recommendations_page.filter_date", e, {"submitted_date": submitted_date})
                                 date_filtered.append(r)
                         else:
                             date_filtered.append(r)
-                    
                     filtered = date_filtered
-                    logger.debug(f"After date filter: {len(filtered)} recommendations")
-                
-                # Keyword search filter
-                if keyword_search:
-                    keyword_lower = keyword_search.lower()
+
+                if _fs["keyword"]:
+                    kw = _fs["keyword"].lower()
                     filtered = [
                         r for r in filtered
-                        if keyword_lower in r.get('title', '').lower() or 
-                           keyword_lower in r.get('abstract', '').lower()
+                        if kw in r.get('title', '').lower() or kw in r.get('abstract', '').lower()
                     ]
-                    logger.debug(f"After keyword filter: {len(filtered)} recommendations")
-                
-                # Category filter
-                selected_cats = st.session_state.get(f"selected_cats_{selected}", [])
-                if selected_cats:
+
+                if _fs["cats"]:
                     filtered = [
                         r for r in filtered
-                        if r.get('metadata') and 
-                           any(cat in r['metadata'].get('categories', []) for cat in selected_cats)
+                        if r.get('metadata') and
+                           any(cat in r['metadata'].get('categories', []) for cat in _fs["cats"])
                     ]
-                    logger.debug(f"After category filter: {len(filtered)} recommendations")
-                
-                # Sort by score
-                filtered = sorted(filtered, key=lambda x: x['score'], reverse=True)
-                
+
+                filtered = sorted(filtered, key=lambda x: x.get('score', 0), reverse=True)
+
             except Exception as e:
                 log_error("recommendations_page.apply_filters", e)
                 st.error("Error applying filters")
                 filtered = recommendations
-            
+
             # Group by submitted_date
             try:
                 from collections import defaultdict
-                
+
                 grouped = defaultdict(list)
-                
+
                 for rec in filtered:
                     submitted_date = rec.get('submitted_date')
                     date_str = "Unknown Date"
                     date_obj = None
-                    
+
                     if submitted_date:
                         try:
                             if isinstance(submitted_date, str):
                                 date_obj = datetime.fromisoformat(submitted_date.replace('Z', '').replace('+00:00', ''))
                             else:
                                 date_obj = submitted_date
-                            
                             date_str = date_obj.strftime("%d %B %Y")
                         except Exception as e:
-                            log_error("recommendations_page.parse_submitted_date", e, {
-                                "submitted_date": submitted_date
-                            })
+                            log_error("recommendations_page.parse_submitted_date", e, {"submitted_date": submitted_date})
                             date_str = "Unknown Date"
-                    
+
                     rec['_date_obj'] = date_obj
                     grouped[date_str].append(rec)
-                
-                logger.debug(f"Grouped into {len(grouped)} date groups")
-                
-                # Sort dates (newest first)
+
                 def date_sort_key(date_str):
                     if date_str == "Unknown Date":
                         return datetime.min
@@ -1988,86 +2006,73 @@ def recommendations_page(user: Dict):
                     if recs_in_group and recs_in_group[0].get('_date_obj'):
                         return recs_in_group[0]['_date_obj']
                     return datetime.min
-                
+
                 try:
                     sorted_dates = sorted(grouped.keys(), key=date_sort_key, reverse=True)
                 except Exception as e:
                     log_error("recommendations_page.sort_dates", e)
                     sorted_dates = list(grouped.keys())
-                
-                # Flatten papers for pagination
+
                 all_papers_ordered = []
-                for date in sorted_dates:
-                    recs = sorted(grouped[date], key=lambda x: x['score'], reverse=True)
+                for d in sorted_dates:
+                    recs = sorted(grouped[d], key=lambda x: x.get('score', 0), reverse=True)
                     for rec in recs:
-                        rec['_display_date'] = date
+                        rec['_display_date'] = d
                         all_papers_ordered.append(rec)
-                
+
             except Exception as e:
                 log_error("recommendations_page.group_by_date", e)
                 st.error("Error grouping recommendations by date")
                 all_papers_ordered = filtered
-            
-            # PAGINATION - 20 papers per page
+
+            # Pagination
             try:
                 PAPERS_PER_PAGE = 20
                 total_papers = len(all_papers_ordered)
                 total_pages = (total_papers + PAPERS_PER_PAGE - 1) // PAPERS_PER_PAGE
-                
-                # Initialize page number
+
                 if f'rec_page_{selected}' not in st.session_state:
                     st.session_state[f'rec_page_{selected}'] = 1
-                
+
                 current_page = st.session_state[f'rec_page_{selected}']
-                
-                # Ensure current page is valid
+
                 if current_page > total_pages and total_pages > 0:
                     current_page = total_pages
                     st.session_state[f'rec_page_{selected}'] = current_page
-                
-                # Calculate pagination indices
+
                 start_idx = (current_page - 1) * PAPERS_PER_PAGE
                 end_idx = min(start_idx + PAPERS_PER_PAGE, total_papers)
-                
-                # Get papers for current page
                 page_papers = all_papers_ordered[start_idx:end_idx]
-                
-                logger.debug(f"Pagination: page {current_page}/{total_pages}, showing {start_idx+1}-{end_idx} of {total_papers}")
-                
-                # Display info and pagination controls
+
                 col_info, col_pagination = st.columns([2, 1])
-                
+
                 with col_info:
                     st.write(f"Showing {start_idx + 1}-{end_idx} of {total_papers} recommendations")
-                
+
                 with col_pagination:
                     if total_pages > 1:
                         col_prev, col_page, col_next = st.columns([1, 2, 1])
-                        
                         with col_prev:
                             if st.button("← Prev", disabled=(current_page == 1), key=f"prev_top_{selected}"):
                                 st.session_state[f'rec_page_{selected}'] = current_page - 1
                                 st.rerun()
-                        
                         with col_page:
                             st.write(f"Page {current_page} of {total_pages}")
-                        
                         with col_next:
                             if st.button("Next →", disabled=(current_page == total_pages), key=f"next_top_{selected}"):
                                 st.session_state[f'rec_page_{selected}'] = current_page + 1
                                 st.rerun()
-                
+
                 if not page_papers:
                     st.info("No recommendations match the filters.")
                     return
-                
-                # Re-group papers for current page by date
+
+                from collections import defaultdict
                 page_grouped = defaultdict(list)
                 for rec in page_papers:
                     date_str = rec.get('_display_date', 'Unknown Date')
                     page_grouped[date_str].append(rec)
-                
-                # Get unique dates in order
+
                 page_dates = []
                 seen = set()
                 for rec in page_papers:
@@ -2075,24 +2080,20 @@ def recommendations_page(user: Dict):
                     if date_str not in seen:
                         page_dates.append(date_str)
                         seen.add(date_str)
-                
-                # Display by date
-                for date in page_dates:
-                    try:
-                        recs = page_grouped[date]
-                        
-                        # Display header with counts
-                        st.markdown(f"### {date}")
 
-                        # Get total_papers_fetched from the recommendation run
+                for d in page_dates:
+                    try:
+                        recs = page_grouped[d]
+                        st.markdown(f"### {d}")
+
                         total_fetched = recs[0].get('total_papers_fetched', 0) if recs else 0
-                        total_for_this_date = len(grouped[date])
+                        total_for_this_date = len(grouped[d])
 
                         if total_fetched > 0:
                             st.caption(f"Recommended {total_for_this_date} out of {total_fetched} papers fetched on this day")
                         else:
                             st.caption(f"{total_for_this_date} paper(s)")
-                        
+
                         for rec in recs:
                             try:
                                 with st.container(border=True):
@@ -2101,79 +2102,65 @@ def recommendations_page(user: Dict):
                                         st.markdown(f"**{rec['title']}**")
                                     with col2:
                                         st.markdown(f"**{rec['score']:.3f}**")
-                                    
-                                    # GET CATEGORIES FROM METADATA
+
                                     metadata = rec.get('metadata', {})
                                     categories = metadata.get('categories', [])
-                                    
+
                                     if categories:
-                                        # Show only primary category 
                                         primary_cat = categories[0]
                                         primary_label = ARXIV_CODE_TO_LABEL.get(primary_cat, primary_cat)
                                         if len(categories) > 1:
                                             st.caption(f"**Category:** {primary_label} (+{len(categories) - 1} more)")
                                         else:
                                             st.caption(f"**Category:** {primary_label}")
-                                    
+
                                     st.caption(f"**arXiv:** {rec.get('arxiv_id', 'N/A')}")
-                                    
-                                    # Show summary if available, otherwise truncated abstract
+
                                     if rec.get('summary_text'):
                                         st.write(rec['summary_text'])
                                     elif rec.get('abstract'):
                                         st.write(rec['abstract'][:200] + "...")
-                                    
+
                                     if rec.get('arxiv_id'):
                                         st.link_button("View on arXiv", f"https://arxiv.org/abs/{rec['arxiv_id']}")
-                            
+
                             except Exception as e:
                                 log_error("recommendations_page.display_recommendation", e, {
                                     "rec_id": rec.get('id'),
                                     "arxiv_id": rec.get('arxiv_id')
                                 })
                                 st.error(f"Error displaying recommendation")
-                        
+
                         st.divider()
-                    
+
                     except Exception as e:
-                        log_error("recommendations_page.display_date_group", e, {"date": date})
-                        st.error(f"Error displaying group: {date}")
-                
-                # Bottom pagination controls
+                        log_error("recommendations_page.display_date_group", e, {"date": d})
+                        st.error(f"Error displaying group: {d}")
+
                 if total_pages > 1:
                     col_prev2, col_page2, col_next2 = st.columns([1, 2, 1])
-                    
                     with col_prev2:
                         if st.button("← Previous", disabled=(current_page == 1), key=f"prev_bottom_{selected}"):
                             st.session_state[f'rec_page_{selected}'] = current_page - 1
                             st.rerun()
-                    
                     with col_page2:
                         st.write(f"Page {current_page} of {total_pages}")
-                    
                     with col_next2:
                         if st.button("Next →", disabled=(current_page == total_pages), key=f"next_bottom_{selected}"):
                             st.session_state[f'rec_page_{selected}'] = current_page + 1
                             st.rerun()
-            
+
             except Exception as e:
                 log_error("recommendations_page.pagination", e)
                 st.error("Error in pagination")
-                with st.expander("Error Details"):
-                    st.code(traceback.format_exc())
-        
+
         except Exception as e:
             log_error("recommendations_page.main_logic", e, {"user_id": user.get('id')})
-            st.error(f"Error: {str(e)}")
-            with st.expander("Error Details"):
-                st.code(traceback.format_exc())
-    
+            st.error(friendly_api_error(e))
+
     except Exception as e:
         log_error("recommendations_page", e, {"user": user})
-        st.error(f"Recommendations page error: {str(e)}")
-        with st.expander("Error Details"):
-            st.code(traceback.format_exc())
-
+        st.error(f"Recommendations page error: {friendly_api_error(e)}")
 
 def settings_page(user: Dict):
     """Settings page"""
@@ -2220,9 +2207,7 @@ def settings_page(user: Dict):
                     "user_id": user.get('id'),
                     "email": user.get('email')
                 })
-                st.error(f"Update failed: {str(e)}")
-                with st.expander("Error Details"):
-                    st.code(traceback.format_exc())
+                st.error(friendly_api_error(e))
         
         st.divider()
         
@@ -2265,9 +2250,7 @@ def settings_page(user: Dict):
     
     except Exception as e:
         log_error("settings_page", e, {"user": user})
-        st.error(f"Settings page error: {str(e)}")
-        with st.expander("Error Details"):
-            st.code(traceback.format_exc())
+        st.error(friendly_api_error(e))
 
 # ==================== MAIN APP ====================
 
@@ -2320,7 +2303,7 @@ def main():
         
         with h_col1:
             st.write(f"Logged in as: **{user.get('name') or user['email']}** (ID: {user.get('id')})")
-            st.write("Your feedback is welcome! To send comments, please [open an issue on our GitHub repo](https://github.com/SyracuseUniversity/preprint-bot/issues), or send an email to preprintbot@syr.edu."
+            st.write("Your feedback is welcome! To send comments, please [open an issue on our GitHub repo](https://github.com/SyracuseUniversity/preprint-bot/issues), or send an email to preprintbot@syr.edu.")
             st.write('To delete your account please email preprintbot@syr.edu with "Delete <accountname>" in the subject, replacing <accountname> with your account name.')
             
         with h_col2:

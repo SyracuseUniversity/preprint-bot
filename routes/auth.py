@@ -52,7 +52,7 @@ def _verify_password(password: str, stored: str) -> bool:
 async def _create_token(conn, user_id: int) -> str:
     token = secrets.token_urlsafe(48)
     token_hash = hashlib.sha256(token.encode()).hexdigest()
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=TOKEN_EXPIRY_HOURS)
+    expires_at = datetime.utcnow() + timedelta(hours=TOKEN_EXPIRY_HOURS)
     await conn.execute(
         "INSERT INTO auth_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)",
         user_id, token_hash, expires_at
@@ -152,22 +152,26 @@ async def register(user: UserCreate):
 @router.post("/request-reset")
 async def request_password_reset(request: PasswordResetRequest):
     """Request a password reset token"""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    from config import get_settings
+    settings = get_settings()
+
     pool = await get_db_pool()
-    
+
     async with pool.acquire() as conn:
         user = await conn.fetchrow(
             "SELECT id, email FROM users WHERE lower(email) = lower($1)",
             request.email
         )
-        
+
         if not user:
-            # Don't reveal if user exists
             return {"message": "If the email exists, a reset token has been sent"}
-        
-        # Create reset token
+
         token = secrets.token_urlsafe(32)
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-        
+        expires_at = datetime.utcnow() + timedelta(hours=1)
+
         await conn.execute(
             """
             INSERT INTO password_resets (user_id, token, expires_at)
@@ -175,14 +179,35 @@ async def request_password_reset(request: PasswordResetRequest):
             """,
             user['id'], token, expires_at
         )
-        
-        # TODO: Send email with token
-        # For now, return it for testing (REMOVE in production!)
-        return {
-            "message": "Reset token created",
-            "token": token,
-            "email": user['email']
-        }
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Preprint Bot — Password Reset"
+        msg["From"] = f"{settings.EMAIL_FROM_NAME} <{settings.EMAIL_FROM_ADDRESS}>"
+        msg["To"] = user['email']
+        body = (
+            f"Hello,\n\n"
+            f"You requested a password reset for your Preprint Bot account.\n\n"
+            f"Your reset token is:\n\n"
+            f"{token}\n\n"
+            f"Enter this token on the Reset Password page. It expires in 1 hour.\n\n"
+            f"If you did not request this, you can ignore this email.\n\n"
+            f"— Preprint Bot"
+        )
+        msg.attach(MIMEText(body, "plain"))
+
+        with smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.login(settings.EMAIL_USER, settings.EMAIL_PASSWORD)
+            smtp.sendmail(settings.EMAIL_FROM_ADDRESS, user['email'], msg.as_string())
+
+    except Exception as e:
+        # Log but don't expose SMTP errors to the caller
+        import logging
+        logging.getLogger(__name__).error(f"Password reset email failed: {e}")
+
+    return {"message": "If the email exists, a reset token has been sent"}
 
 @router.post("/reset-password")
 async def reset_password(reset: PasswordReset):
@@ -206,7 +231,7 @@ async def reset_password(reset: PasswordReset):
         if row['used_at']:
             raise HTTPException(status_code=400, detail="Token already used")
         
-        if row['expires_at'] < datetime.now(timezone.utc):
+        if row['expires_at'] < datetime.utcnow():
             raise HTTPException(status_code=400, detail="Token expired")
         
         # Update password
