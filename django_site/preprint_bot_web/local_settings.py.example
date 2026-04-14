@@ -46,6 +46,7 @@
 # DEFAULT_FROM_EMAIL = "Preprint Bot <noreply@example.com>"
 
 # ── PDF storage ───────────────────────────────────────────────────────────
+# from pathlib import Path  # uncomment if using Path-based settings below
 # PDF_DATA_DIR = Path("/data/preprint-bot/pdf_data")
 # USER_PDF_DIR = PDF_DATA_DIR / "user_pdfs"
 # USER_PROCESSED_DIR = PDF_DATA_DIR / "user_processed"

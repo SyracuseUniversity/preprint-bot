@@ -9,9 +9,9 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
-
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv(
     "DJANGO_SECRET_KEY",
@@ -93,7 +93,7 @@ LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/auth/login/"
 
 # ---------------------------------------------------------------------------
-# Password validation (for Django's own auth – used in admin only)
+# Password validation (enforced in registration, password reset, and admin)
 # ---------------------------------------------------------------------------
 
 AUTH_PASSWORD_VALIDATORS = [

@@ -425,10 +425,11 @@ def paper_upload_view(request, profile_id):
             messages.warning(request, f"Skipped {safe_name}: exceeds 50 MB limit.")
             skipped += 1
             continue
-        # Validate PDF magic bytes (%PDF)
-        header = f.read(4)
+        # Validate PDF header: look for %PDF- marker in first 1KB
+        # (valid PDFs may have leading whitespace, BOM, or comments)
+        header = f.read(1024)
         f.seek(0)
-        if header != b"%PDF":
+        if b"%PDF-" not in header:
             messages.warning(request, f"Skipped {safe_name}: not a valid PDF file.")
             skipped += 1
             continue
@@ -764,7 +765,7 @@ def _query_profile_recommendations(pb_user, profile):
     recs_list = list(
         Recommendation.objects.filter(run__in=runs)
         .select_related("paper", "run")
-        .order_by("-score")
+        .order_by("-score", "-paper__submitted_date", "paper__arxiv_id")
         [:5000]
     )
 

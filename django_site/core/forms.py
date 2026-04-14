@@ -37,6 +37,9 @@ class RegisterForm(forms.Form):
         confirm = cleaned.get("confirm_password")
         if pw and confirm and pw != confirm:
             raise forms.ValidationError("Passwords do not match.")
+        if pw:
+            from django.contrib.auth.password_validation import validate_password
+            validate_password(pw)
         return cleaned
 
 
@@ -60,6 +63,9 @@ class ResetPasswordForm(forms.Form):
         confirm = cleaned.get("confirm_password")
         if pw and confirm and pw != confirm:
             raise forms.ValidationError("Passwords do not match.")
+        if pw:
+            from django.contrib.auth.password_validation import validate_password
+            validate_password(pw)
         return cleaned
 
 
