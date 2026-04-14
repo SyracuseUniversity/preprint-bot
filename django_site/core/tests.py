@@ -485,7 +485,7 @@ class AuthFlowTests(TestCase):
     def test_next_url_preserved(self):
         resp = self.client.get("/profiles/")
         self.assertIn("next=", resp.url)
-        self.assertIn("/profiles/", resp.url)
+        self.assertIn("%2Fprofiles%2F", resp.url)
 
 
 class ProfileCRUDTests(TestCase):
