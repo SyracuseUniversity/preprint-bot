@@ -93,13 +93,22 @@ class Profile(models.Model):
     email_notify = models.BooleanField(default=True)
     frequency = models.CharField(max_length=20, choices=FREQUENCY_CHOICES, default="weekly")
     threshold = models.FloatField(default=0.6)
-    top_x = models.IntegerField(default=10)
+    top_x = models.IntegerField(default=999)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "profiles"
-        unique_together = [("user", "name")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "name"],
+                name="profiles_user_name_unique",
+            ),
+            models.UniqueConstraint(
+                Lower("name"), "user",
+                name="profiles_user_name_ci_unique",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.user})"

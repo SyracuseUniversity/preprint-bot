@@ -161,11 +161,16 @@ def register_view(request):
         if PBUser.objects.filter(email__iexact=email).exists():
             messages.error(request, "An account with that email already exists.")
         else:
-            pb_user = PBUser.objects.create_user(
-                email=email,
-                password=password,
-                name=name,
-            )
+            from django.db import IntegrityError
+            try:
+                pb_user = PBUser.objects.create_user(
+                    email=email,
+                    password=password,
+                    name=name,
+                )
+            except IntegrityError:
+                messages.error(request, "An account with that email already exists.")
+                return render(request, "auth/register.html", {"form": form})
 
             if django_settings.REQUIRE_EMAIL_VERIFICATION:
                 verify_url = _send_verification_email(request, pb_user)
@@ -344,12 +349,23 @@ def orcid_complete_view(request):
                 "Sign in with your password to link your ORCID later.",
             )
         else:
-            pb_user = PBUser.objects.create_user(
-                email=email,
-                name=orcid_name,
-                orcid_id=orcid_id,
-                email_verified=True,  # ORCID authenticated their identity
-            )
+            from django.db import IntegrityError
+            try:
+                pb_user = PBUser.objects.create_user(
+                    email=email,
+                    name=orcid_name,
+                    orcid_id=orcid_id,
+                    email_verified=True,  # ORCID authenticated their identity
+                )
+            except IntegrityError:
+                messages.error(
+                    request,
+                    "An account with that email already exists. "
+                    "Sign in with your password to link your ORCID later.",
+                )
+                return render(request, "auth/orcid_complete.html", {
+                    "form": form, "orcid_id": orcid_id, "orcid_name": orcid_name,
+                })
             # Clear pending session data
             del request.session["orcid_pending"]
             login_pbuser(request, pb_user)
@@ -376,11 +392,29 @@ def forgot_password_view(request):
 
             uid = urlsafe_base64_encode(force_bytes(pb_user.pk))
             token = default_token_generator.make_token(pb_user)
-            # In production, email this link. In dev, display it.
+            reset_url = request.build_absolute_uri(
+                f"/auth/reset-password/{uid}/{token}/"
+            )
+
+            # Send the reset link via email
+            from django.core.mail import send_mail
+            send_mail(
+                subject=f"Password reset – {django_settings.SITE_NAME}",
+                message=(
+                    f"Hi {pb_user.name or pb_user.email},\n\n"
+                    f"Click the link below to reset your password:\n\n"
+                    f"{reset_url}\n\n"
+                    f"If you didn't request this, you can ignore this email.\n\n"
+                    f"— {django_settings.SITE_NAME}"
+                ),
+                from_email=None,  # uses DEFAULT_FROM_EMAIL
+                recipient_list=[pb_user.email],
+                fail_silently=True,
+            )
+
+            # Also show the link on-page in DEBUG mode
             if django_settings.DEBUG:
-                reset_link = request.build_absolute_uri(
-                    f"/auth/reset-password/{uid}/{token}/"
-                )
+                reset_link = reset_url
         except PBUser.DoesNotExist:
             pass  # don't reveal whether the email exists
         messages.success(request, "If that email exists, a reset link has been generated.")
@@ -657,6 +691,10 @@ def paper_upload_view(request, profile_id):
             skipped += 1
             continue
         dest = pdf_dir / safe_name
+        if dest.exists():
+            messages.warning(request, f"Skipped {safe_name}: a file with that name already exists.")
+            skipped += 1
+            continue
         with open(dest, "wb") as out:
             for chunk in f.chunks():
                 out.write(chunk)
@@ -708,6 +746,7 @@ def paper_view(request, profile_id, filename):
 @require_POST
 def paper_add_arxiv_view(request, profile_id):
     """Add papers from arXiv by ID – downloads the PDF into the profile dir."""
+    MAX_IDS_PER_REQUEST = 10  # cap to avoid blocking worker with time.sleep(3) delays
     pb_user = request.pb_user
     profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
 
@@ -717,6 +756,13 @@ def paper_add_arxiv_view(request, profile_id):
     if not arxiv_ids:
         messages.error(request, "No valid arXiv IDs provided.")
         return redirect("profile_list")
+
+    if len(arxiv_ids) > MAX_IDS_PER_REQUEST:
+        messages.warning(
+            request,
+            f"Too many IDs ({len(arxiv_ids)}). Only the first {MAX_IDS_PER_REQUEST} will be processed.",
+        )
+        arxiv_ids = arxiv_ids[:MAX_IDS_PER_REQUEST]
 
     success, failed = _download_arxiv_pdfs(pb_user, profile, arxiv_ids)
     if success:
