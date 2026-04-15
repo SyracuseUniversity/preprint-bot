@@ -1466,7 +1466,7 @@ def profiles_page(user: Dict):
                     return
             else:
                 default_name = ""
-                default_freq = "weekly"
+                default_freq = "daily"
                 default_threshold = "medium"
                 default_top_x = 999
                 if mode == "Create new":
@@ -1474,7 +1474,7 @@ def profiles_page(user: Dict):
                         st.session_state["profile_cat_tree_selected"] = []
                         st.session_state.pop("loaded_profile_id", None)
                         st.session_state["profile_name_input"] = ""
-                        st.session_state["profile_freq_input"] = "weekly"
+                        st.session_state["profile_freq_input"] = "daily"
                         st.session_state["profile_threshold_input"] = 0.575
                         st.session_state["profile_top_x_input"] = 999
                         st.session_state["profile_email_enabled"] = True
@@ -1498,7 +1498,7 @@ def profiles_page(user: Dict):
                         key="profile_freq_input"
                     )
                 else:
-                    freq = default_freq if default_freq in ["daily", "weekly", "monthly"] else "weekly"
+                    freq = default_freq if default_freq in ["daily", "weekly", "monthly"] else "daily"
 
                 try:
                     NO_DOT_CATEGORIES = {
