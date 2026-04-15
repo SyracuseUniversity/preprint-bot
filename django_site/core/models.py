@@ -45,6 +45,7 @@ class PBUser(AbstractBaseUser, PermissionsMixin):
 
     email = models.CharField(max_length=255, unique=True)
     name = models.CharField(max_length=255, blank=True, default="")
+    orcid_id = models.CharField(max_length=19, blank=True, null=True, unique=True)
     email_verified = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

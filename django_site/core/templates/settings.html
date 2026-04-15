@@ -65,6 +65,12 @@
       <span>{{ pb_user.created_at|date:"N j, Y" }}</span>
     </div>
   </div>
+  {% if pb_user.orcid_id %}
+  <div style="margin-top:.75rem;">
+    <span class="text-sm text-dim">ORCID iD</span><br>
+    <a href="https://orcid.org/{{ pb_user.orcid_id }}" target="_blank" rel="noopener noreferrer">{{ pb_user.orcid_id }}</a>
+  </div>
+  {% endif %}
 </div>
 
 {# ── Danger Zone ─────────────────────────────────── #}

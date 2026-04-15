@@ -69,6 +69,15 @@ class ResetPasswordForm(forms.Form):
         return cleaned
 
 
+# ── ORCID ──────────────────────────────────────────────────────────────────
+
+class OrcidCompleteForm(forms.Form):
+    """Collect email after first ORCID sign-in."""
+    email = forms.EmailField(
+        widget=forms.EmailInput(attrs={"placeholder": "you@example.com", "autofocus": True}),
+    )
+
+
 # ── Profiles ───────────────────────────────────────────────────────────────
 
 FREQUENCY_CHOICES = [

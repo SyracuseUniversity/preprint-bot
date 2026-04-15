@@ -21,6 +21,12 @@
       <button type="submit" class="btn btn-primary" style="width:100%; margin-top:.5rem;">Sign In</button>
     </form>
 
+    {% if ORCID_ENABLED %}
+    <a href="{% url 'orcid_login' %}" class="btn" style="width:100%; margin-top:.5rem; background:#a6ce39; color:#fff; border:none;">
+      Sign in with ORCID iD
+    </a>
+    {% endif %}
+
     {% if show_resend_link %}
     <p class="text-sm" style="margin-top:.5rem; text-align:center;">
       <a href="{% url 'resend_verification' %}">Resend verification email</a>

@@ -39,6 +39,13 @@
 # ── Email verification ────────────────────────────────────────────────────
 # REQUIRE_EMAIL_VERIFICATION = True  # require new users to verify email
 
+# ── ORCID OAuth2 (optional) ──────────────────────────────────────────────
+# Register at https://orcid.org/developer-tools
+# Set redirect URI to: https://your-domain/auth/orcid/callback/
+# ORCID_CLIENT_ID = "APP-XXXXXXXXXXXXXXXX"
+# ORCID_CLIENT_SECRET = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+# ORCID_SANDBOX = True  # True for sandbox.orcid.org, False for production
+
 # ── Email backend (production) ────────────────────────────────────────────
 # settings.py auto-detects SMTP when EMAIL_HOST is set in .env — these
 # env vars match the FastAPI email_service, so one .env works for both:

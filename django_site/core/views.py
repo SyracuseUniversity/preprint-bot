@@ -30,6 +30,7 @@ from .auth_backend import (
 from .forms import (
     ForgotPasswordForm,
     LoginForm,
+    OrcidCompleteForm,
     ProfileForm,
     RegisterForm,
     ResetPasswordForm,
@@ -229,6 +230,136 @@ def resend_verification_view(request):
     return render(request, "auth/verify_email_sent.html", {
         "email": pb_user.email,
         "verify_url": verify_url if django_settings.DEBUG else None,
+    })
+
+
+# ── ORCID OAuth2 ──────────────────────────────────────────────────────────
+
+def orcid_login_view(request):
+    """Redirect the user to ORCID's OAuth2 authorization page."""
+    from . import orcid as orcid_helpers
+
+    if not orcid_helpers.is_configured():
+        messages.error(request, "ORCID sign-in is not configured.")
+        return redirect("login")
+
+    # Generate a random state token to prevent CSRF
+    import secrets
+    state = secrets.token_urlsafe(32)
+    request.session["orcid_oauth_state"] = state
+
+    redirect_uri = request.build_absolute_uri("/auth/orcid/callback/")
+    authorize_url = orcid_helpers.get_authorize_url(redirect_uri, state=state)
+    return redirect(authorize_url)
+
+
+def orcid_callback_view(request):
+    """Handle the ORCID OAuth2 callback after authorization."""
+    from . import orcid as orcid_helpers
+
+    if not orcid_helpers.is_configured():
+        messages.error(request, "ORCID sign-in is not configured.")
+        return redirect("login")
+
+    # Verify state token
+    state = request.GET.get("state", "")
+    expected_state = request.session.pop("orcid_oauth_state", "")
+    if not state or state != expected_state:
+        messages.error(request, "Invalid ORCID callback. Please try again.")
+        return redirect("login")
+
+    # Check for error from ORCID (e.g. user denied access)
+    error = request.GET.get("error")
+    if error:
+        messages.error(request, "ORCID sign-in was cancelled or denied.")
+        return redirect("login")
+
+    code = request.GET.get("code", "")
+    if not code:
+        messages.error(request, "No authorization code received from ORCID.")
+        return redirect("login")
+
+    # Exchange code for token (returns orcid, name, access_token)
+    redirect_uri = request.build_absolute_uri("/auth/orcid/callback/")
+    token_data = orcid_helpers.exchange_code(code, redirect_uri)
+    if not token_data or not token_data.get("orcid"):
+        messages.error(request, "Failed to verify your ORCID credentials. Please try again.")
+        return redirect("login")
+
+    orcid_id = token_data["orcid"]
+    orcid_name = token_data.get("name", "")
+    access_token = token_data.get("access_token", "")
+
+    # Check if a user with this ORCID iD already exists
+    try:
+        pb_user = PBUser.objects.get(orcid_id=orcid_id)
+        # Existing user — log them in
+        login_pbuser(request, pb_user)
+        messages.success(request, f"Signed in with ORCID ({orcid_id}).")
+        return redirect("dashboard")
+    except PBUser.DoesNotExist:
+        pass
+
+    # New user — try to get their email from ORCID
+    orcid_email = orcid_helpers.fetch_email(orcid_id, access_token) if access_token else None
+
+    if orcid_email and not PBUser.objects.filter(email__iexact=orcid_email).exists():
+        # Got an email and it's not taken — create the account directly
+        pb_user = PBUser.objects.create_user(
+            email=orcid_email,
+            name=orcid_name,
+            orcid_id=orcid_id,
+            email_verified=True,  # ORCID authenticated their identity
+        )
+        login_pbuser(request, pb_user)
+        messages.success(request, f"Account created with ORCID ({orcid_id}).")
+        return redirect("dashboard")
+
+    # No email from ORCID, or email already in use — ask for one
+    request.session["orcid_pending"] = {
+        "orcid_id": orcid_id,
+        "name": orcid_name,
+    }
+    return redirect("orcid_complete")
+
+
+def orcid_complete_view(request):
+    """Collect email for a new ORCID user (first sign-in)."""
+    pending = request.session.get("orcid_pending")
+    if not pending:
+        messages.error(request, "No pending ORCID sign-in. Please start again.")
+        return redirect("login")
+
+    orcid_id = pending["orcid_id"]
+    orcid_name = pending.get("name", "")
+
+    form = OrcidCompleteForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        email = form.cleaned_data["email"]
+
+        if PBUser.objects.filter(email__iexact=email).exists():
+            messages.error(
+                request,
+                "An account with that email already exists. "
+                "Sign in with your password to link your ORCID later.",
+            )
+        else:
+            pb_user = PBUser.objects.create_user(
+                email=email,
+                name=orcid_name,
+                orcid_id=orcid_id,
+                email_verified=True,  # ORCID authenticated their identity
+            )
+            # Clear pending session data
+            del request.session["orcid_pending"]
+            login_pbuser(request, pb_user)
+            messages.success(request, f"Account created with ORCID ({orcid_id}).")
+            return redirect("dashboard")
+
+    return render(request, "auth/orcid_complete.html", {
+        "form": form,
+        "orcid_id": orcid_id,
+        "orcid_name": orcid_name,
     })
 
 

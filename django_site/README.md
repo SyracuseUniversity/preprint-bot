@@ -131,6 +131,9 @@ to browse data.
 | `EMAIL_PASSWORD`     | (empty)              | SMTP login password                         |
 | `EMAIL_FROM_ADDRESS` | `noreply@localhost`  | Sender address (shared with FastAPI config) |
 | `EMAIL_FROM_NAME`    | value of `SITE_NAME` | Sender display name                         |
+| `ORCID_CLIENT_ID`    | (empty)              | ORCID OAuth2 app ID — enables ORCID sign-in when set |
+| `ORCID_CLIENT_SECRET`| (empty)              | ORCID OAuth2 app secret                     |
+| `ORCID_SANDBOX`      | `False`              | Use sandbox.orcid.org for development       |
 
 ## Local Settings
 
@@ -164,6 +167,7 @@ django_site/
     ├── forms.py               # Django forms
     ├── tests.py               # Unit tests (run with `manage.py test core`)
     ├── auth_backend.py        # Auth helper wrappers around Django's built-in auth
+    ├── orcid.py               # ORCID OAuth2 helpers
     ├── arxiv_categories.py    # Category tree data + helpers
     ├── context_processors.py  # Template context helpers
     ├── admin.py               # Django admin registration
@@ -230,6 +234,13 @@ validation, auth flows, and profile CRUD:
 - **`EmailVerificationOnTests`** — with `REQUIRE_EMAIL_VERIFICATION=True`:
   registration sends email, blocks auto-login, login rejects unverified users,
   verification link works, invalid tokens rejected, resend flow works.
+- **`OrcidDisabledTests`** — button hidden, views redirect when unconfigured.
+- **`OrcidLoginTests`** — redirect to ORCID, state token CSRF protection,
+  callback with mocked token exchange (existing user login, new user with
+  email auto-creates account, email-taken falls through to completion,
+  no-email falls through to completion, failed exchange handling).
+- **`OrcidCompleteTests`** — email collection, user creation with orcid_id
+  and email_verified=True, duplicate email rejection, session cleanup.
 
 CI runs these automatically via GitHub Actions (`.github/workflows/test.yml`,
 `django-tests` job) using a PostgreSQL + pgvector service container.
@@ -263,3 +274,15 @@ CI runs these automatically via GitHub Actions (`.github/workflows/test.yml`,
   (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASSWORD`,
   `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`) work for both Django and
   the FastAPI `email_service`, so one `.env` file covers both services.
+
+- **ORCID sign-in** is available as an optional OAuth2 login method.
+  To enable it, register an app at https://orcid.org/developer-tools,
+  set `ORCID_CLIENT_ID` and `ORCID_CLIENT_SECRET` in `.env`, and add
+  `https://your-domain/auth/orcid/callback/` as the redirect URI.
+  Set `ORCID_SANDBOX=True` for development against sandbox.orcid.org.
+  On first sign-in, the app attempts to read the user's email from their
+  ORCID record via the public API — this only works if the user has set
+  their email to "public" on orcid.org. If an email is found, the account is created automatically.
+  If not, the user is prompted to provide one. ORCID users are
+  automatically marked as email-verified. The ORCID button appears on
+  the login and register pages only when credentials are configured.

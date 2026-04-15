@@ -32,6 +32,12 @@
       <button type="submit" class="btn btn-primary" style="width:100%; margin-top:.5rem;">Create Account</button>
     </form>
 
+    {% if ORCID_ENABLED %}
+    <a href="{% url 'orcid_login' %}" class="btn" style="width:100%; margin-top:.5rem; background:#a6ce39; color:#fff; border:none;">
+      Sign up with ORCID iD
+    </a>
+    {% endif %}
+
     <div style="text-align:center; margin-top:1rem;">
       <a href="{% url 'login' %}" class="text-sm">Already have an account? Sign in</a>
     </div>

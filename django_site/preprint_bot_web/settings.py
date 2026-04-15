@@ -145,6 +145,15 @@ SHOW_BETA_BANNER = os.getenv("SHOW_BETA_BANNER", "True").lower() in ("true", "1"
 REQUIRE_EMAIL_VERIFICATION = os.getenv("REQUIRE_EMAIL_VERIFICATION", "False").lower() in ("true", "1", "yes")
 
 # ---------------------------------------------------------------------------
+# ORCID OAuth2 (optional — leave ORCID_CLIENT_ID blank to disable)
+# Register at https://orcid.org/developer-tools
+# ---------------------------------------------------------------------------
+
+ORCID_CLIENT_ID = os.getenv("ORCID_CLIENT_ID", "")
+ORCID_CLIENT_SECRET = os.getenv("ORCID_CLIENT_SECRET", "")
+ORCID_SANDBOX = os.getenv("ORCID_SANDBOX", "False").lower() in ("true", "1", "yes")
+
+# ---------------------------------------------------------------------------
 # Email backend — reads the same env vars as the FastAPI email_service.
 # If EMAIL_HOST is set, use SMTP; otherwise fall back to console (dev).
 # ---------------------------------------------------------------------------

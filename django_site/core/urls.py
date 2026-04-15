@@ -13,6 +13,9 @@ urlpatterns = [
     path("auth/reset-password/<str:uidb64>/<str:token>/", views.reset_password_view, name="reset_password"),
     path("auth/verify-email/<str:uidb64>/<str:token>/", views.verify_email_view, name="verify_email"),
     path("auth/resend-verification/", views.resend_verification_view, name="resend_verification"),
+    path("auth/orcid/login/", views.orcid_login_view, name="orcid_login"),
+    path("auth/orcid/callback/", views.orcid_callback_view, name="orcid_callback"),
+    path("auth/orcid/complete/", views.orcid_complete_view, name="orcid_complete"),
 
     # Profiles
     path("profiles/", views.profile_list_view, name="profile_list"),
