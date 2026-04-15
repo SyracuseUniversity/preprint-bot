@@ -87,10 +87,10 @@ DATABASES = {
 # Authentication — uses PBUser (email-based login via ModelBackend)
 # ---------------------------------------------------------------------------
 
-# Where Django auth redirects
-LOGIN_URL = "/auth/login/"
-LOGIN_REDIRECT_URL = "/"
-LOGOUT_REDIRECT_URL = "/auth/login/"
+# Where Django auth redirects (named URLs so FORCE_SCRIPT_NAME is respected)
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "dashboard"
+LOGOUT_REDIRECT_URL = "login"
 
 # ---------------------------------------------------------------------------
 # Password validation (enforced in registration, password reset, and admin)

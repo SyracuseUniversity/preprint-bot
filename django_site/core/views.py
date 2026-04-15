@@ -18,6 +18,7 @@ from django.conf import settings as django_settings
 from django.contrib import messages
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
@@ -77,7 +78,7 @@ def pbuser_required(view_func):
         if not request.user.is_authenticated:
             from django.utils.http import urlencode
 
-            login_url = "/auth/login/"
+            login_url = reverse("login")  # respects FORCE_SCRIPT_NAME
             next_url = request.get_full_path()
             return redirect(f"{login_url}?{urlencode({'next': next_url})}")
         request.pb_user = request.user  # convenience alias for templates
@@ -95,7 +96,9 @@ def _send_verification_email(request, pb_user):
 
     uid = urlsafe_base64_encode(force_bytes(pb_user.pk))
     token = default_token_generator.make_token(pb_user)
-    verify_url = request.build_absolute_uri(f"/auth/verify-email/{uid}/{token}/")
+    verify_url = request.build_absolute_uri(
+        reverse("verify_email", kwargs={"uidb64": uid, "token": token})
+    )
 
     send_mail(
         subject=f"Verify your email – {django_settings.SITE_NAME}",
@@ -253,7 +256,7 @@ def orcid_login_view(request):
     state = secrets.token_urlsafe(32)
     request.session["orcid_oauth_state"] = state
 
-    redirect_uri = request.build_absolute_uri("/auth/orcid/callback/")
+    redirect_uri = request.build_absolute_uri(reverse("orcid_callback"))
     authorize_url = orcid_helpers.get_authorize_url(redirect_uri, state=state)
     return redirect(authorize_url)
 
@@ -285,7 +288,7 @@ def orcid_callback_view(request):
         return redirect("login")
 
     # Exchange code for token (returns orcid, name, access_token)
-    redirect_uri = request.build_absolute_uri("/auth/orcid/callback/")
+    redirect_uri = request.build_absolute_uri(reverse("orcid_callback"))
     token_data = orcid_helpers.exchange_code(code, redirect_uri)
     if not token_data or not token_data.get("orcid"):
         messages.error(request, "Failed to verify your ORCID credentials. Please try again.")
@@ -393,7 +396,7 @@ def forgot_password_view(request):
             uid = urlsafe_base64_encode(force_bytes(pb_user.pk))
             token = default_token_generator.make_token(pb_user)
             reset_url = request.build_absolute_uri(
-                f"/auth/reset-password/{uid}/{token}/"
+                reverse("reset_password", kwargs={"uidb64": uid, "token": token})
             )
 
             # Send the reset link via email

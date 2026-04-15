@@ -15,6 +15,14 @@
 
 # ALLOWED_HOSTS = ["preprint-bot.example.com"]
 
+# ── Subpath deployment (e.g. served at /dev via Caddy handle_path) ────────
+# If the Django site is served under a URL prefix (e.g. /dev), set
+# FORCE_SCRIPT_NAME so Django generates correct URLs for redirects,
+# reverse(), static files, etc.
+# FORCE_SCRIPT_NAME = "/dev"
+# STATIC_URL = "/dev/static/"
+# MEDIA_URL = "/dev/media/"
+
 # ── Database ──────────────────────────────────────────────────────────────
 # Override individual fields or the entire DATABASES dict.
 # DATABASES = {
