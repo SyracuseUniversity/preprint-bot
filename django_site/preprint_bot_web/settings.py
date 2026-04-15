@@ -142,6 +142,26 @@ FASTAPI_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@example.com")
 SITE_NAME = os.getenv("SITE_NAME", "Preprint Bot")
 SHOW_BETA_BANNER = os.getenv("SHOW_BETA_BANNER", "True").lower() in ("true", "1", "yes")
+REQUIRE_EMAIL_VERIFICATION = os.getenv("REQUIRE_EMAIL_VERIFICATION", "False").lower() in ("true", "1", "yes")
+
+# ---------------------------------------------------------------------------
+# Email backend — reads the same env vars as the FastAPI email_service.
+# If EMAIL_HOST is set, use SMTP; otherwise fall back to console (dev).
+# ---------------------------------------------------------------------------
+
+if os.getenv("EMAIL_HOST"):
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = os.getenv("EMAIL_HOST")
+    EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+    EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("true", "1", "yes")
+    EMAIL_HOST_USER = os.getenv("EMAIL_USER", "")
+    EMAIL_HOST_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
+    _from_name = os.getenv("EMAIL_FROM_NAME", SITE_NAME)
+    _from_addr = os.getenv("EMAIL_FROM_ADDRESS", f"noreply@{os.getenv('SITE_DOMAIN', 'localhost')}")
+    DEFAULT_FROM_EMAIL = f"{_from_name} <{_from_addr}>"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+    DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", f"noreply@{os.getenv('SITE_DOMAIN', 'localhost')}")
 
 # ---------------------------------------------------------------------------
 # Local overrides (not committed to version control)

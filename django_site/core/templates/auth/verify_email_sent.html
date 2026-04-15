@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Verify Your Email – Preprint Bot{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+  <div class="card" style="text-align:center;">
+    <h1>Check Your Email</h1>
+    <p style="margin-top:.75rem;">
+      We sent a verification link to <strong>{{ email }}</strong>.
+    </p>
+    <p class="text-dim" style="margin-top:.5rem;">
+      Click the link in the email to activate your account, then come back here to sign in.
+      If you don't see it, check your spam folder.
+    </p>
+
+    <div style="margin-top:1.5rem;">
+      <a href="{% url 'resend_verification' %}" class="btn">Resend verification email</a>
+    </div>
+
+    {% if verify_url %}
+    <div class="alert" style="margin-top:1.5rem; text-align:left; word-break:break-all;">
+      <strong>DEBUG mode:</strong> Verification link:<br>
+      <a href="{{ verify_url }}">{{ verify_url }}</a>
+    </div>
+    {% endif %}
+
+    <div style="margin-top:1rem;">
+      <a href="{% url 'login' %}" class="text-sm">Back to sign in</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

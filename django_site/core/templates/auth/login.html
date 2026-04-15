@@ -21,6 +21,12 @@
       <button type="submit" class="btn btn-primary" style="width:100%; margin-top:.5rem;">Sign In</button>
     </form>
 
+    {% if show_resend_link %}
+    <p class="text-sm" style="margin-top:.5rem; text-align:center;">
+      <a href="{% url 'resend_verification' %}">Resend verification email</a>
+    </p>
+    {% endif %}
+
     <div style="display:flex; justify-content:space-between; margin-top:1rem;">
       <a href="{% url 'register' %}" class="text-sm">Create account</a>
       <a href="{% url 'help' %}" class="text-sm" target="_blank" rel="noopener noreferrer">Help</a>

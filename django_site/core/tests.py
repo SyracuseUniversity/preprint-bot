@@ -641,3 +641,168 @@ class RegisterFormValidationTests(SimpleTestCase):
         })
         self.assertFalse(form.is_valid())
 
+
+# ══════════════════════════════════════════════════════════════════════════
+# Email verification tests
+# ══════════════════════════════════════════════════════════════════════════
+
+from django.core import mail
+from django.test import override_settings
+
+
+class EmailVerificationOffTests(TestCase):
+    """When REQUIRE_EMAIL_VERIFICATION is False (default), registration
+    should auto-login and login should not check email_verified."""
+
+    def test_register_auto_logs_in(self):
+        """Default behavior: register and immediately access dashboard."""
+        self.client.post("/auth/register/", {
+            "email": "new@example.com",
+            "name": "",
+            "password": "GoodPassword99!",
+            "confirm_password": "GoodPassword99!",
+        })
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 200)  # dashboard, not redirect
+
+    def test_register_does_not_send_email(self):
+        self.client.post("/auth/register/", {
+            "email": "no-email@example.com",
+            "name": "",
+            "password": "GoodPassword99!",
+            "confirm_password": "GoodPassword99!",
+        })
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_login_allows_unverified_user(self):
+        user = PBUser.objects.create_user(
+            email="unverified@example.com", password="SecurePass123!",
+        )
+        self.assertFalse(user.email_verified)
+        resp = self.client.post("/auth/login/", {
+            "email": "unverified@example.com",
+            "password": "SecurePass123!",
+        })
+        self.assertRedirects(resp, "/", fetch_redirect_response=False)
+
+
+@override_settings(REQUIRE_EMAIL_VERIFICATION=True)
+class EmailVerificationOnTests(TestCase):
+    """When REQUIRE_EMAIL_VERIFICATION is True, registration should
+    send a verification email and block login until verified."""
+
+    # ── Registration ──────────────────────────────────────
+
+    def test_register_sends_verification_email(self):
+        resp = self.client.post("/auth/register/", {
+            "email": "verify@example.com",
+            "name": "Test",
+            "password": "GoodPassword99!",
+            "confirm_password": "GoodPassword99!",
+        })
+        self.assertEqual(resp.status_code, 200)  # renders verify_email_sent
+        self.assertContains(resp, "Check Your Email")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("verify@example.com", mail.outbox[0].to)
+        self.assertIn("verify-email", mail.outbox[0].body)
+
+    def test_register_does_not_auto_login(self):
+        self.client.post("/auth/register/", {
+            "email": "nologin@example.com",
+            "name": "",
+            "password": "GoodPassword99!",
+            "confirm_password": "GoodPassword99!",
+        })
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 302)  # redirected to login
+
+    def test_register_creates_unverified_user(self):
+        self.client.post("/auth/register/", {
+            "email": "unverified@example.com",
+            "name": "",
+            "password": "GoodPassword99!",
+            "confirm_password": "GoodPassword99!",
+        })
+        user = PBUser.objects.get(email="unverified@example.com")
+        self.assertFalse(user.email_verified)
+
+    # ── Login blocked ─────────────────────────────────────
+
+    def test_login_blocked_for_unverified_user(self):
+        PBUser.objects.create_user(
+            email="blocked@example.com", password="SecurePass123!",
+        )
+        resp = self.client.post("/auth/login/", {
+            "email": "blocked@example.com",
+            "password": "SecurePass123!",
+        })
+        self.assertEqual(resp.status_code, 200)  # stays on login
+        self.assertContains(resp, "verify your email")
+        self.assertContains(resp, "resend-verification")
+
+    def test_login_works_for_verified_user(self):
+        user = PBUser.objects.create_user(
+            email="verified@example.com", password="SecurePass123!",
+        )
+        user.email_verified = True
+        user.save()
+        resp = self.client.post("/auth/login/", {
+            "email": "verified@example.com",
+            "password": "SecurePass123!",
+        })
+        self.assertRedirects(resp, "/", fetch_redirect_response=False)
+
+    # ── Verification link ─────────────────────────────────
+
+    def test_verify_email_link_works(self):
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+
+        user = PBUser.objects.create_user(
+            email="link@example.com", password="SecurePass123!",
+        )
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+
+        resp = self.client.get(f"/auth/verify-email/{uid}/{token}/")
+        self.assertRedirects(resp, "/auth/login/", fetch_redirect_response=False)
+
+        user.refresh_from_db()
+        self.assertTrue(user.email_verified)
+
+    def test_verify_email_invalid_token_rejected(self):
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+
+        user = PBUser.objects.create_user(
+            email="bad@example.com", password="SecurePass123!",
+        )
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+        resp = self.client.get(f"/auth/verify-email/{uid}/bad-token/")
+        self.assertRedirects(resp, "/auth/login/", fetch_redirect_response=False)
+
+        user.refresh_from_db()
+        self.assertFalse(user.email_verified)
+
+    # ── Resend ────────────────────────────────────────────
+
+    def test_resend_verification(self):
+        PBUser.objects.create_user(
+            email="resend@example.com", password="SecurePass123!",
+        )
+        # Trigger login to set session key
+        self.client.post("/auth/login/", {
+            "email": "resend@example.com",
+            "password": "SecurePass123!",
+        })
+        resp = self.client.get("/auth/resend-verification/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "Check Your Email")
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_resend_without_session_redirects(self):
+        resp = self.client.get("/auth/resend-verification/")
+        self.assertRedirects(resp, "/auth/login/", fetch_redirect_response=False)
+

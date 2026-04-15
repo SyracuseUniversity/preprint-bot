@@ -36,7 +36,16 @@
 # ── Static files (production) ─────────────────────────────────────────────
 # STATIC_ROOT = "/var/www/preprint-bot/static/"
 
+# ── Email verification ────────────────────────────────────────────────────
+# REQUIRE_EMAIL_VERIFICATION = True  # require new users to verify email
+
 # ── Email backend (production) ────────────────────────────────────────────
+# settings.py auto-detects SMTP when EMAIL_HOST is set in .env — these
+# env vars match the FastAPI email_service, so one .env works for both:
+#   EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASSWORD,
+#   EMAIL_FROM_ADDRESS, EMAIL_FROM_NAME, EMAIL_USE_TLS
+#
+# Alternatively, override directly here:
 # EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 # EMAIL_HOST = "smtp.example.com"
 # EMAIL_PORT = 587

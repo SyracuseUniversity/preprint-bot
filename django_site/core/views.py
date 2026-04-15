@@ -85,6 +85,33 @@ def pbuser_required(view_func):
     return wrapper
 
 
+def _send_verification_email(request, pb_user):
+    """Send a tokenized email verification link to the user."""
+    from django.contrib.auth.tokens import default_token_generator
+    from django.core.mail import send_mail
+    from django.utils.encoding import force_bytes
+    from django.utils.http import urlsafe_base64_encode
+
+    uid = urlsafe_base64_encode(force_bytes(pb_user.pk))
+    token = default_token_generator.make_token(pb_user)
+    verify_url = request.build_absolute_uri(f"/auth/verify-email/{uid}/{token}/")
+
+    send_mail(
+        subject=f"Verify your email – {django_settings.SITE_NAME}",
+        message=(
+            f"Hi {pb_user.name or pb_user.email},\n\n"
+            f"Please verify your email address by clicking the link below:\n\n"
+            f"{verify_url}\n\n"
+            f"If you didn't create an account, you can ignore this email.\n\n"
+            f"— {django_settings.SITE_NAME}"
+        ),
+        from_email=None,  # uses DEFAULT_FROM_EMAIL
+        recipient_list=[pb_user.email],
+        fail_silently=False,
+    )
+    return verify_url  # returned for DEBUG display
+
+
 # ── Auth views ─────────────────────────────────────────────────────────────
 
 def login_view(request):
@@ -99,6 +126,13 @@ def login_view(request):
         password = form.cleaned_data["password"]
         pb_user = authenticate_pbuser(request, email, password)
         if pb_user:
+            # Block unverified users when verification is required
+            if django_settings.REQUIRE_EMAIL_VERIFICATION and not pb_user.email_verified:
+                request.session["resend_verification_email"] = pb_user.email
+                messages.error(request, "Please verify your email before signing in.")
+                return render(request, "auth/login.html", {
+                    "form": form, "next": next_url, "show_resend_link": True,
+                })
             login_pbuser(request, pb_user)
             # Validate next URL to prevent open redirect and HTTPS downgrade
             if next_url and url_has_allowed_host_and_scheme(
@@ -131,6 +165,15 @@ def register_view(request):
                 password=password,
                 name=name,
             )
+
+            if django_settings.REQUIRE_EMAIL_VERIFICATION:
+                verify_url = _send_verification_email(request, pb_user)
+                return render(request, "auth/verify_email_sent.html", {
+                    "email": pb_user.email,
+                    "verify_url": verify_url if django_settings.DEBUG else None,
+                })
+
+            # No verification required — log in immediately
             login_pbuser(request, pb_user)
             messages.success(request, "Account created successfully!")
             return redirect("dashboard")
@@ -142,6 +185,51 @@ def register_view(request):
 def logout_view(request):
     logout_pbuser(request)
     return redirect("login")
+
+
+def verify_email_view(request, uidb64, token):
+    """Handle the email verification link."""
+    from django.contrib.auth.tokens import default_token_generator
+    from django.utils.http import urlsafe_base64_decode
+
+    try:
+        uid = urlsafe_base64_decode(uidb64).decode()
+        pb_user = PBUser.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, PBUser.DoesNotExist):
+        pb_user = None
+
+    if pb_user is None or not default_token_generator.check_token(pb_user, token):
+        messages.error(request, "Invalid or expired verification link.")
+        return redirect("login")
+
+    pb_user.email_verified = True
+    pb_user.save(update_fields=["email_verified"])
+    messages.success(request, "Email verified! You can now sign in.")
+    return redirect("login")
+
+
+def resend_verification_view(request):
+    """Resend the verification email for an unverified account."""
+    email = request.session.get("resend_verification_email")
+    if not email:
+        messages.error(request, "No pending verification. Please register or log in.")
+        return redirect("login")
+
+    try:
+        pb_user = PBUser.objects.get(email__iexact=email)
+    except PBUser.DoesNotExist:
+        messages.error(request, "Account not found.")
+        return redirect("login")
+
+    if pb_user.email_verified:
+        messages.info(request, "Email is already verified. Please sign in.")
+        return redirect("login")
+
+    verify_url = _send_verification_email(request, pb_user)
+    return render(request, "auth/verify_email_sent.html", {
+        "email": pb_user.email,
+        "verify_url": verify_url if django_settings.DEBUG else None,
+    })
 
 
 def forgot_password_view(request):

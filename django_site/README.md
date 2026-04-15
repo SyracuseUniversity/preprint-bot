@@ -123,6 +123,14 @@ to browse data.
 | `SUPPORT_EMAIL`      | `support@example.com`| Shown on the help page              |
 | `SITE_NAME`          | `Preprint Bot`       | Site display name                   |
 | `SHOW_BETA_BANNER`   | `True`               | Dismissable beta feedback banner    |
+| `REQUIRE_EMAIL_VERIFICATION` | `False`      | Require email verification on registration |
+| `DEFAULT_FROM_EMAIL` | `noreply@localhost`  | Sender address for verification/reset emails |
+| `EMAIL_HOST`         | (none)               | SMTP host — enables SMTP backend when set |
+| `EMAIL_PORT`         | `587`                | SMTP port                                   |
+| `EMAIL_USER`         | (empty)              | SMTP login username                         |
+| `EMAIL_PASSWORD`     | (empty)              | SMTP login password                         |
+| `EMAIL_FROM_ADDRESS` | `noreply@localhost`  | Sender address (shared with FastAPI config) |
+| `EMAIL_FROM_NAME`    | value of `SITE_NAME` | Sender display name                         |
 
 ## Local Settings
 
@@ -217,6 +225,11 @@ validation, auth flows, and profile CRUD:
   another user's profile).
 - **`RegisterFormValidationTests`** — password mismatch and Django password
   validator enforcement at the form level.
+- **`EmailVerificationOffTests`** — default behavior: register auto-logs in,
+  no verification emails sent, unverified users can log in.
+- **`EmailVerificationOnTests`** — with `REQUIRE_EMAIL_VERIFICATION=True`:
+  registration sends email, blocks auto-login, login rejects unverified users,
+  verification link works, invalid tokens rejected, resend flow works.
 
 CI runs these automatically via GitHub Actions (`.github/workflows/test.yml`,
 `django-tests` job) using a PostgreSQL + pgvector service container.
@@ -241,3 +254,12 @@ CI runs these automatically via GitHub Actions (`.github/workflows/test.yml`,
 
 - Profile category validation only accepts leaf arXiv categories (e.g.
   `cs.AI`, `hep-th`), not parent group codes like `cs` or `physics`.
+
+- Email verification is available but off by default. Set
+  `REQUIRE_EMAIL_VERIFICATION=True` to require new users to confirm their
+  email before signing in. In development, verification links are printed
+  to the console (Django's default `console.EmailBackend`). For production,
+  set `EMAIL_HOST` in `.env` to enable SMTP — the same env vars
+  (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER`, `EMAIL_PASSWORD`,
+  `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME`) work for both Django and
+  the FastAPI `email_service`, so one `.env` file covers both services.
