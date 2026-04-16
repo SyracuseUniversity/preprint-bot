@@ -6,11 +6,10 @@ Run with:
 """
 
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from django.test import SimpleTestCase
 
-from core.views import _parse_arxiv_ids, _safe_pdf_path
+from core.views import _parse_arxiv_ids, _compute_sha256
 
 
 # ── _parse_arxiv_ids ──────────────────────────────────────────────────────
@@ -175,90 +174,33 @@ class ParseArxivIdsTests(SimpleTestCase):
 # ── _safe_pdf_path ────────────────────────────────────────────────────────
 
 
-class SafePdfPathTests(SimpleTestCase):
-    """Tests for _safe_pdf_path(), which validates filenames against
-    path traversal and non-PDF extensions."""
+class PaperStorageTests(SimpleTestCase):
+    """Tests for SHA-256 hashing and hash-based file storage."""
 
-    def setUp(self):
-        self._tmpdir = TemporaryDirectory()
-        self.base = Path(self._tmpdir.name)
+    def test_sha256_bytes(self):
+        result = _compute_sha256(b"hello world")
+        self.assertEqual(len(result), 64)  # hex-encoded SHA-256
+        # Known hash of "hello world"
+        self.assertEqual(
+            result,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+        )
 
-    def tearDown(self):
-        self._tmpdir.cleanup()
+    def test_sha256_deterministic(self):
+        data = b"%PDF-1.4 test content"
+        self.assertEqual(_compute_sha256(data), _compute_sha256(data))
 
-    # ── Valid filenames ───────────────────────────────────
+    def test_sha256_different_content(self):
+        self.assertNotEqual(
+            _compute_sha256(b"paper version 1"),
+            _compute_sha256(b"paper version 2"),
+        )
 
-    def test_simple_pdf(self):
-        result = _safe_pdf_path(self.base, "2301.12345.pdf")
-        self.assertIsNotNone(result)
-        self.assertEqual(result.name, "2301.12345.pdf")
-
-    def test_legacy_sanitized_pdf(self):
-        """Legacy IDs are stored with _ replacing /."""
-        result = _safe_pdf_path(self.base, "hep-th_9901001.pdf")
-        self.assertIsNotNone(result)
-        self.assertEqual(result.name, "hep-th_9901001.pdf")
-
-    def test_uppercase_extension(self):
-        result = _safe_pdf_path(self.base, "paper.PDF")
-        self.assertIsNotNone(result)
-
-    def test_result_inside_base(self):
-        result = _safe_pdf_path(self.base, "test.pdf")
-        self.assertTrue(str(result).startswith(str(self.base.resolve())))
-
-    # ── Path traversal (all stripped to safe basenames) ────
-
-    def test_dotdot_stripped_to_basename(self):
-        """../etc/passwd.pdf → basename 'passwd.pdf', resolves safely inside base."""
-        result = _safe_pdf_path(self.base, "../etc/passwd.pdf")
-        self.assertIsNotNone(result)
-        self.assertEqual(result.name, "passwd.pdf")
-        self.assertTrue(str(result).startswith(str(self.base.resolve())))
-
-    def test_dotdot_simple_stripped(self):
-        result = _safe_pdf_path(self.base, "../passwd.pdf")
-        self.assertIsNotNone(result)
-        self.assertEqual(result.name, "passwd.pdf")
-        self.assertTrue(str(result).startswith(str(self.base.resolve())))
-
-    def test_absolute_path_stripped(self):
-        """Absolute paths get reduced to basename by Path().name."""
-        result = _safe_pdf_path(self.base, "/etc/shadow.pdf")
-        self.assertIsNotNone(result)
-        self.assertEqual(result.name, "shadow.pdf")
-        self.assertTrue(str(result).startswith(str(self.base.resolve())))
-
-    def test_directory_components_stripped(self):
-        result = _safe_pdf_path(self.base, "subdir/paper.pdf")
-        self.assertIsNotNone(result)
-        self.assertEqual(result.name, "paper.pdf")
-        self.assertTrue(str(result).startswith(str(self.base.resolve())))
-
-    # ── Non-PDF extensions ────────────────────────────────
-
-    def test_txt_rejected(self):
-        self.assertIsNone(_safe_pdf_path(self.base, "paper.txt"))
-
-    def test_no_extension_rejected(self):
-        self.assertIsNone(_safe_pdf_path(self.base, "paper"))
-
-    def test_exe_rejected(self):
-        self.assertIsNone(_safe_pdf_path(self.base, "malware.exe"))
-
-    def test_double_extension_rejected(self):
-        self.assertIsNone(_safe_pdf_path(self.base, "paper.pdf.exe"))
-
-    # ── Empty / degenerate input ──────────────────────────
-
-    def test_empty_string(self):
-        self.assertIsNone(_safe_pdf_path(self.base, ""))
-
-    def test_dot_only(self):
-        self.assertIsNone(_safe_pdf_path(self.base, "."))
-
-    def test_slash_only(self):
-        self.assertIsNone(_safe_pdf_path(self.base, "/"))
+    def test_paper_storage_path_format(self):
+        from core.views import _paper_storage_path
+        path = _paper_storage_path("a3f7b2c9e8d1" + "0" * 52)
+        self.assertIn("a3", str(path))  # first two chars as subdirectory
+        self.assertTrue(str(path).endswith(".pdf"))
 
 
 # ── ProfileForm.clean_categories ──────────────────────────────────────────
@@ -1035,4 +977,203 @@ class OrcidCompleteTests(TestCase):
     def test_complete_clears_session(self):
         self.client.post("/auth/orcid/complete/", {"email": "clear@example.com"})
         self.assertNotIn("orcid_pending", self.client.session)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Paper deduplication tests
+# ════════════════════════════════════════════════════════════════════════
+
+import tempfile
+
+from core.models import Corpus
+
+
+@override_settings(PAPER_STORAGE_DIR=Path(tempfile.mkdtemp()))
+class PaperUploadDedupTests(TestCase):
+    """Tests for paper upload deduplication via SHA-256."""
+
+    def setUp(self):
+        self.user = PBUser.objects.create_user(
+            email="uploader@example.com", password="SecurePass123!",
+        )
+        self.profile = Profile.objects.create(
+            user=self.user, name="Test Profile", categories=["cs.AI"],
+        )
+        self.client.login(username="uploader@example.com", password="SecurePass123!")
+
+    def _make_pdf(self, content=b"%PDF-1.4 test content"):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return SimpleUploadedFile("test.pdf", content, content_type="application/pdf")
+
+    def test_upload_creates_paper_and_link(self):
+        pdf = self._make_pdf()
+        resp = self.client.post(
+            f"/profiles/{self.profile.pk}/upload/",
+            {"files": pdf},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(Paper.objects.count(), 1)
+        paper = Paper.objects.first()
+        self.assertIsNotNone(paper.sha256)
+        self.assertEqual(paper.sha256, _compute_sha256(b"%PDF-1.4 test content"))
+        # Paper is linked to the profile's corpus
+        self.assertEqual(paper.corpora.count(), 1)
+
+    def test_duplicate_upload_reuses_paper(self):
+        """Same file uploaded twice to same profile — one Paper, one link."""
+        content = b"%PDF-1.4 duplicate test"
+        self.client.post(
+            f"/profiles/{self.profile.pk}/upload/",
+            {"files": self._make_pdf(content)},
+        )
+        self.client.post(
+            f"/profiles/{self.profile.pk}/upload/",
+            {"files": self._make_pdf(content)},
+        )
+        self.assertEqual(Paper.objects.count(), 1)
+        self.assertEqual(Paper.objects.first().corpora.count(), 1)  # not duplicated
+
+    def test_same_paper_two_profiles_one_row(self):
+        """Same file added to two profiles — one Paper row, two corpus links."""
+        profile2 = Profile.objects.create(
+            user=self.user, name="Second Profile", categories=["cs.LG"],
+        )
+        content = b"%PDF-1.4 shared paper"
+        self.client.post(
+            f"/profiles/{self.profile.pk}/upload/",
+            {"files": self._make_pdf(content)},
+        )
+        self.client.post(
+            f"/profiles/{profile2.pk}/upload/",
+            {"files": self._make_pdf(content)},
+        )
+        self.assertEqual(Paper.objects.count(), 1)
+        self.assertEqual(Paper.objects.first().corpora.count(), 2)  # two corpus links
+
+    def test_different_papers_separate_rows(self):
+        self.client.post(
+            f"/profiles/{self.profile.pk}/upload/",
+            {"files": self._make_pdf(b"%PDF-1.4 paper A")},
+        )
+        self.client.post(
+            f"/profiles/{self.profile.pk}/upload/",
+            {"files": self._make_pdf(b"%PDF-1.4 paper B")},
+        )
+        self.assertEqual(Paper.objects.count(), 2)
+
+    def test_upload_stores_file_in_hash_path(self):
+        content = b"%PDF-1.4 hash path test"
+        self.client.post(
+            f"/profiles/{self.profile.pk}/upload/",
+            {"files": self._make_pdf(content)},
+        )
+        paper = Paper.objects.first()
+        self.assertIn(paper.sha256[:2], paper.pdf_path)
+        self.assertTrue(Path(paper.pdf_path).exists())
+
+    def test_invalid_pdf_rejected(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        bad_file = SimpleUploadedFile("bad.pdf", b"not a pdf", content_type="application/pdf")
+        self.client.post(
+            f"/profiles/{self.profile.pk}/upload/",
+            {"files": bad_file},
+        )
+        self.assertEqual(Paper.objects.count(), 0)
+
+
+@override_settings(PAPER_STORAGE_DIR=Path(tempfile.mkdtemp()))
+class PaperDeleteTests(TestCase):
+    """Tests for paper removal (unlink from corpus, not file deletion)."""
+
+    def setUp(self):
+        self.user = PBUser.objects.create_user(
+            email="deleter@example.com", password="SecurePass123!",
+        )
+        self.profile = Profile.objects.create(
+            user=self.user, name="Del Profile", categories=["cs.AI"],
+        )
+        self.corpus = Corpus.objects.create(
+            user=self.user,
+            name=f"user_{self.user.pk}_profile_{self.profile.pk}",
+        )
+        self.paper = Paper.objects.create(
+            title="Test Paper",
+            sha256="a" * 64,
+            source="user",
+        )
+        self.paper.corpora.add(self.corpus)
+        self.client.login(username="deleter@example.com", password="SecurePass123!")
+
+    def test_delete_removes_link_not_paper(self):
+        resp = self.client.post(
+            f"/profiles/{self.profile.pk}/papers/{self.paper.pk}/delete/"
+        )
+        self.assertEqual(resp.status_code, 302)
+        # Link removed
+        self.assertFalse(self.paper.corpora.filter(pk=self.corpus.pk).exists())
+        # Paper row still exists
+        self.assertTrue(Paper.objects.filter(pk=self.paper.pk).exists())
+
+    def test_cannot_delete_other_users_paper(self):
+        other = PBUser.objects.create_user(
+            email="other@example.com", password="SecurePass123!",
+        )
+        other_profile = Profile.objects.create(
+            user=other, name="Other", categories=["cs.AI"],
+        )
+        resp = self.client.post(
+            f"/profiles/{other_profile.pk}/papers/{self.paper.pk}/delete/"
+        )
+        self.assertEqual(resp.status_code, 404)
+
+
+@override_settings(PAPER_STORAGE_DIR=Path(tempfile.mkdtemp()))
+class PaperViewTests(TestCase):
+    """Tests for paper viewing (ownership check)."""
+
+    def setUp(self):
+        self.user = PBUser.objects.create_user(
+            email="viewer@example.com", password="SecurePass123!",
+        )
+        self.profile = Profile.objects.create(
+            user=self.user, name="View Profile", categories=["cs.AI"],
+        )
+        self.corpus = Corpus.objects.create(
+            user=self.user,
+            name=f"user_{self.user.pk}_profile_{self.profile.pk}",
+        )
+        # Create a paper with a real file on disk
+        from django.conf import settings as django_settings
+        sha = "b" * 64
+        dest = django_settings.PAPER_STORAGE_DIR / sha[:2] / f"{sha}.pdf"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"%PDF-1.4 view test")
+        self.paper = Paper.objects.create(
+            title="Viewable Paper", sha256=sha, pdf_path=str(dest), source="user",
+        )
+        self.paper.corpora.add(self.corpus)
+        self.client.login(username="viewer@example.com", password="SecurePass123!")
+
+    def test_view_linked_paper(self):
+        resp = self.client.get(
+            f"/profiles/{self.profile.pk}/papers/{self.paper.pk}/"
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "application/pdf")
+
+    def test_view_unlinked_paper_404(self):
+        """Paper exists but not linked to this profile's corpus."""
+        other_paper = Paper.objects.create(
+            title="Unlinked", sha256="c" * 64, source="user",
+        )
+        resp = self.client.get(
+            f"/profiles/{self.profile.pk}/papers/{other_paper.pk}/"
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    def test_view_nonexistent_paper_404(self):
+        resp = self.client.get(
+            f"/profiles/{self.profile.pk}/papers/99999/"
+        )
+        self.assertEqual(resp.status_code, 404)
 

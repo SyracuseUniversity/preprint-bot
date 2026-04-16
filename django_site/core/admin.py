@@ -45,13 +45,17 @@ class CorpusAdmin(admin.ModelAdmin):
 
 @admin.register(Paper)
 class PaperAdmin(admin.ModelAdmin):
-    list_display = ("id", "arxiv_id", "title_short", "source", "submitted_date")
+    list_display = ("id", "arxiv_id", "title_short", "source", "sha256_short", "submitted_date")
     list_filter = ("source",)
-    search_fields = ("arxiv_id", "title")
+    search_fields = ("arxiv_id", "title", "sha256")
 
     @admin.display(description="Title")
     def title_short(self, obj):
         return obj.title[:80]
+
+    @admin.display(description="SHA-256")
+    def sha256_short(self, obj):
+        return obj.sha256[:12] + "…" if obj.sha256 else "—"
 
 
 @admin.register(Recommendation)

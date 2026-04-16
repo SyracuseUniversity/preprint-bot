@@ -120,6 +120,7 @@ to browse data.
 | `DJANGO_SECRET_KEY`  | (dev fallback)       | Set a real key in production        |
 | `DJANGO_DEBUG`       | `True`               | Set to `False` in production        |
 | `PDF_DATA_DIR`       | `../pdf_data`        | Root of the PDF storage tree        |
+| `PAPER_STORAGE_DIR`  | `{PDF_DATA_DIR}/papers` | Hash-based deduplicated paper storage |
 | `SUPPORT_EMAIL`      | `support@example.com`| Shown on the help page              |
 | `SITE_NAME`          | `Preprint Bot`       | Site display name                   |
 | `SHOW_BETA_BANNER`   | `True`               | Dismissable beta feedback banner    |
@@ -171,6 +172,7 @@ django_site/
     ├── arxiv_categories.py    # Category tree data + helpers
     ├── context_processors.py  # Template context helpers
     ├── admin.py               # Django admin registration
+    ├── management/commands/cleanup_orphan_papers.py
     ├── static/core/style.css  # Site-wide styles
     └── templates/
         ├── base.html          # Shared layout, nav, CSS
@@ -214,8 +216,8 @@ validation, auth flows, and profile CRUD:
 
 - **`ParseArxivIdsTests`** — arXiv ID extraction from bare IDs, URLs, versioned
   PDFs, legacy IDs, query strings, comma/newline separation, deduplication.
-- **`SafePdfPathTests`** — path traversal protection, extension validation,
-  directory component stripping.
+- **`PaperStorageTests`** — SHA-256 hashing correctness, determinism, and
+  hash-based file path format.
 - **`CleanCategoriesTests`** — leaf-only category validation, parent group
   rejection, whitespace handling, XSS injection rejection.
 
@@ -241,6 +243,12 @@ validation, auth flows, and profile CRUD:
   no-email falls through to completion, failed exchange handling).
 - **`OrcidCompleteTests`** — email collection, user creation with orcid_id
   and email_verified=True, duplicate email rejection, session cleanup.
+- **`PaperUploadDedupTests`** — upload creates Paper + corpus link, duplicate
+  hash reuses existing row, same paper shared across profiles, hash-based
+  file storage on disk, invalid PDF rejection.
+- **`PaperDeleteTests`** — delete removes corpus link but preserves Paper row,
+  ownership enforcement.
+- **`PaperViewTests`** — serves linked papers, 404 for unlinked or missing.
 
 CI runs these automatically via GitHub Actions (`.github/workflows/test.yml`,
 `django-tests` job) using a PostgreSQL + pgvector service container.
@@ -255,10 +263,28 @@ CI runs these automatically via GitHub Actions (`.github/workflows/test.yml`,
   (users, profiles, papers, etc.) and Django's own tables (sessions, admin).
   The `database_schema.sql` file from the FastAPI project is no longer needed.
 
-- The arXiv "Add from arXiv" feature in the profile page downloads PDFs
-  via `requests` and saves them to the `pdf_data/user_pdfs/` directory,
-  just like the Streamlit version. A 3-second delay is inserted between
-  consecutive downloads to comply with arXiv's rate limit guidelines.
+- The arXiv "Add from arXiv" feature downloads PDFs and stores them in a
+  hash-based directory structure (`pdf_data/papers/{sha256[:2]}/{sha256}.pdf`).
+  Papers are deduplicated by SHA-256 hash — if the same file is added by
+  multiple users or to multiple profiles, only one copy is stored on disk.
+  A 3-second delay is inserted between consecutive downloads to comply with
+  arXiv's rate limit guidelines. Per-request downloads are capped at 10 IDs.
+
+- **Paper deduplication:** Paper rows are linked to corpora via a many-to-many
+  relationship (`Paper.corpora`). Removing a paper from a profile only unlinks
+  it — the file and database row are preserved as long as other corpora
+  reference them. To clean up orphaned papers (no corpus links and no legacy
+  `corpus_id`), run:
+
+  ```bash
+  python manage.py cleanup_orphan_papers          # dry run
+  python manage.py cleanup_orphan_papers --apply   # actually delete
+  ```
+
+- The legacy `Paper.corpus` ForeignKey is kept as a nullable field for
+  backward compatibility with the FastAPI pipeline. New code should use
+  the `Paper.corpora` ManyToManyField. The pipeline will need updating
+  to use the new M2M relationship.
 
 - The arXiv search API endpoint enforces a per-session cooldown (3 seconds
   between searches) to prevent excessive requests to arXiv.

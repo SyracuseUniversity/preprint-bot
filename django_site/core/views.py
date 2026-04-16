@@ -7,7 +7,6 @@ the custom user model (AUTH_USER_MODEL).
 
 import json
 import re
-import shutil
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -53,18 +52,78 @@ ARXIV_ID_RE = re.compile(
 )
 
 
-def _safe_pdf_path(base_dir, filename):
-    """Resolve a filename within base_dir, rejecting path traversal."""
-    safe_name = Path(filename).name  # strip directory components
-    if not safe_name or not safe_name.lower().endswith(".pdf"):
-        return None
-    base_resolved = base_dir.resolve()
-    resolved = (base_resolved / safe_name).resolve()
-    try:
-        resolved.relative_to(base_resolved)
-    except ValueError:
-        return None  # path escapes the base directory
-    return resolved
+# ── Paper storage helpers ──────────────────────────────────────────────────
+
+def _compute_sha256(source):
+    """Compute SHA-256 hash of a file path, bytes, or Django UploadedFile."""
+    import hashlib
+    h = hashlib.sha256()
+    if isinstance(source, bytes):
+        h.update(source)
+    elif hasattr(source, "chunks"):
+        # Django UploadedFile
+        for chunk in source.chunks():
+            h.update(chunk)
+        source.seek(0)
+    elif hasattr(source, "read"):
+        for chunk in iter(lambda: source.read(8192), b""):
+            h.update(chunk)
+        source.seek(0)
+    else:
+        # Assume file path
+        with open(source, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+    return h.hexdigest()
+
+
+def _paper_storage_path(sha256_hex):
+    """Return the hash-based storage path for a paper's PDF."""
+    return django_settings.PAPER_STORAGE_DIR / sha256_hex[:2] / f"{sha256_hex}.pdf"
+
+
+def _store_paper_bytes(sha256_hex, data):
+    """Store PDF bytes in the hash-based directory structure.
+
+    Returns the Path. Skips writing if the file already exists (dedup).
+    """
+    dest = _paper_storage_path(sha256_hex)
+    if dest.exists():
+        return dest  # already stored
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    return dest
+
+
+def _store_paper_upload(sha256_hex, uploaded_file):
+    """Store a Django UploadedFile in the hash-based directory structure.
+
+    Returns the Path. Skips writing if the file already exists (dedup).
+    """
+    dest = _paper_storage_path(sha256_hex)
+    if dest.exists():
+        return dest  # already stored
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "wb") as out:
+        for chunk in uploaded_file.chunks():
+            out.write(chunk)
+    return dest
+
+
+def _get_or_create_user_corpus(pb_user, profile):
+    """Get or create the corpus for a user's profile."""
+    corpus_name = f"user_{pb_user.pk}_profile_{profile.pk}"
+    corpus, _ = Corpus.objects.get_or_create(
+        user=pb_user,
+        name=corpus_name,
+        defaults={"description": f"Papers for {pb_user.email}, profile '{profile.name}'"},
+    )
+    return corpus
+
+
+def _link_paper_to_corpus(paper, corpus):
+    """Add a corpus link if it doesn't already exist."""
+    paper.corpora.add(corpus)
 
 
 # ── Decorator ──────────────────────────────────────────────────────────────
@@ -539,33 +598,29 @@ def profile_list_view(request):
     pb_user = request.pb_user
     profiles = Profile.objects.filter(user=pb_user).order_by("-created_at")
 
-    # Prefetch all user corpora and paper counts in two queries (not N+1)
+    # Prefetch all user corpora
     user_corpora = {
         c.name: c for c in Corpus.objects.filter(user=pb_user)
     }
-    corpus_ids = [c.id for c in user_corpora.values()]
-    from django.db.models import Count
-    paper_counts = dict(
-        Paper.objects.filter(corpus_id__in=corpus_ids)
-        .values_list("corpus_id")
-        .annotate(n=Count("id"))
-        .values_list("corpus_id", "n")
-    )
 
     profile_data = []
     for profile in profiles:
         corpus_name = f"user_{pb_user.pk}_profile_{profile.pk}"
         corpus = user_corpora.get(corpus_name)
-        paper_count = paper_counts.get(corpus.id, 0) if corpus else 0
 
-        # Count uploaded PDFs on disk
-        pdf_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
-        pdf_files = list(pdf_dir.glob("*.pdf")) if pdf_dir.exists() else []
+        # Get papers linked to this profile's corpus via M2M
+        if corpus:
+            papers = list(
+                Paper.objects.filter(corpora=corpus)
+                .order_by("-created_at")
+            )
+        else:
+            papers = []
 
         profile_data.append({
             "profile": profile,
-            "paper_count": paper_count,
-            "pdf_files": pdf_files,
+            "paper_count": len(papers),
+            "papers": papers,
             "categories_display": [label_for(c) for c in (profile.categories or [])],
         })
 
@@ -664,14 +719,12 @@ def profile_delete_view(request, profile_id):
 @pbuser_required
 @require_POST
 def paper_upload_view(request, profile_id):
-    """Upload PDF files into a profile's directory."""
+    """Upload PDF files, deduplicating by SHA-256 hash."""
     pb_user = request.pb_user
     profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
+    corpus = _get_or_create_user_corpus(pb_user, profile)
 
     MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB per file
-
-    pdf_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
-    pdf_dir.mkdir(parents=True, exist_ok=True)
 
     uploaded = request.FILES.getlist("files")
     count = 0
@@ -693,18 +746,34 @@ def paper_upload_view(request, profile_id):
             messages.warning(request, f"Skipped {safe_name}: not a valid PDF file.")
             skipped += 1
             continue
-        dest = pdf_dir / safe_name
-        if dest.exists():
-            messages.warning(request, f"Skipped {safe_name}: a file with that name already exists.")
-            skipped += 1
+
+        # Compute hash and check for existing paper
+        file_hash = _compute_sha256(f)
+        existing = Paper.objects.filter(sha256=file_hash).first()
+        if existing:
+            # Paper already in DB — just link to this corpus
+            _link_paper_to_corpus(existing, corpus)
+            count += 1
             continue
-        with open(dest, "wb") as out:
-            for chunk in f.chunks():
-                out.write(chunk)
+
+        # New paper — store file and create DB row
+        dest = _store_paper_upload(file_hash, f)
+        from django.db import IntegrityError
+        try:
+            paper = Paper.objects.create(
+                title=Path(safe_name).stem,  # use filename as placeholder title
+                sha256=file_hash,
+                pdf_path=str(dest),
+                source="user",
+            )
+        except IntegrityError:
+            # Race condition: another request created it first
+            paper = Paper.objects.get(sha256=file_hash)
+        _link_paper_to_corpus(paper, corpus)
         count += 1
 
     if count:
-        messages.success(request, f"Uploaded {count} PDF(s).")
+        messages.success(request, f"Added {count} paper(s).")
     else:
         messages.warning(request, "No valid PDF files selected.")
 
@@ -713,34 +782,41 @@ def paper_upload_view(request, profile_id):
 
 @pbuser_required
 @require_POST
-def paper_delete_view(request, profile_id, filename):
-    """Delete a single uploaded PDF."""
+def paper_delete_view(request, profile_id, paper_id):
+    """Unlink a paper from this profile's corpus (does not delete the file)."""
     pb_user = request.pb_user
     profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
-    base_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
-    pdf_path = _safe_pdf_path(base_dir, filename)
+    paper = get_object_or_404(Paper, pk=paper_id)
+    corpus = _get_or_create_user_corpus(pb_user, profile)
 
-    if not pdf_path:
-        messages.error(request, "Invalid filename.")
-    elif pdf_path.exists():
-        pdf_path.unlink()
-        messages.success(request, f"Deleted {pdf_path.name}.")
+    was_linked = paper.corpora.filter(pk=corpus.pk).exists()
+    if was_linked:
+        paper.corpora.remove(corpus)
+        messages.success(request, f"Removed '{paper.display_name}' from this profile.")
     else:
-        messages.error(request, "File not found.")
+        messages.error(request, "Paper not linked to this profile.")
 
     return redirect("profile_list")
 
 
 @pbuser_required
-def paper_view(request, profile_id, filename):
-    """Serve an uploaded PDF for viewing in the browser."""
+def paper_view(request, profile_id, paper_id):
+    """Serve a paper's PDF for viewing in the browser."""
     pb_user = request.pb_user
     profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
-    base_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
-    pdf_path = _safe_pdf_path(base_dir, filename)
+    paper = get_object_or_404(Paper, pk=paper_id)
 
-    if not pdf_path or not pdf_path.exists():
-        raise Http404("File not found.")
+    # Verify the paper is linked to this user's profile corpus
+    corpus = _get_or_create_user_corpus(pb_user, profile)
+    if not paper.corpora.filter(pk=corpus.pk).exists():
+        raise Http404("Paper not linked to this profile.")
+
+    if not paper.pdf_path:
+        raise Http404("No PDF file available.")
+
+    pdf_path = Path(paper.pdf_path)
+    if not pdf_path.exists():
+        raise Http404("PDF file not found on disk.")
 
     return FileResponse(open(pdf_path, "rb"), content_type="application/pdf")
 
@@ -796,9 +872,39 @@ def _parse_arxiv_ids(raw: str) -> list[str]:
     return ids
 
 
-def _download_arxiv_pdfs(pb_user, profile, arxiv_ids):
-    """Download PDFs for a list of arXiv IDs into the profile dir.
+def _fetch_arxiv_metadata(arxiv_ids):
+    """Batch-fetch metadata (title, abstract, date) from arXiv API.
 
+    Returns a dict keyed by arxiv_id (version-stripped).
+    Falls back gracefully if the arxiv package is unavailable.
+    """
+    metadata = {}
+    try:
+        import arxiv as arxiv_lib
+
+        client = arxiv_lib.Client()
+        search = arxiv_lib.Search(id_list=arxiv_ids)
+        for paper in client.results(search):
+            aid = paper.get_short_id().split("v")[0]  # strip version
+            metadata[aid] = {
+                "title": paper.title,
+                "abstract": paper.summary,
+                "submitted_date": paper.published,
+                "authors": [a.name for a in paper.authors],
+                "categories": [c for c in paper.categories],
+            }
+    except ImportError:
+        pass  # arxiv package not installed; titles will be arXiv IDs
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Failed to fetch arXiv metadata")
+    return metadata
+
+
+def _download_arxiv_pdfs(pb_user, profile, arxiv_ids):
+    """Download PDFs for a list of arXiv IDs, deduplicating by SHA-256.
+
+    Creates Paper rows and links them to the profile's corpus.
     Returns (success_count, failed_ids).
     """
     import logging
@@ -806,8 +912,10 @@ def _download_arxiv_pdfs(pb_user, profile, arxiv_ids):
 
     MAX_PDF_BYTES = 50 * 1024 * 1024  # 50 MB
     logger = logging.getLogger(__name__)
-    pdf_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
-    pdf_dir.mkdir(parents=True, exist_ok=True)
+    corpus = _get_or_create_user_corpus(pb_user, profile)
+
+    # Batch-fetch metadata (title, abstract, date) from arXiv API
+    arxiv_meta = _fetch_arxiv_metadata(arxiv_ids)
 
     success = 0
     failed = []
@@ -815,8 +923,6 @@ def _download_arxiv_pdfs(pb_user, profile, arxiv_ids):
         # Respect arXiv rate limits: no more than one request every 3 seconds
         if i > 0:
             time.sleep(3)
-        # Legacy arXiv IDs contain slashes (e.g. hep-th/9901001); sanitize for filenames
-        safe_aid = aid.replace("/", "_")
         try:
             resp = http_requests.get(f"https://arxiv.org/pdf/{aid}.pdf", timeout=30)
             resp.raise_for_status()
@@ -829,13 +935,43 @@ def _download_arxiv_pdfs(pb_user, profile, arxiv_ids):
             if "application/pdf" not in resp.headers.get("Content-Type", ""):
                 logger.warning("arXiv returned non-PDF content for %s", aid)
                 failed.append(aid)
-            elif len(resp.content) > MAX_PDF_BYTES:
+                continue
+            if len(resp.content) > MAX_PDF_BYTES:
                 logger.warning("arXiv PDF for %s exceeds size limit (%d bytes)", aid, len(resp.content))
                 failed.append(aid)
-            else:
-                (pdf_dir / f"{safe_aid}.pdf").write_bytes(resp.content)
+                continue
+
+            # Compute hash and check for existing paper
+            file_hash = _compute_sha256(resp.content)
+            existing = Paper.objects.filter(sha256=file_hash).first()
+            if existing:
+                # Paper already in DB — just link to this corpus
+                _link_paper_to_corpus(existing, corpus)
                 success += 1
-        except Exception as exc:
+                continue
+
+            # New paper — store file and create DB row
+            dest = _store_paper_bytes(file_hash, resp.content)
+            meta = arxiv_meta.get(aid, {})
+            from django.db import IntegrityError
+            try:
+                paper = Paper.objects.create(
+                    arxiv_id=aid,
+                    sha256=file_hash,
+                    title=meta.get("title", aid),
+                    abstract=meta.get("abstract"),
+                    submitted_date=meta.get("submitted_date"),
+                    metadata={"categories": meta.get("categories", []),
+                              "authors": meta.get("authors", [])},
+                    pdf_path=str(dest),
+                    source="arxiv",
+                )
+            except IntegrityError:
+                # Race condition: another request created it first
+                paper = Paper.objects.get(sha256=file_hash)
+            _link_paper_to_corpus(paper, corpus)
+            success += 1
+        except Exception:
             logger.exception("Failed to download arXiv PDF %s", aid)
             failed.append(aid)
     return success, failed
@@ -883,13 +1019,12 @@ def paper_search_arxiv_api_view(request, profile_id):
             sort_order=arxiv_lib.SortOrder.Descending,
         )
 
-        # Existing papers for this profile (to grey-out already-added ones)
-        pdf_dir = django_settings.USER_PDF_DIR / str(pb_user.pk) / str(profile.pk)
-        existing_ids = set()
-        if pdf_dir.exists():
-            for f in pdf_dir.glob("*.pdf"):
-                stem = re.sub(r"v\d+$", "", f.stem)  # strip version suffix
-                existing_ids.add(stem)
+        # Existing paper arxiv_ids for this profile (to grey-out already-added ones)
+        corpus = _get_or_create_user_corpus(pb_user, profile)
+        existing_ids = set(
+            Paper.objects.filter(corpora=corpus, arxiv_id__isnull=False)
+            .values_list("arxiv_id", flat=True)
+        )
 
         results = []
         for paper in client.results(search):
@@ -1174,12 +1309,8 @@ def delete_account_view(request):
         messages.error(request, "Please type DELETE to confirm account deletion.")
         return redirect("settings")
 
-    # Remove uploaded PDFs from disk
-    pdf_dir = django_settings.USER_PDF_DIR / str(pb_user.pk)
-    if pdf_dir.exists():
-        shutil.rmtree(pdf_dir, ignore_errors=True)
-
-    # Delete the user (cascades to profiles, corpora, papers, etc.)
+    # Delete the user (cascades to profiles, corpora, paper-corpus links, etc.)
+    # Orphaned paper files are cleaned up by: python manage.py cleanup_orphan_papers
     pb_user.delete()
     logout_pbuser(request)
     messages.success(request, "Your account and all data have been permanently deleted.")

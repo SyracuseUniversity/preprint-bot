@@ -149,12 +149,24 @@ class ProfileCorpus(models.Model):
 # ── Papers ─────────────────────────────────────────────────────────────────
 
 class Paper(models.Model):
-    """Academic papers from arXiv or user uploads."""
+    """Academic papers from arXiv or user uploads.
+
+    Papers are deduplicated by SHA-256 hash.  A single Paper can be linked
+    to multiple corpora via the ``corpora`` ManyToManyField.  Files are
+    stored at ``{PAPER_STORAGE_DIR}/{sha256[:2]}/{sha256}.pdf``.
+    """
 
     SOURCE_CHOICES = [("user", "User"), ("arxiv", "arXiv")]
 
-    corpus = models.ForeignKey(Corpus, on_delete=models.CASCADE, related_name="papers")
-    arxiv_id = models.CharField(max_length=50, unique=True, blank=True, null=True)
+    # M2M replaces the old corpus FK; old column kept nullable for pipeline compat
+    corpus = models.ForeignKey(
+        Corpus, on_delete=models.SET_NULL, blank=True, null=True,
+        related_name="papers_legacy",
+        help_text="Deprecated — use corpora M2M. Kept for pipeline backward compatibility.",
+    )
+    corpora = models.ManyToManyField(Corpus, blank=True, related_name="papers")
+    arxiv_id = models.CharField(max_length=50, blank=True, null=True)
+    sha256 = models.CharField(max_length=64, unique=True, blank=True, null=True)
     title = models.TextField()
     abstract = models.TextField(blank=True, null=True)
     metadata = models.JSONField(default=dict, blank=True, null=True)
@@ -167,6 +179,10 @@ class Paper(models.Model):
 
     class Meta:
         db_table = "papers"
+        indexes = [
+            models.Index(fields=["arxiv_id"], name="papers_arxiv_id_idx"),
+            models.Index(fields=["submitted_date"], name="papers_submitted_date_idx"),
+        ]
 
     def __str__(self):
         return self.title[:80]
@@ -182,6 +198,15 @@ class Paper(models.Model):
         if self.metadata and isinstance(self.metadata, dict):
             return self.metadata.get("categories", [])
         return []
+
+    @property
+    def display_name(self):
+        """Human-readable filename for display in paper lists."""
+        if self.arxiv_id:
+            return f"{self.arxiv_id}.pdf"
+        if self.title and len(self.title) <= 60:
+            return f"{self.title}.pdf"
+        return f"paper_{self.pk}.pdf"
 
 
 # ── Sections ───────────────────────────────────────────────────────────────
