@@ -985,7 +985,7 @@ class OrcidCompleteTests(TestCase):
 
 import tempfile
 
-from core.models import Corpus
+from core.models import Corpus, Paper
 
 
 @override_settings(PAPER_STORAGE_DIR=Path(tempfile.mkdtemp()))
