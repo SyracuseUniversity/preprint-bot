@@ -318,9 +318,6 @@ async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, 
 
 async def send_all_digests(api_client: APIClient, run_date: str = None):
     run_date = run_date or str(date_type.today())
-    print(f"\n{'='*60}")
-    print("STEP 8: Sending Email Digests")
-    print(f"{'='*60}")
 
     try:
         response = await api_client.client.get(f"{api_client.base_url}/profiles/")
@@ -373,8 +370,17 @@ async def run_pipeline(args):
         print(f"Time window: 2PM {prev_day.strftime('%Y-%m-%d')} to 2PM {target_date.strftime('%Y-%m-%d')} EST")
         print("="*80 + "\n")
 
+        # Step 1 always runs — process papers uploaded since the last run
         print("="*60)
-        print("STEP 1: Getting Categories from User Profiles")
+        print("STEP 1: Processing User Papers")
+        print("="*60)
+        user_result = await process_unprocessed_papers(
+            api_client, skip_parse=args.skip_parse, skip_embed=args.skip_embed
+        )
+        print(f"  Summary: {user_result['parsed']} parsed, {user_result['embedded']} embedded")
+
+        print("\n" + "="*60)
+        print("STEP 2: Getting Categories from User Profiles")
         print("="*60)
         categories = await get_all_profile_categories(api_client)
 
@@ -384,7 +390,7 @@ async def run_pipeline(args):
             sys.exit(1)
 
         print("\n" + "="*60)
-        print("STEP 2: Fetching arXiv Papers")
+        print("STEP 3: Fetching arXiv Papers")
         print("="*60)
         corpus_id, entries = await fetch_and_store_arxiv(
             api_client,
@@ -397,10 +403,10 @@ async def run_pipeline(args):
         entries = entries or []
 
         if not entries:
-            print("No new arXiv papers fetched. Skipping arXiv embedding and summarization.")
+            print("No new arXiv papers fetched. Skipping steps 4\u20137.")
         else:
             print("\n" + "="*60)
-            print("STEP 3: Generating Embeddings")
+            print("STEP 4: Generating arXiv Embeddings")
             print("="*60)
             if not args.skip_embed:
                 await embed_and_store_papers(
@@ -412,7 +418,7 @@ async def run_pipeline(args):
                 )
 
             print("\n" + "="*60)
-            print("STEP 4: Generating Summaries")
+            print("STEP 5: Generating arXiv Summaries")
             print("="*60)
             if not args.skip_summarize:
                 if args.summarizer == "llama":
@@ -427,50 +433,46 @@ async def run_pipeline(args):
             else:
                 print("Skipping summarization.")
 
-        # Steps 5–6 always run — user papers need processing even on
-        # days with no new arXiv papers (weekends, holidays, etc.)
+            # Gather user corpora for recommendations
+            try:
+                response = await api_client.client.get(f"{api_client.base_url}/profiles/")
+                response.raise_for_status()
+                all_profiles = response.json()
+            except Exception as e:
+                print(f"Failed to fetch profiles: {e}")
+                all_profiles = []
+
+            system_user = await api_client.get_user_by_email(SYSTEM_USER_EMAIL)
+            system_user_id = system_user['id'] if system_user else None
+
+            user_corpora = []
+            for profile in all_profiles:
+                if profile['user_id'] == system_user_id:
+                    continue
+                corpus_name = f"user_{profile['user_id']}_profile_{profile['id']}"
+                corpus = await api_client.get_corpus_by_name(profile['user_id'], corpus_name)
+                if corpus:
+                    user_corpora.append({
+                        'user_id': profile['user_id'],
+                        'corpus_id': corpus['id'],
+                        'profile': profile,
+                    })
+
+            print(f"  Found {len(user_corpora)} user corpus/profile pair(s) for recommendations")
+
+            print("\n" + "="*60)
+            print("STEP 6: Generating Recommendations")
+            print("="*60)
+            await generate_recommendations(api_client, corpus_id, user_corpora, target_date)
+
+            print("\n" + "="*60)
+            print("STEP 7: Sending Email Digests")
+            print("="*60)
+            await send_all_digests(api_client, run_date=target_date.strftime("%Y-%m-%d"))
+
+        # Cleanup always runs
         print("\n" + "="*60)
-        print("STEP 5: Processing User Papers")
-        print("="*60)
-        user_result = await process_unprocessed_papers(
-            api_client, skip_parse=args.skip_parse, skip_embed=args.skip_embed
-        )
-        print(f"  Summary: {user_result['parsed']} parsed, {user_result['embedded']} embedded")
-
-        # Gather user corpora for recommendations
-        try:
-            response = await api_client.client.get(f"{api_client.base_url}/profiles/")
-            response.raise_for_status()
-            all_profiles = response.json()
-        except Exception as e:
-            print(f"Failed to fetch profiles: {e}")
-            all_profiles = []
-
-        system_user = await api_client.get_user_by_email(SYSTEM_USER_EMAIL)
-        system_user_id = system_user['id'] if system_user else None
-
-        user_corpora = []
-        for profile in all_profiles:
-            if profile['user_id'] == system_user_id:
-                continue
-            corpus_name = f"user_{profile['user_id']}_profile_{profile['id']}"
-            corpus = await api_client.get_corpus_by_name(profile['user_id'], corpus_name)
-            if corpus:
-                user_corpora.append({
-                    'user_id': profile['user_id'],
-                    'corpus_id': corpus['id'],
-                    'profile': profile,
-                })
-
-        print(f"  Found {len(user_corpora)} user corpus/profile pair(s) for recommendations")
-
-        print("\n" + "="*60)
-        print("STEP 6: Generating Recommendations")
-        print("="*60)
-        await generate_recommendations(api_client, corpus_id, user_corpora, target_date)
-
-        print("\n" + "="*60)
-        print("STEP 7: Cleanup")
+        print("STEP 8: Cleanup")
         print("="*60)
         print("Cleaning up temporary arXiv files...")
         try:
@@ -487,16 +489,12 @@ async def run_pipeline(args):
         except Exception as e:
             print(f"  Warning: Cleanup failed: {e}")
 
-        await send_all_digests(api_client, run_date=target_date.strftime("%Y-%m-%d"))
-
         print("\n" + "="*80)
         print("PIPELINE COMPLETE!")
         print("="*80)
         print(f"  • Date: {target_date.strftime('%Y-%m-%d')}")
         print(f"  • User papers: {user_result['parsed']} parsed, {user_result['embedded']} embedded")
         print(f"  • arXiv papers: {len(entries)} fetched")
-        print(f"  • User corpora: {len(user_corpora)}")
-        print(f"  • Corpus ID: {corpus_id}")
         print("="*80 + "\n")
 
     finally:
