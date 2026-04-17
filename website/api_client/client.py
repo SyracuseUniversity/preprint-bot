@@ -107,9 +107,10 @@ class WebAPIClient:
     
     # Profile methods
     async def create_profile(self, user_id: int, name: str, keywords: List[str],
-                           categories: List[str] = None,
-                           frequency: str = "weekly", threshold: str = "medium",
-                           top_x: int = 10) -> Dict:
+                        categories: List[str] = None,
+                        email_notify: bool = True,
+                        frequency: str = "weekly", threshold: str = "medium",
+                        top_x: int = 10) -> Dict:
         response = await self.client.post(
             f"{self.base_url}/profiles/",
             json={
@@ -117,7 +118,7 @@ class WebAPIClient:
                 "name": name,
                 "keywords": keywords,
                 "categories": categories or [],
-                "email_notify": True,
+                "email_notify": email_notify,
                 "frequency": frequency,
                 "threshold": threshold,
                 "top_x": top_x

@@ -36,7 +36,7 @@ Use your email and password to sign in. If you are new, click **"Create Account"
 **2. Create a Profile**\n
 To start receiving recommendations, you need to tell the bot what you are interested in:
 1.  Navigate to the **Profiles** tab.
-2.  Click **"Create new"**.
+2.  Click **"Create/Edit"** and then go to the **"Create New"** tab.
 3.  Fill out the profile details (see the "Profiles" section below for definitions).
 4.  Select the specific **arXiv categories** (e.g., *cs.AI*, *stat.ML*) you want to track.
 5.  Click **Create Profile**.
