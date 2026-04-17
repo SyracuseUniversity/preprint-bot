@@ -174,6 +174,18 @@ class APIClient:
         response.raise_for_status()
         return response.json()
     
+    async def get_papers_needing_processing(self) -> List[Dict]:
+        """Papers with a PDF but no sections extracted yet."""
+        response = await self.client.get(f"{self.base_url}/papers/needing-processing")
+        response.raise_for_status()
+        return response.json()
+    
+    async def get_papers_needing_embeddings(self) -> List[Dict]:
+        """Papers with sections but no abstract embedding yet."""
+        response = await self.client.get(f"{self.base_url}/papers/needing-embeddings")
+        response.raise_for_status()
+        return response.json()
+    
     
     async def create_section(self, paper_id: int, header: str, text: str) -> Dict:
         response = await self.client.post(

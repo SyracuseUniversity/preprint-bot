@@ -25,7 +25,7 @@ from .download_arxiv_pdfs import download_arxiv_pdfs
 from .embed_papers import embed_and_store_papers
 from .extract_grobid import process_folder as grobid_process_folder
 from .summarization_script import TransformerSummarizer, LlamaSummarizer
-from .user_mode_processor import process_user_profiles, run_user_recommendations
+from .user_mode_processor import process_unprocessed_papers
 from .db_similarity_matcher import run_similarity_matching
 
 
@@ -271,54 +271,6 @@ async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, en
     print(f"\nGenerated {summarized_count} summaries")
 
 
-async def process_user_papers(api_client: APIClient, skip_parse: bool, skip_embed: bool):
-    """Process papers for all users by querying profiles from the database."""
-    # Get all profiles from the API
-    try:
-        response = await api_client.client.get(f"{api_client.base_url}/profiles/")
-        response.raise_for_status()
-        all_profiles = response.json()
-    except Exception as e:
-        print(f"Failed to fetch profiles: {e}")
-        return []
-
-    if not all_profiles:
-        print("No user profiles found in database.")
-        return []
-
-    # Group by user_id
-    user_ids = sorted(set(p['user_id'] for p in all_profiles))
-    # Skip the system user
-    system_user = await api_client.get_user_by_email(SYSTEM_USER_EMAIL)
-    system_user_id = system_user['id'] if system_user else None
-    user_ids = [uid for uid in user_ids if uid != system_user_id]
-
-    if not user_ids:
-        print("No non-system user profiles found.")
-        return []
-
-    print(f"Found {len(user_ids)} user(s) with profiles")
-
-    all_user_corpora = []
-    for uid in user_ids:
-        result = await process_user_profiles(
-            api_client, uid,
-            skip_parse=skip_parse,
-            skip_embed=skip_embed
-        )
-        if result:
-            for r in result['results']:
-                if r.get('corpus') is None:
-                    continue
-                all_user_corpora.append({
-                    'user_id': result['user']['id'],
-                    'corpus_id': r['corpus']['id'],
-                    'profile': r['profile']
-                })
-
-    return all_user_corpora
-
-
 async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, user_corpora: List, target_date: datetime) -> set:
     if not user_corpora:
         print("No user corpora to generate recommendations for")
@@ -443,10 +395,9 @@ async def run_pipeline(args):
         )
 
         entries = entries or []
-        user_corpora = []
 
         if not entries:
-            print("No new papers fetched. Skipping embedding, recommendations, and summarization.")
+            print("No new arXiv papers fetched. Skipping arXiv embedding and summarization.")
         else:
             print("\n" + "="*60)
             print("STEP 3: Generating Embeddings")
@@ -476,15 +427,47 @@ async def run_pipeline(args):
             else:
                 print("Skipping summarization.")
 
-            print("\n" + "="*60)
-            print("STEP 5: Processing User Papers")
-            print("="*60)
-            user_corpora = await process_user_papers(api_client, skip_parse=args.skip_parse, skip_embed=args.skip_embed)
+        # Steps 5–6 always run — user papers need processing even on
+        # days with no new arXiv papers (weekends, holidays, etc.)
+        print("\n" + "="*60)
+        print("STEP 5: Processing User Papers")
+        print("="*60)
+        user_result = await process_unprocessed_papers(
+            api_client, skip_parse=args.skip_parse, skip_embed=args.skip_embed
+        )
+        print(f"  Summary: {user_result['parsed']} parsed, {user_result['embedded']} embedded")
 
-            print("\n" + "="*60)
-            print("STEP 6: Generating Recommendations")
-            print("="*60)
-            await generate_recommendations(api_client, corpus_id, user_corpora, target_date)
+        # Gather user corpora for recommendations
+        try:
+            response = await api_client.client.get(f"{api_client.base_url}/profiles/")
+            response.raise_for_status()
+            all_profiles = response.json()
+        except Exception as e:
+            print(f"Failed to fetch profiles: {e}")
+            all_profiles = []
+
+        system_user = await api_client.get_user_by_email(SYSTEM_USER_EMAIL)
+        system_user_id = system_user['id'] if system_user else None
+
+        user_corpora = []
+        for profile in all_profiles:
+            if profile['user_id'] == system_user_id:
+                continue
+            corpus_name = f"user_{profile['user_id']}_profile_{profile['id']}"
+            corpus = await api_client.get_corpus_by_name(profile['user_id'], corpus_name)
+            if corpus:
+                user_corpora.append({
+                    'user_id': profile['user_id'],
+                    'corpus_id': corpus['id'],
+                    'profile': profile,
+                })
+
+        print(f"  Found {len(user_corpora)} user corpus/profile pair(s) for recommendations")
+
+        print("\n" + "="*60)
+        print("STEP 6: Generating Recommendations")
+        print("="*60)
+        await generate_recommendations(api_client, corpus_id, user_corpora, target_date)
 
         print("\n" + "="*60)
         print("STEP 7: Cleanup")
@@ -510,8 +493,9 @@ async def run_pipeline(args):
         print("PIPELINE COMPLETE!")
         print("="*80)
         print(f"  • Date: {target_date.strftime('%Y-%m-%d')}")
-        print(f"  • arXiv Papers: {len(entries)} fetched")
-        print(f"  • User Corpora: {len(user_corpora)} processed")
+        print(f"  • User papers: {user_result['parsed']} parsed, {user_result['embedded']} embedded")
+        print(f"  • arXiv papers: {len(entries)} fetched")
+        print(f"  • User corpora: {len(user_corpora)}")
         print(f"  • Corpus ID: {corpus_id}")
         print("="*80 + "\n")
 
