@@ -281,10 +281,10 @@ CI runs these automatically via GitHub Actions (`.github/workflows/test.yml`,
   python manage.py cleanup_orphan_papers --apply   # actually delete
   ```
 
-- The legacy `Paper.corpus` ForeignKey is kept as a nullable field for
-  backward compatibility with the FastAPI pipeline. New code should use
-  the `Paper.corpora` ManyToManyField. The pipeline will need updating
-  to use the new M2M relationship.
+- The legacy `Paper.corpus` ForeignKey is kept as a nullable column for
+  backward compatibility but is no longer queried. Both Django and the
+  pipeline use the `Paper.corpora` ManyToManyField exclusively. The FK
+  can be dropped in a future migration once the pipeline is fully verified.
 
 - The arXiv search API endpoint enforces a per-session cooldown (3 seconds
   between searches) to prevent excessive requests to arXiv.

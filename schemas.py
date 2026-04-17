@@ -106,7 +106,7 @@ class ProfileCorpusResponse(BaseModel):
 
 # Paper Schemas
 class PaperCreate(BaseModel):
-    corpus_id: int
+    corpus_id: Optional[int] = None  # used for M2M linking only
     arxiv_id: Optional[str] = None
     title: str
     abstract: Optional[str] = None
@@ -125,7 +125,7 @@ class PaperUpdate(BaseModel):
 
 class PaperResponse(BaseModel):
     id: int
-    corpus_id: int
+    corpus_id: Optional[int]  # legacy — may be NULL for new papers
     arxiv_id: Optional[str]
     title: str
     abstract: Optional[str]

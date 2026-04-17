@@ -27,8 +27,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         apply = options["apply"]
 
-        # Find papers with zero corpus links (M2M) AND no legacy corpus FK
-        orphans = Paper.objects.filter(corpora=None, corpus__isnull=True)
+        # Find papers with zero M2M corpus links
+        orphans = Paper.objects.filter(corpora=None)
 
         count = orphans.count()
         if count == 0:

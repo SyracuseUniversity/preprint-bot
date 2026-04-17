@@ -158,11 +158,11 @@ class Paper(models.Model):
 
     SOURCE_CHOICES = [("user", "User"), ("arxiv", "arXiv")]
 
-    # M2M replaces the old corpus FK; old column kept nullable for pipeline compat
+    # Legacy FK — no longer populated or queried; kept for schema compat
     corpus = models.ForeignKey(
         Corpus, on_delete=models.SET_NULL, blank=True, null=True,
         related_name="papers_legacy",
-        help_text="Deprecated — use corpora M2M. Kept for pipeline backward compatibility.",
+        help_text="Deprecated — not populated. Use corpora M2M. Can be dropped in a future migration.",
     )
     corpora = models.ManyToManyField(Corpus, blank=True, related_name="papers")
     arxiv_id = models.CharField(max_length=50, blank=True, null=True)

@@ -160,6 +160,15 @@ class APIClient:
                 return None
             raise
     
+    async def update_paper(self, paper_id: int, **fields) -> Optional[Dict]:
+        """Update a paper's fields (title, abstract, metadata, etc.)."""
+        response = await self.client.put(
+            f"{self.base_url}/papers/{paper_id}",
+            json=fields
+        )
+        response.raise_for_status()
+        return response.json()
+    
     async def get_papers_by_corpus(self, corpus_id: int) -> List[Dict]:
         response = await self.client.get(f"{self.base_url}/papers/?corpus_id={corpus_id}")
         response.raise_for_status()

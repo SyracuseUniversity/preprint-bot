@@ -17,9 +17,8 @@ import httpx
 
 from .config import (
     DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS,
-    PDF_DIR, PROCESSED_TEXT_DIR, USER_PDF_DIR, USER_PROCESSED_DIR,
+    PDF_DIR, PROCESSED_TEXT_DIR,
     SYSTEM_USER_EMAIL, SYSTEM_USER_NAME, ARXIV_CORPUS_NAME, DEFAULT_THRESHOLD,
-    get_user_profile_structure
 )
 from .api_client import APIClient
 from .download_arxiv_pdfs import download_arxiv_pdfs
@@ -273,18 +272,40 @@ async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, en
 
 
 async def process_user_papers(api_client: APIClient, skip_parse: bool, skip_embed: bool):
-    structure = get_user_profile_structure(USER_PDF_DIR)
-    if not structure:
-        print("No user papers found in user_pdfs/")
+    """Process papers for all users by querying profiles from the database."""
+    # Get all profiles from the API
+    try:
+        response = await api_client.client.get(f"{api_client.base_url}/profiles/")
+        response.raise_for_status()
+        all_profiles = response.json()
+    except Exception as e:
+        print(f"Failed to fetch profiles: {e}")
         return []
 
-    print(f"Found user structure:")
-    for uid, pids in structure.items():
-        print(f"  User {uid}: Profiles {', '.join(map(str, pids))}")
+    if not all_profiles:
+        print("No user profiles found in database.")
+        return []
+
+    # Group by user_id
+    user_ids = sorted(set(p['user_id'] for p in all_profiles))
+    # Skip the system user
+    system_user = await api_client.get_user_by_email(SYSTEM_USER_EMAIL)
+    system_user_id = system_user['id'] if system_user else None
+    user_ids = [uid for uid in user_ids if uid != system_user_id]
+
+    if not user_ids:
+        print("No non-system user profiles found.")
+        return []
+
+    print(f"Found {len(user_ids)} user(s) with profiles")
 
     all_user_corpora = []
-    for uid, pids in structure.items():
-        result = await process_user_profiles(api_client, uid, pids, skip_parse=skip_parse, skip_embed=skip_embed)
+    for uid in user_ids:
+        result = await process_user_profiles(
+            api_client, uid,
+            skip_parse=skip_parse,
+            skip_embed=skip_embed
+        )
         if result:
             for r in result['results']:
                 if r.get('corpus') is None:
@@ -479,7 +500,7 @@ async def run_pipeline(args):
                 txt.unlink()
                 deleted_txts += 1
             print(f"  ✓ Deleted {deleted_pdfs} PDFs and {deleted_txts} processed texts")
-            print(f"  ✓ User files in {USER_PDF_DIR} are safe")
+            print(f"  ✓ User paper files are safe (hash-based storage)")
         except Exception as e:
             print(f"  Warning: Cleanup failed: {e}")
 

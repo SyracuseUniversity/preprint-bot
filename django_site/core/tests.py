@@ -171,7 +171,7 @@ class ParseArxivIdsTests(SimpleTestCase):
         self.assertEqual(_parse_arxiv_ids("2301.1"), [])
 
 
-# ── _safe_pdf_path ────────────────────────────────────────────────────────
+# ── Paper storage helpers ─────────────────────────────────────────────────
 
 
 class PaperStorageTests(SimpleTestCase):
