@@ -790,11 +790,17 @@ def paper_delete_view(request, profile_id, paper_id):
     paper = get_object_or_404(Paper, pk=paper_id)
     corpus = _get_or_create_user_corpus(pb_user, profile)
 
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
     was_linked = paper.corpora.filter(pk=corpus.pk).exists()
     if was_linked:
         paper.corpora.remove(corpus)
+        if is_ajax:
+            return JsonResponse({"ok": True})
         messages.success(request, f"Removed '{paper.title[:60]}' from this profile.")
     else:
+        if is_ajax:
+            return JsonResponse({"ok": False, "error": "Paper not linked to this profile."}, status=400)
         messages.error(request, "Paper not linked to this profile.")
 
     return redirect("profile_list")
@@ -832,17 +838,38 @@ def paper_add_arxiv_view(request, profile_id):
 
     raw = request.POST.get("arxiv_ids", "")
     arxiv_ids = _parse_arxiv_ids(raw)
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
     if not arxiv_ids:
+        if is_ajax:
+            return JsonResponse({"ok": False, "error": "No valid arXiv IDs provided."}, status=400)
         messages.error(request, "No valid arXiv IDs provided.")
         return redirect("profile_list")
 
-    if len(arxiv_ids) > MAX_IDS_PER_REQUEST:
+    if not is_ajax and len(arxiv_ids) > MAX_IDS_PER_REQUEST:
         messages.warning(
             request,
             f"Too many IDs ({len(arxiv_ids)}). Only the first {MAX_IDS_PER_REQUEST} will be processed.",
         )
         arxiv_ids = arxiv_ids[:MAX_IDS_PER_REQUEST]
+
+    if is_ajax:
+        # AJAX: process a single ID and return the paper info
+        aid = arxiv_ids[0]
+        success, failed = _download_arxiv_pdfs(pb_user, profile, [aid])
+        if failed:
+            return JsonResponse({"ok": False, "error": f"Failed to download {aid}."}, status=400)
+        # Look up the paper to return its info for the DOM
+        paper = Paper.objects.filter(arxiv_id=aid).first()
+        return JsonResponse({
+            "ok": True,
+            "paper": {
+                "id": paper.pk,
+                "title": paper.title,
+                "arxiv_id": paper.arxiv_id,
+                "source": paper.source,
+            } if paper else None,
+        })
 
     success, failed = _download_arxiv_pdfs(pb_user, profile, arxiv_ids)
     if success:
