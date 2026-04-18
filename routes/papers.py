@@ -6,6 +6,56 @@ import json
 
 router = APIRouter(prefix="/papers", tags=["papers"])
 
+@router.get("/needing-processing", response_model=List[PaperResponse])
+async def get_papers_needing_processing():
+    """Papers with a PDF on disk but no sections extracted yet."""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT p.id, p.corpus_id, p.arxiv_id, p.title, p.abstract, p.metadata,
+                   p.pdf_path, p.processed_text_path, p.submitted_date, p.source, p.created_at
+            FROM papers p
+            LEFT JOIN sections s ON p.id = s.paper_id
+            WHERE p.pdf_path IS NOT NULL
+              AND s.id IS NULL
+            ORDER BY p.created_at DESC
+            """
+        )
+        results = []
+        for row in rows:
+            result = dict(row)
+            if result['metadata']:
+                result['metadata'] = json.loads(result['metadata'])
+            results.append(result)
+        return results
+
+
+@router.get("/needing-embeddings", response_model=List[PaperResponse])
+async def get_papers_needing_embeddings():
+    """Papers with sections but no abstract embedding yet."""
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT p.id, p.corpus_id, p.arxiv_id, p.title, p.abstract, p.metadata,
+                   p.pdf_path, p.processed_text_path, p.submitted_date, p.source, p.created_at
+            FROM papers p
+            JOIN sections s ON p.id = s.paper_id
+            LEFT JOIN embeddings e ON p.id = e.paper_id AND e.type = 'abstract'
+            WHERE e.id IS NULL
+            ORDER BY p.created_at DESC
+            """
+        )
+        results = []
+        for row in rows:
+            result = dict(row)
+            if result['metadata']:
+                result['metadata'] = json.loads(result['metadata'])
+            results.append(result)
+        return results
+
+
 @router.post("/", response_model=PaperResponse, status_code=201)
 async def create_paper(paper: PaperCreate):
     pool = await get_db_pool()
@@ -16,11 +66,10 @@ async def create_paper(paper: PaperCreate):
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO papers (corpus_id, arxiv_id, title, abstract, metadata, pdf_path, submitted_date, source)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                INSERT INTO papers (arxiv_id, title, abstract, metadata, pdf_path, submitted_date, source)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id, corpus_id, arxiv_id, title, abstract, metadata, pdf_path, processed_text_path, submitted_date, source, created_at
                 """,
-                paper.corpus_id, 
                 paper.arxiv_id, 
                 paper.title, 
                 paper.abstract,
@@ -29,6 +78,16 @@ async def create_paper(paper: PaperCreate):
                 submitted_date_naive,
                 paper.source.value
             )
+            # Populate the M2M junction table
+            if paper.corpus_id is not None:
+                await conn.execute(
+                    """
+                    INSERT INTO papers_corpora (paper_id, corpus_id)
+                    VALUES ($1, $2)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    row['id'], paper.corpus_id
+                )
             result = dict(row)
             if result['metadata']:
                 result['metadata'] = json.loads(result['metadata'])
@@ -68,10 +127,11 @@ async def get_papers(corpus_id: Optional[int] = Query(None)):
         if corpus_id is not None:
             rows = await conn.fetch(
                 """
-                SELECT id, corpus_id, arxiv_id, title, abstract, metadata, pdf_path, 
-                       processed_text_path, submitted_date, source, created_at 
-                FROM papers 
-                WHERE corpus_id = $1
+                SELECT DISTINCT p.id, p.corpus_id, p.arxiv_id, p.title, p.abstract, p.metadata, p.pdf_path, 
+                       p.processed_text_path, p.submitted_date, p.source, p.created_at 
+                FROM papers p
+                JOIN papers_corpora pc ON p.id = pc.paper_id
+                WHERE pc.corpus_id = $1
                 """,
                 corpus_id
             )

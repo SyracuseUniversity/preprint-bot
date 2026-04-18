@@ -1,0 +1,77 @@
+# preprint_bot_web/local_settings.py
+#
+# Local overrides for development or production.
+# This file is imported at the end of settings.py and can override
+# any setting defined there.
+#
+# Copy this file to local_settings.py and edit as needed.
+# DO NOT commit local_settings.py to version control.
+
+# ── Security ──────────────────────────────────────────────────────────────
+# Generate a real key: python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+# SECRET_KEY = "your-production-secret-key-here"
+
+# DEBUG = False
+
+# ALLOWED_HOSTS = ["preprint-bot.example.com"]
+
+# ── Subpath deployment (e.g. served at /dev via Caddy handle_path) ────────
+# If the Django site is served under a URL prefix (e.g. /dev), set
+# FORCE_SCRIPT_NAME so Django generates correct URLs for redirects,
+# reverse(), static files, etc.
+# FORCE_SCRIPT_NAME = "/dev"
+# STATIC_URL = "/dev/static/"
+# MEDIA_URL = "/dev/media/"
+
+# ── Database ──────────────────────────────────────────────────────────────
+# Override individual fields or the entire DATABASES dict.
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.postgresql",
+#         "NAME": "preprint_bot",
+#         "USER": "preprint_user",
+#         "PASSWORD": "actual-production-password",
+#         "HOST": "db.internal.example.com",
+#         "PORT": "5432",
+#     }
+# }
+
+# ── Site-specific ─────────────────────────────────────────────────────────
+# SUPPORT_EMAIL = "support@example.com"
+# SITE_NAME = "Preprint Bot"
+# SHOW_BETA_BANNER = False          # set to False once out of beta
+
+# ── Static files (production) ─────────────────────────────────────────────
+# STATIC_ROOT = "/var/www/preprint-bot/static/"
+
+# ── Email verification ────────────────────────────────────────────────────
+# REQUIRE_EMAIL_VERIFICATION = True  # require new users to verify email
+
+# ── ORCID OAuth2 (optional) ──────────────────────────────────────────────
+# Register at https://orcid.org/developer-tools
+# Set redirect URI to: https://your-domain/auth/orcid/callback/
+# ORCID_CLIENT_ID = "APP-XXXXXXXXXXXXXXXX"
+# ORCID_CLIENT_SECRET = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+# ORCID_SANDBOX = True  # True for sandbox.orcid.org, False for production
+
+# ── Email backend (production) ────────────────────────────────────────────
+# settings.py auto-detects SMTP when EMAIL_HOST is set in .env — these
+# env vars match the FastAPI email_service, so one .env works for both:
+#   EMAIL_HOST, EMAIL_PORT, EMAIL_USER, EMAIL_PASSWORD,
+#   EMAIL_FROM_ADDRESS, EMAIL_FROM_NAME, EMAIL_USE_TLS
+#
+# Alternatively, override directly here:
+# EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+# EMAIL_HOST = "smtp.example.com"
+# EMAIL_PORT = 587
+# EMAIL_USE_TLS = True
+# EMAIL_HOST_USER = "noreply@example.com"
+# EMAIL_HOST_PASSWORD = "smtp-password"
+# DEFAULT_FROM_EMAIL = "Preprint Bot <noreply@example.com>"
+
+# ── PDF storage ───────────────────────────────────────────────────────────
+# from pathlib import Path  # uncomment if using Path-based settings below
+# PDF_DATA_DIR = Path("/data/preprint-bot/pdf_data")
+# PAPER_STORAGE_DIR = PDF_DATA_DIR / "papers"  # hash-based deduplicated storage
+# USER_PDF_DIR = PDF_DATA_DIR / "user_pdfs"       # legacy — FastAPI pipeline only
+# USER_PROCESSED_DIR = PDF_DATA_DIR / "user_processed"  # legacy — FastAPI pipeline only

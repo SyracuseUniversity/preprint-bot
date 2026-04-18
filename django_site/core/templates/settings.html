@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Settings – Preprint Bot{% endblock %}
+
+{% block content %}
+<h1>Settings</h1>
+<p class="subtitle">Manage your account.</p>
+
+{# ── Profile Information ──────────────────────────── #}
+<div class="card">
+  <h2>Profile Information</h2>
+  <form method="post">
+    {% csrf_token %}
+    <div class="grid-2">
+      <div class="form-group">
+        <label>Name</label>
+        {{ form.name }}
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        {{ form.email }}
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Save Changes</button>
+  </form>
+</div>
+
+{# ── Email Notifications ─────────────────────────── #}
+<div class="card">
+  <h2>Email Notifications</h2>
+
+  {% if profiles %}
+    <p class="text-sm text-dim mb-1">
+      Pause or resume email notifications for all your profiles at once.
+      You can also toggle emails per-profile on the <a href="{% url 'profile_list' %}">Profiles</a> page.
+    </p>
+
+    {% if all_paused %}
+      <form method="post" action="{% url 'pause_all_emails' %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="resume">
+        <button type="submit" class="btn btn-sm btn-primary">Resume All Emails</button>
+      </form>
+    {% else %}
+      <form method="post" action="{% url 'pause_all_emails' %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="pause">
+        <button type="submit" class="btn btn-sm">Pause All Emails</button>
+      </form>
+    {% endif %}
+  {% else %}
+    <p class="text-dim">No profiles yet. Create one on the <a href="{% url 'profile_list' %}">Profiles</a> page.</p>
+  {% endif %}
+</div>
+
+{# ── Account Details ─────────────────────────────── #}
+<div class="card">
+  <h2>Account Details</h2>
+  <div class="grid-2">
+    <div>
+      <span class="text-sm text-dim">User ID</span><br>
+      <span class="text-mono">{{ pb_user.pk }}</span>
+    </div>
+    <div>
+      <span class="text-sm text-dim">Created</span><br>
+      <span>{{ pb_user.created_at|date:"N j, Y" }}</span>
+    </div>
+  </div>
+  {% if pb_user.orcid_id %}
+  <div style="margin-top:.75rem;">
+    <span class="text-sm text-dim">ORCID iD</span><br>
+    <a href="https://orcid.org/{{ pb_user.orcid_id }}" target="_blank" rel="noopener noreferrer">{{ pb_user.orcid_id }}</a>
+  </div>
+  {% endif %}
+</div>
+
+{# ── Danger Zone ─────────────────────────────────── #}
+<div class="card" style="border-color: var(--danger);">
+  <h2>Danger Zone</h2>
+
+  {# Password reset #}
+  <div style="margin-bottom:1.25rem;">
+    <h3 style="margin-bottom:.25rem;">Reset Password</h3>
+    <p class="text-sm text-dim mb-1">Send yourself a password-reset token via email.</p>
+    <a href="{% url 'forgot_password' %}" class="btn btn-sm">Reset Password</a>
+  </div>
+
+  <hr>
+
+  {# Deactivate #}
+  <div style="margin-bottom:1.25rem;">
+    <h3 style="margin-bottom:.25rem;">Deactivate Account</h3>
+    <p class="text-sm text-dim mb-1">
+      Pauses all email notifications and prevents you from logging in.
+      Your data is preserved and an administrator can reactivate your account later.
+    </p>
+    <form method="post" action="{% url 'deactivate_account' %}"
+          onsubmit="return confirm('Deactivate your account? You will be logged out and will not be able to log back in without contacting an administrator.');">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-sm btn-danger">Deactivate Account</button>
+    </form>
+  </div>
+
+  <hr>
+
+  {# Delete #}
+  <div>
+    <h3 style="margin-bottom:.25rem;">Delete Account</h3>
+    <p class="text-sm text-dim mb-1">
+      Permanently deletes your account, all profiles, uploaded papers, and recommendation history.
+      This cannot be undone.
+    </p>
+    <form method="post" action="{% url 'delete_account' %}"
+          onsubmit="return document.getElementById('delete-confirm').value === 'DELETE' || (alert('Please type DELETE to confirm.'), false);">
+      {% csrf_token %}
+      <div class="form-group" style="max-width:20rem;">
+        <label>Type <strong>DELETE</strong> to confirm</label>
+        <input type="text" name="confirmation" id="delete-confirm" placeholder="DELETE" autocomplete="off">
+      </div>
+      <button type="submit" class="btn btn-sm btn-danger">Permanently Delete Account</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

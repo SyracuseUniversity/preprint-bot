@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Complete ORCID Sign-Up – Preprint Bot{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+  <div class="card">
+    <h1 style="text-align:center; margin-bottom:.25rem;">Almost There</h1>
+    <p class="subtitle" style="text-align:center;">
+      Authenticated as <strong>{{ orcid_name|default:orcid_id }}</strong>
+      <br><span class="text-sm text-dim">ORCID iD: {{ orcid_id }}</span>
+    </p>
+
+    <p style="margin-top:1rem;">
+      Please provide an email address to complete your account. This will be
+      used for recommendation notifications and account recovery.
+    </p>
+
+    {% if form.errors %}
+      <div class="alert alert-error">{{ form.errors.email.0 }}</div>
+    {% endif %}
+
+    <form method="post">
+      {% csrf_token %}
+      <div class="form-group">
+        <label for="id_email">Email</label>
+        {{ form.email }}
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%; margin-top:.5rem;">Create Account</button>
+    </form>
+
+    <div style="text-align:center; margin-top:1rem;">
+      <a href="{% url 'login' %}" class="text-sm">Cancel and return to sign in</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

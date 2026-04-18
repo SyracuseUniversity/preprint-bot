@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Sign In – Preprint Bot{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+  <div class="card">
+    <h1 style="text-align:center; margin-bottom:.25rem;">Preprint Bot</h1>
+    <p class="subtitle" style="text-align:center;">Sign in to your account</p>
+
+    <form method="post">
+      {% csrf_token %}
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      <div class="form-group">
+        <label for="id_email">Email</label>
+        {{ form.email }}
+      </div>
+      <div class="form-group">
+        <label for="id_password">Password</label>
+        {{ form.password }}
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%; margin-top:.5rem;">Sign In</button>
+    </form>
+
+    {% if ORCID_ENABLED %}
+    <a href="{% url 'orcid_login' %}" class="btn" style="width:100%; margin-top:.5rem; background:#a6ce39; color:#fff; border:none;">
+      Sign in with ORCID iD
+    </a>
+    {% endif %}
+
+    {% if show_resend_link %}
+    <p class="text-sm" style="margin-top:.5rem; text-align:center;">
+      <a href="{% url 'resend_verification' %}">Resend verification email</a>
+    </p>
+    {% endif %}
+
+    <div style="display:flex; justify-content:space-between; margin-top:1rem;">
+      <a href="{% url 'register' %}" class="text-sm">Create account</a>
+      <a href="{% url 'help' %}" class="text-sm" target="_blank" rel="noopener noreferrer">Help</a>
+      <a href="{% url 'forgot_password' %}" class="text-sm">Forgot password?</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

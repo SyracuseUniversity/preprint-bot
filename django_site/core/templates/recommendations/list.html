@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Recommendations – Preprint Bot{% endblock %}
+
+{% block content %}
+<h1>Recommendations</h1>
+<p class="subtitle">Papers matched to your research profiles.</p>
+
+{% if not profiles %}
+  <div class="card">
+    <p class="text-dim">No profiles found. <a href="{% url 'profile_create' %}">Create one</a> first.</p>
+  </div>
+{% else %}
+
+{# ── Profile selector ────────────────────────────────── #}
+<form method="get" id="filter-form">
+  <div class="card">
+    <div class="grid-3">
+      <div class="form-group">
+        <label>Profile</label>
+        <select name="profile" onchange="this.form.submit();">
+          {% for p in profiles %}
+            <option value="{{ p.pk }}" {% if p.pk == selected_profile.pk %}selected{% endif %}>{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>From</label>
+        <input type="date" name="date_from" value="{{ filter_date_from }}">
+      </div>
+      <div class="form-group">
+        <label>To</label>
+        <input type="date" name="date_to" value="{{ filter_date_to }}">
+      </div>
+    </div>
+
+    <div class="grid-3">
+      <div class="form-group">
+        <label>Min Score ({{ score_min|floatformat:2 }} – {{ score_max|floatformat:2 }})</label>
+        <input type="range" name="min_score" min="{{ score_min }}" max="{{ score_max }}" step="0.01"
+               value="{{ filter_min_score|floatformat:2 }}"
+               oninput="document.getElementById('score-val').textContent=parseFloat(this.value).toFixed(2);">
+        <span id="score-val" class="text-sm">{{ filter_min_score|floatformat:2 }}</span>
+      </div>
+      <div class="form-group">
+        <label>Search title / abstract</label>
+        <input type="text" name="q" value="{{ filter_keyword }}" placeholder="Keywords…">
+      </div>
+      <div class="form-group">
+        <label>&nbsp;</label>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Apply Filters</button>
+      </div>
+    </div>
+
+    {# ── Category checkboxes ────────────────────────── #}
+    {% if profile_categories %}
+    <details style="margin-top:.5rem;">
+      <summary class="text-sm" style="cursor:pointer; font-weight:600;">Filter by category</summary>
+      <div style="display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.4rem;">
+        {% for cat in profile_categories %}
+          <label style="display:flex; align-items:center; gap:.25rem; font-size:.82rem; cursor:pointer;">
+            <input type="checkbox" name="cat" value="{{ cat }}"
+                   {% if cat in filter_cats %}checked{% endif %}>
+            {{ cat }}
+          </label>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
+    {# ── Quick date buttons ─────────────────────────── #}
+    <div style="display:flex; gap:.4rem; margin-top:.75rem;">
+      <a href="?profile={{ selected_profile.pk }}&date_from={{ today }}&date_to={{ today }}" class="btn btn-sm">Today</a>
+      <a href="?profile={{ selected_profile.pk }}&date_from={{ week_ago }}&date_to={{ today }}" class="btn btn-sm">Last 7 days</a>
+      <a href="?profile={{ selected_profile.pk }}&date_from={{ month_ago }}&date_to={{ today }}" class="btn btn-sm">Last 30 days</a>
+      <a href="?profile={{ selected_profile.pk }}" class="btn btn-sm">All time</a>
+    </div>
+  </div>
+</form>
+
+{# ── Result count ────────────────────────────────────── #}
+<p class="text-sm text-dim" style="margin-bottom:.75rem;">
+  {{ total_count }} recommendation{{ total_count|pluralize }} found
+  {% if total_pages > 1 %} · Page {{ page }} of {{ total_pages }}{% endif %}
+</p>
+
+{# ── Grouped results ─────────────────────────────────── #}
+{% if not grouped_recs %}
+  <div class="card"><p class="text-dim">No recommendations match these filters.</p></div>
+{% else %}
+  {% for date_str, recs in grouped_recs.items %}
+    <div class="date-header">{{ date_str }}</div>
+
+    {% for rec in recs %}
+    <div class="card">
+      <div class="flex-between mb-1">
+        <h3 style="flex:1; margin:0;">{{ rec.title }}</h3>
+        <span class="score-badge">{{ rec.score|floatformat:3 }}</span>
+      </div>
+
+      {% if rec.categories %}
+        <div style="margin-bottom:.35rem;">
+          {% for c in rec.categories %}<span class="tag">{{ c }}</span>{% endfor %}
+        </div>
+      {% endif %}
+
+      {% if rec.arxiv_id %}
+        <span class="text-sm text-dim text-mono">{{ rec.arxiv_id }}</span>
+      {% endif %}
+
+      {% if rec.summary_text %}
+        <p class="mt-1" style="font-size:.88rem;">{{ rec.summary_text }}</p>
+      {% elif rec.abstract %}
+        <p class="mt-1 text-dim" style="font-size:.86rem;">{{ rec.abstract|truncatewords:50 }}</p>
+      {% endif %}
+
+      {% if rec.arxiv_id %}
+        <a href="https://arxiv.org/abs/{{ rec.arxiv_id }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm mt-1">View on arXiv →</a>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% endfor %}
+{% endif %}
+
+{# ── Pagination ──────────────────────────────────────── #}
+{% if total_pages > 1 %}
+<div class="pagination">
+  {% if page > 1 %}
+    <a href="?profile={{ selected_profile.pk }}&page={{ page|add:"-1" }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">← Prev</a>
+  {% endif %}
+
+  {% for p in pages_range %}
+    {% if p == page %}
+      <span class="current">{{ p }}</span>
+    {% elif p == 1 or p == total_pages or p >= page|add:"-2" and p <= page|add:"2" %}
+      <a href="?profile={{ selected_profile.pk }}&page={{ p }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">{{ p }}</a>
+    {% elif p == page|add:"-3" or p == page|add:"3" %}
+      <span class="text-dim">…</span>
+    {% endif %}
+  {% endfor %}
+
+  {% if page < total_pages %}
+    <a href="?profile={{ selected_profile.pk }}&page={{ page|add:"1" }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">Next →</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endif %}{# /profiles exist #}
+{% endblock %}

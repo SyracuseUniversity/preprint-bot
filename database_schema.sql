@@ -1,5 +1,16 @@
 -- PostgreSQL Database Schema
 -- Paper Recommendation System
+--
+-- NOTE: This file reflects the ORIGINAL schema before the Django migration.
+-- Django migrations (django_site/core/migrations/) are now the authoritative
+-- source for the database schema.  Key differences include:
+--   - users table managed by Django's auth system (password, permissions, etc.)
+--   - papers table uses SHA-256 dedup and a many-to-many relationship with corpora
+--   - profiles threshold is now a float, top_x defaults to 999
+--   - additional tables/indexes managed by Django (sessions, content types, etc.)
+--
+-- To see the current schema, run:  python manage.py sqlmigrate core <migration_name>
+-- To dump the live schema:         pg_dump --schema-only <database_name>
 
 -- =============================================================================
 -- EXTENSIONS

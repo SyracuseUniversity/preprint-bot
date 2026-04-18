@@ -102,7 +102,7 @@ async def get_embeddings(
         idx += 1
     
     if corpus_id is not None:
-        conditions.append(f"p.corpus_id = ${idx}")
+        conditions.append(f"pc.corpus_id = ${idx}")
         params.append(corpus_id)
         idx += 1
     
@@ -114,10 +114,11 @@ async def get_embeddings(
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     
     query = f"""
-        SELECT e.id, e.paper_id, e.section_id, e.type, e.model_name, e.created_at,
+        SELECT DISTINCT e.id, e.paper_id, e.section_id, e.type, e.model_name, e.created_at,
                e.embedding::text as embedding_text
         FROM embeddings e
         JOIN papers p ON e.paper_id = p.id
+        LEFT JOIN papers_corpora pc ON p.id = pc.paper_id
         {where_clause}
         ORDER BY e.created_at DESC
     """
@@ -170,28 +171,29 @@ async def search_similar_embeddings(request: VectorSearchRequest):
     # Build query with optional corpus filter
     if request.corpus_id is not None:
         query = """
-            SELECT 
+            SELECT DISTINCT
                 p.id, p.arxiv_id, p.title, p.abstract,
                 1 - (e.embedding <=> $1::vector) as similarity
             FROM embeddings e
             JOIN papers p ON e.paper_id = p.id
+            JOIN papers_corpora pc ON p.id = pc.paper_id
             WHERE e.type = 'abstract'
-            AND p.corpus_id = $2
+            AND pc.corpus_id = $2
             AND 1 - (e.embedding <=> $1::vector) >= $3
-            ORDER BY e.embedding <=> $1::vector
+            ORDER BY similarity DESC
             LIMIT $4
         """
         params = [embedding_str, request.corpus_id, request.threshold, request.limit]
     else:
         query = """
-            SELECT 
+            SELECT DISTINCT
                 p.id, p.arxiv_id, p.title, p.abstract,
                 1 - (e.embedding <=> $1::vector) as similarity
             FROM embeddings e
             JOIN papers p ON e.paper_id = p.id
             WHERE e.type = 'abstract'
             AND 1 - (e.embedding <=> $1::vector) >= $2
-            ORDER BY e.embedding <=> $1::vector
+            ORDER BY similarity DESC
             LIMIT $3
         """
         params = [embedding_str, request.threshold, request.limit]
