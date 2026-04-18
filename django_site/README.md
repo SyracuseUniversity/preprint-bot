@@ -257,7 +257,10 @@ CI runs these automatically via GitHub Actions (`.github/workflows/test.yml`,
 
 - The Django site does **not** run the recommendation pipeline itself.
   The FastAPI backend + `preprint_bot` CLI still handle fetching, embedding,
-  and generating recommendations. This site is purely a frontend.
+  and generating recommendations. The pipeline processes user papers in a
+  paper-centric way (each paper is processed once regardless of how many
+  profiles reference it) and queries the database for unprocessed papers
+  rather than scanning the filesystem.
 
 - Django's `migrate` creates **all** tables — both the application tables
   (users, profiles, papers, etc.) and Django's own tables (sessions, admin).
@@ -273,8 +276,7 @@ CI runs these automatically via GitHub Actions (`.github/workflows/test.yml`,
 - **Paper deduplication:** Paper rows are linked to corpora via a many-to-many
   relationship (`Paper.corpora`). Removing a paper from a profile only unlinks
   it — the file and database row are preserved as long as other corpora
-  reference them. To clean up orphaned papers (no corpus links and no legacy
-  `corpus_id`), run:
+  reference them. To clean up orphaned papers (no corpus links), run:
 
   ```bash
   python manage.py cleanup_orphan_papers          # dry run

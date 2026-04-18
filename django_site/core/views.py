@@ -792,7 +792,7 @@ def paper_delete_view(request, profile_id, paper_id):
     was_linked = paper.corpora.filter(pk=corpus.pk).exists()
     if was_linked:
         paper.corpora.remove(corpus)
-        messages.success(request, f"Removed '{paper.display_name}' from this profile.")
+        messages.success(request, f"Removed '{paper.title[:60]}' from this profile.")
     else:
         messages.error(request, "Paper not linked to this profile.")
 

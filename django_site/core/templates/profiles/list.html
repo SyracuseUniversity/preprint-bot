@@ -77,10 +77,22 @@
         {% if item.papers %}
           {% for paper in item.papers %}
           <div class="flex-between" style="padding:.35rem 0; border-bottom:1px solid var(--border);">
-            <a href="{% url 'paper_view' p.pk paper.pk %}" target="_blank" rel="noopener noreferrer" class="text-sm">{{ paper.display_name }}</a>
-            <form method="post" action="{% url 'paper_delete' p.pk paper.pk %}" style="display:inline;">
+            <div style="flex:1; min-width:0;">
+              <a href="{% url 'paper_view' p.pk paper.pk %}" target="_blank" rel="noopener noreferrer"
+                 class="text-sm" style="font-weight:600;">{{ paper.title|truncatechars:80 }}</a>
+              <div class="text-sm text-dim">
+                {% if paper.source == 'arxiv' and paper.arxiv_id %}
+                  arXiv: <a href="https://arxiv.org/abs/{{ paper.arxiv_id }}" target="_blank" rel="noopener noreferrer">{{ paper.arxiv_id }}</a>
+                {% elif paper.source == 'arxiv' %}
+                  arXiv
+                {% else %}
+                  User upload
+                {% endif %}
+              </div>
+            </div>
+            <form method="post" action="{% url 'paper_delete' p.pk paper.pk %}" style="display:inline; flex-shrink:0;">
               {% csrf_token %}
-              <button type="submit" class="btn btn-sm btn-danger" aria-label="Remove paper {{ paper.display_name }}" onclick="return confirm('Remove {{ paper.display_name|escapejs }} from this profile?');">🗑</button>
+              <button type="submit" class="btn btn-sm btn-danger" aria-label="Remove paper" onclick="return confirm('Remove this paper from the profile?');">🗑</button>
             </form>
           </div>
           {% endfor %}

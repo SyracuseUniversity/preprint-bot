@@ -199,15 +199,6 @@ class Paper(models.Model):
             return self.metadata.get("categories", [])
         return []
 
-    @property
-    def display_name(self):
-        """Human-readable filename for display in paper lists."""
-        if self.arxiv_id:
-            return f"{self.arxiv_id}.pdf"
-        if self.title and len(self.title) <= 60:
-            return f"{self.title}.pdf"
-        return f"paper_{self.pk}.pdf"
-
 
 # ── Sections ───────────────────────────────────────────────────────────────
 
