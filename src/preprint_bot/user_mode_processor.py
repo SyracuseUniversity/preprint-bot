@@ -52,7 +52,9 @@ async def process_unprocessed_papers(
                     not current_title
                     or current_title == paper.get('arxiv_id')  # arXiv ID as title
                     or current_title == f"paper_{paper['id']}"  # auto-generated
-                    or paper.get('source') == 'user'  # user upload with filename as title
+                    or paper.get('source') == 'user'  # filename as title (safe:
+                    # this only runs on first processing before sections exist,
+                    # and there is no UI to manually edit paper titles)
                 )
                 if grobid_title and is_placeholder:
                     updates['title'] = grobid_title
