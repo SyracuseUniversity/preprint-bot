@@ -124,6 +124,8 @@ to browse data.
 | `SUPPORT_EMAIL`      | `support@example.com`| Shown on the help page              |
 | `SITE_NAME`          | `Preprint Bot`       | Site display name                   |
 | `SHOW_BETA_BANNER`   | `True`               | Dismissable beta feedback banner    |
+| `ARXIV_SEARCH_MAX_RESULTS` | `500`          | Max papers returned by arXiv search |
+| `ARXIV_SEARCH_PER_PAGE`    | `50`           | Results per page in arXiv search    |
 | `REQUIRE_EMAIL_VERIFICATION` | `False`      | Require email verification on registration |
 | `DEFAULT_FROM_EMAIL` | `noreply@localhost`  | Sender address for verification/reset emails |
 | `EMAIL_HOST`         | (none)               | SMTP host — enables SMTP backend when set |

@@ -180,11 +180,12 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 /* ── arXiv search ───────────────────────────────────── */
+const PER_PAGE = {{ arxiv_search_per_page }};
+
 document.querySelectorAll('.search-btn').forEach(btn => {
   btn.addEventListener('click', () => doSearch(btn));
 });
 
-/* trigger search on Enter inside title/author inputs */
 document.querySelectorAll('.search-title, .search-author').forEach(input => {
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
@@ -212,7 +213,15 @@ function doSearch(btn) {
     + '&author=' + encodeURIComponent(author);
 
   fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-    .then(r => r.json())
+    .then(r => {
+      if (!r.ok && r.status === 429) {
+        return r.json().then(d => { throw new Error(d.error || 'Rate limited. Please wait and try again.'); });
+      }
+      if (!r.ok) {
+        return r.json().then(d => { throw new Error(d.error || 'Search failed.'); });
+      }
+      return r.json();
+    })
     .then(data => {
       spinner.style.display = 'none';
       btn.disabled = false;
@@ -226,50 +235,118 @@ function doSearch(btn) {
         return;
       }
 
-      /* reuse the profile's add-arxiv URL from Tab 2's form */
-      const addUrl = btn.closest('.paper-tabs').querySelector('[action*="add-arxiv"]').action;
+      /* split into new and already-added */
+      const newResults = data.results.filter(r => !r.already_added);
+      const addedResults = data.results.filter(r => r.already_added);
 
-      let html = '<div class="flex-between mb-1">'
-        + '<span class="text-sm text-dim">' + data.results.length
-        + ' result' + (data.results.length !== 1 ? 's' : '') + '</span>'
-        + '<div style="display:flex;gap:.4rem;">'
-        + '<button type="button" class="btn btn-sm" onclick="toggleAllCb(this,true)">Select All</button>'
-        + '<button type="button" class="btn btn-sm" onclick="toggleAllCb(this,false)">Deselect All</button>'
-        + '</div></div>';
+      /* store results on the box element for pagination */
+      box._newResults = newResults;
+      box._addedResults = addedResults;
+      box._page = 1;
+      box._addUrl = btn.closest('.paper-tabs').querySelector('[action*="add-arxiv"]').action;
 
-      html += '<form method="post" action="' + esc(addUrl) + '">'
-        + '<input type="hidden" name="csrfmiddlewaretoken" value="' + getCSRF() + '">'
-        + '<input type="hidden" name="arxiv_ids" class="bulk-ids-field">'
-        + '<div class="search-results-scroll">';
-
-      data.results.forEach(r => {
-        const disabled = r.already_added ? ' disabled checked' : '';
-        const badge = r.already_added
-          ? ' <span class="tag" style="margin-left:.4rem;">already added</span>' : '';
-        html += '<div style="padding:.5rem 0; border-bottom:1px solid var(--border);'
-          + ' display:flex; gap:.6rem; align-items:flex-start;">'
-          + '<input type="checkbox" class="arxiv-cb" value="' + esc(r.arxiv_id) + '"'
-          + disabled + ' style="margin-top:.35rem;">'
-          + '<div style="flex:1;">'
-          + '<a href="https://arxiv.org/abs/' + esc(r.arxiv_id)
-          + '" target="_blank" rel="noopener noreferrer" style="font-weight:600;">' + esc(r.title) + '</a>'
-          + '<div class="text-sm text-dim" style="margin-top:.15rem;">' + esc(r.authors) + '</div>'
-          + '<div class="text-sm text-dim">Published ' + esc(r.published)
-          + ' · ' + esc(r.arxiv_id) + badge + '</div>'
-          + '</div></div>';
-      });
-
-      html += '</div>'  /* close .search-results-scroll */
-        + '<button type="submit" class="btn btn-sm btn-primary" style="margin-top:.75rem;"'
-        + ' onclick="return collectBulk(this);">Add Selected to Profile</button></form>';
-
-      box.innerHTML = html;
+      renderSearchResults(box);
     })
     .catch(err => {
       spinner.style.display = 'none';
       btn.disabled = false;
-      box.innerHTML = '<p style="color:var(--danger);">Search failed: ' + esc(String(err)) + '</p>';
+      box.innerHTML = '<p style="color:var(--danger);">' + esc(String(err)) + '</p>';
     });
+}
+
+function renderSearchResults(box) {
+  const newResults = box._newResults;
+  const addedResults = box._addedResults;
+  const page = box._page;
+  const addUrl = box._addUrl;
+  const totalNew = newResults.length;
+  const totalPages = Math.max(1, Math.ceil(totalNew / PER_PAGE));
+  const start = (page - 1) * PER_PAGE;
+  const pageResults = newResults.slice(start, start + PER_PAGE);
+
+  let html = '';
+
+  /* header with counts */
+  html += '<div class="flex-between mb-1">'
+    + '<span class="text-sm text-dim">'
+    + totalNew + ' new result' + (totalNew !== 1 ? 's' : '');
+  if (addedResults.length > 0) {
+    html += ' &middot; ' + addedResults.length + ' already in profile';
+  }
+  html += '</span>'
+    + '<div style="display:flex;gap:.4rem;">'
+    + '<button type="button" class="btn btn-sm" onclick="toggleAllCb(this,true)">Select All</button>'
+    + '<button type="button" class="btn btn-sm" onclick="toggleAllCb(this,false)">Deselect All</button>'
+    + '</div></div>';
+
+  /* main results form */
+  html += '<form method="post" action="' + esc(addUrl) + '">'
+    + '<input type="hidden" name="csrfmiddlewaretoken" value="' + getCSRF() + '">'
+    + '<input type="hidden" name="arxiv_ids" class="bulk-ids-field">'
+    + '<div class="search-results-scroll">';
+
+  if (pageResults.length === 0) {
+    html += '<p class="text-dim">No new papers found.</p>';
+  }
+  pageResults.forEach(r => {
+    html += renderPaperRow(r, false);
+  });
+
+  html += '</div>';  /* close .search-results-scroll */
+
+  /* pagination */
+  if (totalPages > 1) {
+    html += '<div style="margin-top:.5rem; display:flex; gap:.3rem; align-items:center; flex-wrap:wrap;">'
+      + '<span class="text-sm text-dim">Page ' + page + ' of ' + totalPages + '</span>';
+    if (page > 1) {
+      html += ' <button type="button" class="btn btn-sm" onclick="searchPage(this,' + (page - 1) + ')">&laquo; Prev</button>';
+    }
+    if (page < totalPages) {
+      html += ' <button type="button" class="btn btn-sm" onclick="searchPage(this,' + (page + 1) + ')">Next &raquo;</button>';
+    }
+    html += '</div>';
+  }
+
+  html += '<button type="submit" class="btn btn-sm btn-primary" style="margin-top:.75rem;"'
+    + ' onclick="return collectBulk(this);">Add Selected to Profile</button></form>';
+
+  /* already-added papers in collapsible section */
+  if (addedResults.length > 0) {
+    html += '<details style="margin-top:.75rem;">'
+      + '<summary class="text-sm text-dim" style="cursor:pointer;">'
+      + addedResults.length + ' paper' + (addedResults.length !== 1 ? 's' : '') + ' already in profile'
+      + '</summary><div class="search-results-scroll" style="margin-top:.25rem; opacity:0.7;">';
+    addedResults.forEach(r => {
+      html += renderPaperRow(r, true);
+    });
+    html += '</div></details>';
+  }
+
+  box.innerHTML = html;
+}
+
+function renderPaperRow(r, isAdded) {
+  let html = '<div style="padding:.5rem 0; border-bottom:1px solid var(--border);'
+    + ' display:flex; gap:.6rem; align-items:flex-start;">';
+  if (!isAdded) {
+    html += '<input type="checkbox" class="arxiv-cb" value="' + esc(r.arxiv_id) + '"'
+      + ' style="margin-top:.35rem;">';
+  }
+  html += '<div style="flex:1;">'
+    + '<a href="https://arxiv.org/abs/' + esc(r.arxiv_id)
+    + '" target="_blank" rel="noopener noreferrer" style="font-weight:600;">' + esc(r.title) + '</a>'
+    + '<div class="text-sm text-dim" style="margin-top:.15rem;">' + esc(r.authors) + '</div>'
+    + '<div class="text-sm text-dim">Published ' + esc(r.published)
+    + ' &middot; ' + esc(r.arxiv_id) + '</div>'
+    + '</div></div>';
+  return html;
+}
+
+function searchPage(btn, page) {
+  const box = btn.closest('.search-results');
+  box._page = page;
+  renderSearchResults(box);
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 /* ── Helpers ────────────────────────────────────────── */

@@ -143,6 +143,13 @@ FASTAPI_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@example.com")
 SITE_NAME = os.getenv("SITE_NAME", "Preprint Bot")
 SHOW_BETA_BANNER = os.getenv("SHOW_BETA_BANNER", "True").lower() in ("true", "1", "yes")
+
+# ---------------------------------------------------------------------------
+# arXiv search settings
+# ---------------------------------------------------------------------------
+
+ARXIV_SEARCH_MAX_RESULTS = int(os.getenv("ARXIV_SEARCH_MAX_RESULTS", 500))
+ARXIV_SEARCH_PER_PAGE = int(os.getenv("ARXIV_SEARCH_PER_PAGE", 50))
 REQUIRE_EMAIL_VERIFICATION = os.getenv("REQUIRE_EMAIL_VERIFICATION", "False").lower() in ("true", "1", "yes")
 
 # ---------------------------------------------------------------------------

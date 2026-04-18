@@ -628,6 +628,7 @@ def profile_list_view(request):
         "pb_user": pb_user,
         "profile_data": profile_data,
         "code_to_label": ARXIV_CODE_TO_LABEL,
+        "arxiv_search_per_page": django_settings.ARXIV_SEARCH_PER_PAGE,
     })
 
 
@@ -1014,12 +1015,12 @@ def paper_search_arxiv_api_view(request, profile_id):
         client = arxiv_lib.Client()
         search = arxiv_lib.Search(
             query=query_string,
-            max_results=25,
+            max_results=django_settings.ARXIV_SEARCH_MAX_RESULTS,
             sort_by=arxiv_lib.SortCriterion.SubmittedDate,
             sort_order=arxiv_lib.SortOrder.Descending,
         )
 
-        # Existing paper arxiv_ids for this profile (to grey-out already-added ones)
+        # Existing paper arxiv_ids for this profile (to flag already-added ones)
         corpus = _get_or_create_user_corpus(pb_user, profile)
         existing_ids = set(
             Paper.objects.filter(corpora=corpus, arxiv_id__isnull=False)
@@ -1029,10 +1030,16 @@ def paper_search_arxiv_api_view(request, profile_id):
         results = []
         for paper in client.results(search):
             aid = paper.get_short_id().split("v")[0]  # strip version
+            # Truncate author list after 25 names
+            author_names = [a.name for a in paper.authors]
+            if len(author_names) > 25:
+                authors_str = ", ".join(author_names[:25]) + " et al."
+            else:
+                authors_str = ", ".join(author_names)
             results.append({
                 "arxiv_id": aid,
                 "title": paper.title,
-                "authors": ", ".join(a.name for a in paper.authors),
+                "authors": authors_str,
                 "published": paper.published.strftime("%Y-%m-%d"),
                 "already_added": aid in existing_ids,
             })
@@ -1046,7 +1053,17 @@ def paper_search_arxiv_api_view(request, profile_id):
         )
     except Exception as exc:
         import logging
-        logging.getLogger(__name__).exception("arXiv search failed")
+        logger = logging.getLogger(__name__)
+        logger.exception("arXiv search failed")
+        # Detect upstream rate limiting from arXiv
+        is_rate_limited = (
+            hasattr(exc, 'response') and getattr(exc.response, 'status_code', None) == 429
+        ) or '429' in str(exc)
+        if is_rate_limited:
+            return JsonResponse(
+                {"error": "arXiv is rate-limiting requests. Please wait a minute and try again."},
+                status=429,
+            )
         detail = str(exc) if django_settings.DEBUG else "Search failed. Please try again."
         return JsonResponse({"error": detail}, status=500)
 
