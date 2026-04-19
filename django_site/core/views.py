@@ -1109,18 +1109,22 @@ def recommendations_view(request):
             "recommendations": [],
         })
 
-    # Selected profile (from GET param)
-    selected_id = request.GET.get("profile")
-    if selected_id:
+    # Selected profile (from GET param); default to all profiles
+    selected_id = request.GET.get("profile", "")
+    selected_profile = None  # None = all profiles
+    if selected_id and selected_id != "all":
         try:
             selected_profile = profiles.get(pk=int(selected_id))
         except (Profile.DoesNotExist, ValueError):
-            selected_profile = profiles.first()
-    else:
-        selected_profile = profiles.first()
+            pass  # fall through to all profiles
 
-    # Query recommendations for this profile
+    # Query recommendations for this profile (or all)
     recs = _query_profile_recommendations(pb_user, selected_profile)
+
+    # Sort parameter: "date" (default) or "score"
+    sort_by = request.GET.get("sort", "date")
+    if sort_by not in ("date", "score"):
+        sort_by = "date"
 
     # Apply filters
     try:
@@ -1162,10 +1166,13 @@ def recommendations_view(request):
             if any(c in r.get("categories", []) for c in cat_filter)
         ]
 
-    # Score range for slider
-    all_scores = [r["score"] for r in recs] if recs else []
-    score_min = min(all_scores) if all_scores else 0.0
-    score_max = max(all_scores) if all_scores else 1.0
+    # Apply sort
+    if sort_by == "score":
+        recs.sort(key=lambda x: x["score"], reverse=True)
+    else:
+        # Date descending, then score descending within each date
+        recs.sort(key=lambda x: (x.get("date_obj") or datetime.min.date(), x["score"]),
+                  reverse=True)
 
     # Paginate (20 per page)
     per_page = 20
@@ -1174,49 +1181,73 @@ def recommendations_view(request):
     page = max(1, min(page, total_pages))
     page_recs = recs[(page - 1) * per_page: page * per_page]
 
-    # Group by date for display
+    # Group by date for display (only when sorting by date)
     grouped = defaultdict(list)
-    for r in page_recs:
-        grouped[r.get("date_str", "Unknown Date")].append(r)
+    if sort_by == "date":
+        for r in page_recs:
+            grouped[r.get("date_str", "Unknown Date")].append(r)
+
+    # Categories: from selected profile or aggregated across all profiles
+    if selected_profile:
+        profile_categories = selected_profile.categories or []
+    else:
+        cats = set()
+        for p in profiles:
+            cats.update(p.categories or [])
+        profile_categories = sorted(cats)
+
+    # The value to use in links for the current profile selection
+    profile_param = selected_profile.pk if selected_profile else "all"
 
     return render(request, "recommendations/list.html", {
         "pb_user": pb_user,
         "profiles": profiles,
         "selected_profile": selected_profile,
+        "profile_param": profile_param,
+        "sort_by": sort_by,
         "grouped_recs": dict(grouped),
+        "flat_recs": page_recs if sort_by == "score" else [],
         "total_count": total,
         "page": page,
         "total_pages": total_pages,
         "pages_range": range(1, total_pages + 1),
-        "score_min": score_min,
-        "score_max": score_max,
         "filter_min_score": min_score,
         "filter_date_from": date_from or "",
         "filter_date_to": date_to or "",
         "filter_keyword": keyword,
         "filter_cats": cat_filter,
-        "profile_categories": selected_profile.categories or [],
+        "profile_categories": profile_categories,
         "code_to_label": ARXIV_CODE_TO_LABEL,
     })
 
 
-def _query_profile_recommendations(pb_user, profile):
+def _query_profile_recommendations(pb_user, profile=None):
     """
-    Fetch recommendations for a profile via the same logic as the
-    FastAPI ``/recommendations/profile/{id}`` endpoint.
-    """
-    corpus_name = f"user_{pb_user.pk}_profile_{profile.pk}"
-    try:
-        user_corpus = Corpus.objects.get(user=pb_user, name=corpus_name)
-    except Corpus.DoesNotExist:
-        return []
+    Fetch recommendations for a profile (or all profiles if None).
 
-    # Get runs that used this user corpus
-    runs = RecommendationRun.objects.filter(user_corpus=user_corpus)
+    Returns a deduplicated list of recommendation dicts, unsorted
+    (the caller applies the final sort).
+    """
+    if profile:
+        corpus_name = f"user_{pb_user.pk}_profile_{profile.pk}"
+        try:
+            user_corpora = [Corpus.objects.get(user=pb_user, name=corpus_name)]
+        except Corpus.DoesNotExist:
+            return []
+    else:
+        # All profiles: collect every user corpus
+        user_corpora = list(Corpus.objects.filter(
+            user=pb_user, name__startswith=f"user_{pb_user.pk}_profile_"
+        ))
+        if not user_corpora:
+            return []
+
+    # Get runs that used any of these corpora
+    runs = RecommendationRun.objects.filter(user_corpus__in=user_corpora)
     recs_list = list(
         Recommendation.objects.filter(run__in=runs)
         .select_related("paper", "run")
-        .order_by("-score", "-paper__submitted_date", "paper__arxiv_id")
+        .order_by("-paper__submitted_date", "-score", "paper__arxiv_id")
         [:5000]
     )
 
@@ -1252,7 +1283,7 @@ def _query_profile_recommendations(pb_user, profile):
             "total_papers_fetched": rec.run.total_papers_fetched,
         }
 
-    return sorted(seen.values(), key=lambda x: x["score"], reverse=True)
+    return list(seen.values())
 
 
 # ── Settings ───────────────────────────────────────────────────────────────

@@ -2,27 +2,40 @@
 {% block title %}Recommendations – Preprint Bot{% endblock %}
 
 {% block content %}
-<h1>Recommendations</h1>
-<p class="subtitle">Papers matched to your research profiles.</p>
 
 {% if not profiles %}
+  <div class="flex-between mb-2">
+    <div>
+      <h1>Recommendations</h1>
+      <p class="subtitle">Papers matched to your research profiles.</p>
+    </div>
+  </div>
   <div class="card">
     <p class="text-dim">No profiles found. <a href="{% url 'profile_create' %}">Create one</a> first.</p>
   </div>
 {% else %}
 
-{# ── Profile selector ────────────────────────────────── #}
+{# ── Header with profile selector ────────────────────── #}
+<div class="flex-between mb-2">
+  <div>
+    <h1>Recommendations</h1>
+    <p class="subtitle">Papers matched to your research profiles.</p>
+  </div>
+  <div class="form-group" style="margin:0; min-width:12rem;">
+    <select onchange="location.href='?profile=' + this.value;" aria-label="Select profile">
+      <option value="all" {% if not selected_profile %}selected{% endif %}>All Profiles</option>
+      {% for p in profiles %}
+        <option value="{{ p.pk }}" {% if selected_profile and p.pk == selected_profile.pk %}selected{% endif %}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
+{# ── Filters ─────────────────────────────────────────── #}
 <form method="get" id="filter-form">
+  <input type="hidden" name="profile" value="{{ profile_param }}">
   <div class="card">
     <div class="grid-3">
-      <div class="form-group">
-        <label>Profile</label>
-        <select name="profile" onchange="this.form.submit();">
-          {% for p in profiles %}
-            <option value="{{ p.pk }}" {% if p.pk == selected_profile.pk %}selected{% endif %}>{{ p.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
       <div class="form-group">
         <label>From</label>
         <input type="date" name="date_from" value="{{ filter_date_from }}">
@@ -31,15 +44,25 @@
         <label>To</label>
         <input type="date" name="date_to" value="{{ filter_date_to }}">
       </div>
+      <div class="form-group">
+        <label>Sort by</label>
+        <select name="sort">
+          <option value="date" {% if sort_by == "date" %}selected{% endif %}>Date</option>
+          <option value="score" {% if sort_by == "score" %}selected{% endif %}>Similarity Score</option>
+        </select>
+      </div>
     </div>
 
     <div class="grid-3">
       <div class="form-group">
-        <label>Min Score ({{ score_min|floatformat:2 }} – {{ score_max|floatformat:2 }})</label>
-        <input type="range" name="min_score" min="{{ score_min }}" max="{{ score_max }}" step="0.01"
+        <label>Min Score <span id="score-val" class="text-sm" style="font-weight:400; opacity:.7;">· {{ filter_min_score|floatformat:2 }}</span></label>
+        <input type="range" name="min_score" min="0.40" max="1.00" step="0.01"
                value="{{ filter_min_score|floatformat:2 }}"
-               oninput="document.getElementById('score-val').textContent=parseFloat(this.value).toFixed(2);">
-        <span id="score-val" class="text-sm">{{ filter_min_score|floatformat:2 }}</span>
+               oninput="document.getElementById('score-val').textContent='· ' + parseFloat(this.value).toFixed(2);">
+        <div style="display:flex; justify-content:space-between; font-size:.75rem; color:var(--text-dim);">
+          <span>More results</span>
+          <span>Stricter</span>
+        </div>
       </div>
       <div class="form-group">
         <label>Search title / abstract</label>
@@ -69,10 +92,10 @@
 
     {# ── Quick date buttons ─────────────────────────── #}
     <div style="display:flex; gap:.4rem; margin-top:.75rem;">
-      <a href="?profile={{ selected_profile.pk }}&date_from={{ today }}&date_to={{ today }}" class="btn btn-sm">Today</a>
-      <a href="?profile={{ selected_profile.pk }}&date_from={{ week_ago }}&date_to={{ today }}" class="btn btn-sm">Last 7 days</a>
-      <a href="?profile={{ selected_profile.pk }}&date_from={{ month_ago }}&date_to={{ today }}" class="btn btn-sm">Last 30 days</a>
-      <a href="?profile={{ selected_profile.pk }}" class="btn btn-sm">All time</a>
+      <a href="?profile={{ profile_param }}&sort={{ sort_by }}&date_from={{ yesterday }}&date_to={{ yesterday }}" class="btn btn-sm">Yesterday</a>
+      <a href="?profile={{ profile_param }}&sort={{ sort_by }}&date_from={{ week_ago }}&date_to={{ today }}" class="btn btn-sm">Last 7 days</a>
+      <a href="?profile={{ profile_param }}&sort={{ sort_by }}&date_from={{ month_ago }}&date_to={{ today }}" class="btn btn-sm">Last 30 days</a>
+      <a href="?profile={{ profile_param }}&sort={{ sort_by }}" class="btn btn-sm">All time</a>
     </div>
   </div>
 </form>
@@ -83,14 +106,51 @@
   {% if total_pages > 1 %} · Page {{ page }} of {{ total_pages }}{% endif %}
 </p>
 
-{# ── Grouped results ─────────────────────────────────── #}
-{% if not grouped_recs %}
-  <div class="card"><p class="text-dim">No recommendations match these filters.</p></div>
-{% else %}
-  {% for date_str, recs in grouped_recs.items %}
-    <div class="date-header">{{ date_str }}</div>
+{# ── Results: grouped by date ────────────────────────── #}
+{% if sort_by == "date" %}
+  {% if not grouped_recs %}
+    <div class="card"><p class="text-dim">No recommendations match these filters.</p></div>
+  {% else %}
+    {% for date_str, recs in grouped_recs.items %}
+      <div class="date-header">{{ date_str }}</div>
 
-    {% for rec in recs %}
+      {% for rec in recs %}
+      <div class="card">
+        <div class="flex-between mb-1">
+          <h3 style="flex:1; margin:0;">{{ rec.title }}</h3>
+          <span class="score-badge">{{ rec.score|floatformat:3 }}</span>
+        </div>
+
+        {% if rec.categories %}
+          <div style="margin-bottom:.35rem;">
+            {% for c in rec.categories %}<span class="tag">{{ c }}</span>{% endfor %}
+          </div>
+        {% endif %}
+
+        {% if rec.arxiv_id %}
+          <span class="text-sm text-dim text-mono">{{ rec.arxiv_id }}</span>
+        {% endif %}
+
+        {% if rec.summary_text %}
+          <p class="mt-1" style="font-size:.88rem;">{{ rec.summary_text }}</p>
+        {% elif rec.abstract %}
+          <p class="mt-1 text-dim" style="font-size:.86rem;">{{ rec.abstract|truncatewords:50 }}</p>
+        {% endif %}
+
+        {% if rec.arxiv_id %}
+          <a href="https://arxiv.org/abs/{{ rec.arxiv_id }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm mt-1">View on arXiv →</a>
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% endfor %}
+  {% endif %}
+
+{# ── Results: flat list sorted by score ──────────────── #}
+{% else %}
+  {% if not flat_recs %}
+    <div class="card"><p class="text-dim">No recommendations match these filters.</p></div>
+  {% else %}
+    {% for rec in flat_recs %}
     <div class="card">
       <div class="flex-between mb-1">
         <h3 style="flex:1; margin:0;">{{ rec.title }}</h3>
@@ -103,9 +163,10 @@
         </div>
       {% endif %}
 
-      {% if rec.arxiv_id %}
-        <span class="text-sm text-dim text-mono">{{ rec.arxiv_id }}</span>
-      {% endif %}
+      <div class="text-sm text-dim" style="margin-bottom:.25rem;">
+        {% if rec.arxiv_id %}<span class="text-mono">{{ rec.arxiv_id }}</span> · {% endif %}
+        {{ rec.date_str }}
+      </div>
 
       {% if rec.summary_text %}
         <p class="mt-1" style="font-size:.88rem;">{{ rec.summary_text }}</p>
@@ -118,28 +179,28 @@
       {% endif %}
     </div>
     {% endfor %}
-  {% endfor %}
+  {% endif %}
 {% endif %}
 
 {# ── Pagination ──────────────────────────────────────── #}
 {% if total_pages > 1 %}
 <div class="pagination">
   {% if page > 1 %}
-    <a href="?profile={{ selected_profile.pk }}&page={{ page|add:"-1" }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">← Prev</a>
+    <a href="?profile={{ profile_param }}&sort={{ sort_by }}&page={{ page|add:"-1" }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">← Prev</a>
   {% endif %}
 
   {% for p in pages_range %}
     {% if p == page %}
       <span class="current">{{ p }}</span>
     {% elif p == 1 or p == total_pages or p >= page|add:"-2" and p <= page|add:"2" %}
-      <a href="?profile={{ selected_profile.pk }}&page={{ p }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">{{ p }}</a>
+      <a href="?profile={{ profile_param }}&sort={{ sort_by }}&page={{ p }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">{{ p }}</a>
     {% elif p == page|add:"-3" or p == page|add:"3" %}
       <span class="text-dim">…</span>
     {% endif %}
   {% endfor %}
 
   {% if page < total_pages %}
-    <a href="?profile={{ selected_profile.pk }}&page={{ page|add:"1" }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">Next →</a>
+    <a href="?profile={{ profile_param }}&sort={{ sort_by }}&page={{ page|add:"1" }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">Next →</a>
   {% endif %}
 </div>
 {% endif %}

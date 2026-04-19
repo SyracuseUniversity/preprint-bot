@@ -12,6 +12,7 @@ def date_helpers(request):
     today = date.today()
     return {
         "today": today.isoformat(),
+        "yesterday": (today - timedelta(days=1)).isoformat(),
         "week_ago": (today - timedelta(days=7)).isoformat(),
         "month_ago": (today - timedelta(days=30)).isoformat(),
     }
