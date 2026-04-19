@@ -13,12 +13,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.getenv(
-    "DJANGO_SECRET_KEY",
-    "django-insecure-change-me-in-production-abc123xyz",
-)
+_INSECURE_KEY = "django-insecure-change-me-in-production-abc123xyz"
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", _INSECURE_KEY)
 
 DEBUG = os.getenv("DJANGO_DEBUG", "True").lower() in ("true", "1", "yes")
+
+if not DEBUG and SECRET_KEY == _INSECURE_KEY:
+    raise RuntimeError(
+        "DJANGO_SECRET_KEY must be set to a unique, unpredictable value in production. "
+        "Generate one with: python -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())'"
+    )
 
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()]
 

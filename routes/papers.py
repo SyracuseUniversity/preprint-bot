@@ -64,30 +64,32 @@ async def create_paper(paper: PaperCreate):
         submitted_date_naive = paper.submitted_date.replace(tzinfo=None) if paper.submitted_date else None
         
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO papers (arxiv_id, title, abstract, metadata, pdf_path, submitted_date, source)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                RETURNING id, corpus_id, arxiv_id, title, abstract, metadata, pdf_path, processed_text_path, submitted_date, source, created_at
-                """,
-                paper.arxiv_id, 
-                paper.title, 
-                paper.abstract,
-                json.dumps(paper.metadata) if paper.metadata else None,
-                paper.pdf_path,
-                submitted_date_naive,
-                paper.source.value
-            )
-            # Populate the M2M junction table
-            if paper.corpus_id is not None:
-                await conn.execute(
+            # Wrap in a transaction so the paper + junction insert are atomic
+            async with conn.transaction():
+                row = await conn.fetchrow(
                     """
-                    INSERT INTO papers_corpora (paper_id, corpus_id)
-                    VALUES ($1, $2)
-                    ON CONFLICT DO NOTHING
+                    INSERT INTO papers (arxiv_id, title, abstract, metadata, pdf_path, submitted_date, source)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    RETURNING id, corpus_id, arxiv_id, title, abstract, metadata, pdf_path, processed_text_path, submitted_date, source, created_at
                     """,
-                    row['id'], paper.corpus_id
+                    paper.arxiv_id, 
+                    paper.title, 
+                    paper.abstract,
+                    json.dumps(paper.metadata) if paper.metadata else None,
+                    paper.pdf_path,
+                    submitted_date_naive,
+                    paper.source.value
                 )
+                # Populate the M2M junction table
+                if paper.corpus_id is not None:
+                    await conn.execute(
+                        """
+                        INSERT INTO papers_corpora (paper_id, corpus_id)
+                        VALUES ($1, $2)
+                        ON CONFLICT DO NOTHING
+                        """,
+                        row['id'], paper.corpus_id
+                    )
             result = dict(row)
             if result['metadata']:
                 result['metadata'] = json.loads(result['metadata'])

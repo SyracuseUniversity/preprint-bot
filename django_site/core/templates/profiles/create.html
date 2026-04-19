@@ -82,15 +82,20 @@
 <script>
 // ── Category picker with search and collapsible groups ──────
 // Renders ARXIV_CATEGORY_TREE as nested <details> with checkboxes.
-// Groups are collapsed by default; groups with pre-selected children
-// are expanded. A search input filters categories and shows selected
-// ones as removable tags.
+// Groups are collapsed by default; groups with any pre-selected
+// descendant leaf are expanded (recursive). A search input filters
+// categories and shows selected ones as removable tags.
 
 const TREE = JSON.parse('{{ category_tree_json|escapejs }}');
 const INITIAL = JSON.parse('{{ initial_categories_json|default:"[]"|escapejs }}');
 const initialSet = new Set(INITIAL);
 
 /* ── Build the tree ────────────────────────────────────────── */
+
+function hasSelectedDescendant(node) {
+  if (!node.children || !node.children.length) return initialSet.has(node.value);
+  return node.children.some(c => hasSelectedDescendant(c));
+}
 
 function buildTree(nodes, container) {
   nodes.forEach(node => {
@@ -100,8 +105,8 @@ function buildTree(nodes, container) {
 
     if (hasChildren) {
       const details = document.createElement('details');
-      // Only expand groups that have pre-selected children
-      const hasSelected = node.children.some(c => initialSet.has(c.value));
+      // Expand groups that have any pre-selected descendant (recursive)
+      const hasSelected = hasSelectedDescendant(node);
       details.open = hasSelected;
       details.className = 'cat-group';
 
