@@ -12,6 +12,16 @@
 
   <link rel="stylesheet" href="{% static 'core/style.css' %}">
 
+  {% if ACCENT_COLOR or NAV_COLOR %}
+  <style>
+    :root {
+      {% if ACCENT_COLOR %}--accent: {{ ACCENT_COLOR }};
+      --accent-dim: color-mix(in srgb, {{ ACCENT_COLOR }} 15%, white);{% endif %}
+      {% if NAV_COLOR %}--bg-nav: {{ NAV_COLOR }};{% endif %}
+    }
+  </style>
+  {% endif %}
+
   {% block extra_head %}{% endblock %}
 </head>
 <body>

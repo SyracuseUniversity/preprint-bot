@@ -126,6 +126,8 @@ to browse data.
 | `SHOW_BETA_BANNER`   | `True`               | Dismissable beta feedback banner    |
 | `ARXIV_SEARCH_MAX_RESULTS` | `500`          | Max papers returned by arXiv search |
 | `ARXIV_SEARCH_PER_PAGE`    | `50`           | Results per page in arXiv search    |
+| `ACCENT_COLOR`             | (empty)        | CSS accent color override, e.g. `#e65100` |
+| `NAV_COLOR`                | (empty)        | Navbar background color override, e.g. `#1b5e20` |
 | `REQUIRE_EMAIL_VERIFICATION` | `False`      | Require email verification on registration |
 | `DEFAULT_FROM_EMAIL` | `noreply@localhost`  | Sender address for verification/reset emails |
 | `EMAIL_HOST`         | (none)               | SMTP host — enables SMTP backend when set |
