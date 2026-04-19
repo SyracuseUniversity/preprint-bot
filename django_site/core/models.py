@@ -250,6 +250,18 @@ class Embedding(models.Model):
 
     class Meta:
         db_table = "embeddings"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["paper", "type", "model_name"],
+                condition=models.Q(section__isnull=True),
+                name="embeddings_paper_type_model_null_section_unique",
+            ),
+            models.UniqueConstraint(
+                fields=["paper", "section", "type", "model_name"],
+                condition=models.Q(section__isnull=False),
+                name="embeddings_paper_section_type_model_unique",
+            ),
+        ]
 
 
 # ── Processing runs ────────────────────────────────────────────────────────

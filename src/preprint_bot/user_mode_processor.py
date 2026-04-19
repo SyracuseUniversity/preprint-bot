@@ -129,10 +129,18 @@ async def _embed_single_paper(
     """
     stored = 0
 
-    # Abstract embedding from title + abstract
+    # Abstract embedding from title + abstract (fall back to sections if too short)
     title = paper.get('title', '')
     abstract = paper.get('abstract', '')
     abstract_text = f'{title}. {abstract}'.strip()
+
+    # If title+abstract is too short, supplement with early section text
+    sections = await api_client.get_sections_by_paper(paper['id'])
+    if len(abstract_text.split()) <= 5 and sections:
+        section_text = ' '.join(
+            s.get('text', '') for s in sections[:3]  # first 3 sections
+        ).strip()
+        abstract_text = f'{abstract_text} {section_text}'.strip()
 
     if len(abstract_text.split()) > 5:  # need some content to embed
         emb = model.encode([abstract_text], normalize_embeddings=True)[0]
@@ -144,8 +152,7 @@ async def _embed_single_paper(
         )
         stored += 1
 
-    # Section embeddings
-    sections = await api_client.get_sections_by_paper(paper['id'])
+    # Section embeddings (reuse sections fetched above)
     for section in sections:
         text = section.get('text', '')
         if len(text.split()) > 20:  # only substantial sections
