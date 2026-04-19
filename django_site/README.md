@@ -128,6 +128,7 @@ to browse data.
 | `ARXIV_SEARCH_PER_PAGE`    | `50`           | Results per page in arXiv search    |
 | `ACCENT_COLOR`             | (empty)        | CSS accent color override, e.g. `#e65100` |
 | `NAV_COLOR`                | (empty)        | Navbar background color override, e.g. `#1b5e20` |
+| `REGISTRATION_OPEN`        | `True`         | Set to `False` to block new account creation |
 | `REQUIRE_EMAIL_VERIFICATION` | `False`      | Require email verification on registration |
 | `DEFAULT_FROM_EMAIL` | `noreply@localhost`  | Sender address for verification/reset emails |
 | `EMAIL_HOST`         | (none)               | SMTP host — enables SMTP backend when set |

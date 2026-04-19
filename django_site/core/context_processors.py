@@ -27,4 +27,5 @@ def site_settings(request):
         "ORCID_ENABLED": bool(getattr(django_settings, "ORCID_CLIENT_ID", "")),
         "ACCENT_COLOR": getattr(django_settings, "ACCENT_COLOR", ""),
         "NAV_COLOR": getattr(django_settings, "NAV_COLOR", ""),
+        "REGISTRATION_OPEN": getattr(django_settings, "REGISTRATION_OPEN", True),
     }

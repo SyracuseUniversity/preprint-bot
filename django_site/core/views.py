@@ -209,6 +209,10 @@ def login_view(request):
 
 
 def register_view(request):
+    if not django_settings.REGISTRATION_OPEN:
+        messages.info(request, "Registration is currently closed on this site.")
+        return redirect("login")
+
     if request.user.is_authenticated:
         return redirect("dashboard")
 
@@ -369,6 +373,9 @@ def orcid_callback_view(request):
     orcid_email = orcid_helpers.fetch_email(orcid_id, access_token) if access_token else None
 
     if orcid_email and not PBUser.objects.filter(email__iexact=orcid_email).exists():
+        if not django_settings.REGISTRATION_OPEN:
+            messages.info(request, "Registration is currently closed on this site.")
+            return redirect("login")
         # Got an email and it's not taken — create the account directly
         pb_user = PBUser.objects.create_user(
             email=orcid_email,
@@ -381,6 +388,9 @@ def orcid_callback_view(request):
         return redirect("dashboard")
 
     # No email from ORCID, or email already in use — ask for one
+    if not django_settings.REGISTRATION_OPEN:
+        messages.info(request, "Registration is currently closed on this site.")
+        return redirect("login")
     request.session["orcid_pending"] = {
         "orcid_id": orcid_id,
         "name": orcid_name,
@@ -390,6 +400,10 @@ def orcid_callback_view(request):
 
 def orcid_complete_view(request):
     """Collect email for a new ORCID user (first sign-in)."""
+    if not django_settings.REGISTRATION_OPEN:
+        messages.info(request, "Registration is currently closed on this site.")
+        return redirect("login")
+
     pending = request.session.get("orcid_pending")
     if not pending:
         messages.error(request, "No pending ORCID sign-in. Please start again.")

@@ -156,6 +156,7 @@ ARXIV_SEARCH_MAX_RESULTS = int(os.getenv("ARXIV_SEARCH_MAX_RESULTS", 500))
 ARXIV_SEARCH_PER_PAGE = int(os.getenv("ARXIV_SEARCH_PER_PAGE", 50))
 ACCENT_COLOR = os.getenv("ACCENT_COLOR", "")  # e.g. "#e65100" — overrides the default blue
 NAV_COLOR = os.getenv("NAV_COLOR", "")  # e.g. "#1b5e20" — overrides the dark navbar
+REGISTRATION_OPEN = os.getenv("REGISTRATION_OPEN", "True").lower() in ("true", "1", "yes")
 REQUIRE_EMAIL_VERIFICATION = os.getenv("REQUIRE_EMAIL_VERIFICATION", "False").lower() in ("true", "1", "yes")
 
 # ---------------------------------------------------------------------------
