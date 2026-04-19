@@ -232,6 +232,25 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: .35rem; }
   color: var(--text-dim);
   margin: .1rem .15rem;
 }
+.tag-toggle {
+  display: inline-block;
+  font-size: .78rem;
+  padding: .25rem .7rem;
+  border-radius: 9999px;
+  background: #f3f4f6;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  transition: background .15s, color .15s, border-color .15s;
+  margin: .1rem .15rem;
+}
+.tag-toggle:hover { border-color: var(--accent); }
+.tag-toggle.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
 
 /* ── Grid helpers ─────────────────────────────────────── */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }

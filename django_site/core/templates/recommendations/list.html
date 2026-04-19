@@ -22,7 +22,7 @@
     <p class="subtitle">Papers matched to your research profiles.</p>
   </div>
   <div class="form-group" style="margin:0; min-width:12rem;">
-    <select onchange="location.href='?profile=' + this.value;" aria-label="Select profile">
+    <select id="profile-select" onchange="location.href='?profile=' + this.value;" aria-label="Select profile">
       <option value="all" {% if not selected_profile %}selected{% endif %}>All Profiles</option>
       {% for p in profiles %}
         <option value="{{ p.pk }}" {% if selected_profile and p.pk == selected_profile.pk %}selected{% endif %}>{{ p.name }}</option>
@@ -32,178 +32,421 @@
 </div>
 
 {# ── Filters ─────────────────────────────────────────── #}
-<form method="get" id="filter-form">
-  <input type="hidden" name="profile" value="{{ profile_param }}">
-  <div class="card">
-    <div class="grid-3">
-      <div class="form-group">
-        <label>From</label>
-        <input type="date" name="date_from" value="{{ filter_date_from }}">
-      </div>
-      <div class="form-group">
-        <label>To</label>
-        <input type="date" name="date_to" value="{{ filter_date_to }}">
-      </div>
-      <div class="form-group">
-        <label>Sort by</label>
-        <select name="sort">
-          <option value="date" {% if sort_by == "date" %}selected{% endif %}>Date</option>
-          <option value="score" {% if sort_by == "score" %}selected{% endif %}>Similarity Score</option>
-        </select>
-      </div>
+<div class="card" id="filter-card">
+  <div class="grid-3">
+    <div class="form-group">
+      <label>From</label>
+      <input type="date" id="f-date-from">
     </div>
-
-    <div class="grid-3">
-      <div class="form-group">
-        <label>Min Score <span id="score-val" class="text-sm" style="font-weight:400; opacity:.7;">· {{ filter_min_score|floatformat:2 }}</span></label>
-        <input type="range" name="min_score" min="0.40" max="1.00" step="0.01"
-               value="{{ filter_min_score|floatformat:2 }}"
-               oninput="document.getElementById('score-val').textContent='· ' + parseFloat(this.value).toFixed(2);">
-        <div style="display:flex; justify-content:space-between; font-size:.75rem; color:var(--text-dim);">
-          <span>More results</span>
-          <span>Stricter</span>
-        </div>
-      </div>
-      <div class="form-group">
-        <label>Search title / abstract</label>
-        <input type="text" name="q" value="{{ filter_keyword }}" placeholder="Keywords…">
-      </div>
-      <div class="form-group">
-        <label>&nbsp;</label>
-        <button type="submit" class="btn btn-primary" style="width:100%;">Apply Filters</button>
-      </div>
+    <div class="form-group">
+      <label>To</label>
+      <input type="date" id="f-date-to">
     </div>
-
-    {# ── Category checkboxes ────────────────────────── #}
-    {% if profile_categories %}
-    <details style="margin-top:.5rem;">
-      <summary class="text-sm" style="cursor:pointer; font-weight:600;">Filter by category</summary>
-      <div style="display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.4rem;">
-        {% for cat in profile_categories %}
-          <label style="display:flex; align-items:center; gap:.25rem; font-size:.82rem; cursor:pointer;">
-            <input type="checkbox" name="cat" value="{{ cat }}"
-                   {% if cat in filter_cats %}checked{% endif %}>
-            {{ cat }}
-          </label>
-        {% endfor %}
-      </div>
-    </details>
-    {% endif %}
-
-    {# ── Quick date buttons ─────────────────────────── #}
-    <div style="display:flex; gap:.4rem; margin-top:.75rem;">
-      <a href="?profile={{ profile_param }}&sort={{ sort_by }}&date_from={{ yesterday }}&date_to={{ yesterday }}" class="btn btn-sm">Yesterday</a>
-      <a href="?profile={{ profile_param }}&sort={{ sort_by }}&date_from={{ week_ago }}&date_to={{ today }}" class="btn btn-sm">Last 7 days</a>
-      <a href="?profile={{ profile_param }}&sort={{ sort_by }}&date_from={{ month_ago }}&date_to={{ today }}" class="btn btn-sm">Last 30 days</a>
-      <a href="?profile={{ profile_param }}&sort={{ sort_by }}" class="btn btn-sm">All time</a>
+    <div class="form-group">
+      <label>Sort by</label>
+      <select id="f-sort">
+        <option value="date">Date</option>
+        <option value="score">Similarity Score</option>
+      </select>
     </div>
   </div>
-</form>
+
+  <div class="grid-3">
+    <div class="form-group">
+      <label>Min Score <span id="score-val" class="text-sm" style="font-weight:400; opacity:.7;">· 0.40</span></label>
+      <input type="range" id="f-min-score" min="0.40" max="1.00" step="0.01" value="0.40">
+      <div style="display:flex; justify-content:space-between; font-size:.75rem; color:var(--text-dim);">
+        <span>More results</span>
+        <span>Stricter</span>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Search title / abstract</label>
+      <input type="text" id="f-keyword" placeholder="Keywords…">
+    </div>
+    <div class="form-group">
+      <label>&nbsp;</label>
+      <button type="button" class="btn btn-danger" style="width:100%;" onclick="resetFilters()">Reset Filters</button>
+    </div>
+  </div>
+
+  {# ── Category pill filters ────────────────────────── #}
+  <div id="cat-filters" style="display:none; margin-top:.5rem;">
+    <span class="text-sm" style="font-weight:600;">Categories</span>
+    <div id="cat-pills" style="margin-top:.3rem;"></div>
+  </div>
+
+  {# ── Quick date buttons ─────────────────────────── #}
+  <div style="margin-top:.75rem;">
+    <span class="text-sm" style="font-weight:600;">Date Range</span>
+  </div>
+  <div style="display:flex; gap:.4rem; margin-top:.3rem; flex-wrap:wrap;">
+    <span class="tag-toggle date-preset" data-preset="yesterday" onclick="setDateRange('yesterday')">Yesterday</span>
+    <span class="tag-toggle date-preset" data-preset="week" onclick="setDateRange('week')">Last 7 days</span>
+    <span class="tag-toggle date-preset" data-preset="month" onclick="setDateRange('month')">Last 30 days</span>
+    <span class="tag-toggle date-preset active" data-preset="all" onclick="setDateRange('all')">All time</span>
+  </div>
+</div>
 
 {# ── Result count ────────────────────────────────────── #}
-<p class="text-sm text-dim" style="margin-bottom:.75rem;">
-  {{ total_count }} recommendation{{ total_count|pluralize }} found
-  {% if total_pages > 1 %} · Page {{ page }} of {{ total_pages }}{% endif %}
-</p>
+<p class="text-sm text-dim" style="margin-bottom:.75rem;" id="result-count"></p>
 
-{# ── Results: grouped by date ────────────────────────── #}
-{% if sort_by == "date" %}
-  {% if not grouped_recs %}
-    <div class="card"><p class="text-dim">No recommendations match these filters.</p></div>
-  {% else %}
-    {% for date_str, recs in grouped_recs.items %}
-      <div class="date-header">{{ date_str }}</div>
-
-      {% for rec in recs %}
-      <div class="card">
-        <div class="flex-between mb-1">
-          <h3 style="flex:1; margin:0;">{{ rec.title }}</h3>
-          <span class="score-badge">{{ rec.score|floatformat:3 }}</span>
-        </div>
-
-        {% if rec.categories %}
-          <div style="margin-bottom:.35rem;">
-            {% for c in rec.categories %}<span class="tag">{{ c }}</span>{% endfor %}
-          </div>
-        {% endif %}
-
-        {% if rec.arxiv_id %}
-          <span class="text-sm text-dim text-mono">{{ rec.arxiv_id }}</span>
-        {% endif %}
-
-        {% if rec.summary_text %}
-          <p class="mt-1" style="font-size:.88rem;">{{ rec.summary_text }}</p>
-        {% elif rec.abstract %}
-          <p class="mt-1 text-dim" style="font-size:.86rem;">{{ rec.abstract|truncatewords:50 }}</p>
-        {% endif %}
-
-        {% if rec.arxiv_id %}
-          <a href="https://arxiv.org/abs/{{ rec.arxiv_id }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm mt-1">View on arXiv →</a>
-        {% endif %}
-      </div>
-      {% endfor %}
-    {% endfor %}
-  {% endif %}
-
-{# ── Results: flat list sorted by score ──────────────── #}
-{% else %}
-  {% if not flat_recs %}
-    <div class="card"><p class="text-dim">No recommendations match these filters.</p></div>
-  {% else %}
-    {% for rec in flat_recs %}
-    <div class="card">
-      <div class="flex-between mb-1">
-        <h3 style="flex:1; margin:0;">{{ rec.title }}</h3>
-        <span class="score-badge">{{ rec.score|floatformat:3 }}</span>
-      </div>
-
-      {% if rec.categories %}
-        <div style="margin-bottom:.35rem;">
-          {% for c in rec.categories %}<span class="tag">{{ c }}</span>{% endfor %}
-        </div>
-      {% endif %}
-
-      <div class="text-sm text-dim" style="margin-bottom:.25rem;">
-        {% if rec.arxiv_id %}<span class="text-mono">{{ rec.arxiv_id }}</span> · {% endif %}
-        {{ rec.date_str }}
-      </div>
-
-      {% if rec.summary_text %}
-        <p class="mt-1" style="font-size:.88rem;">{{ rec.summary_text }}</p>
-      {% elif rec.abstract %}
-        <p class="mt-1 text-dim" style="font-size:.86rem;">{{ rec.abstract|truncatewords:50 }}</p>
-      {% endif %}
-
-      {% if rec.arxiv_id %}
-        <a href="https://arxiv.org/abs/{{ rec.arxiv_id }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm mt-1">View on arXiv →</a>
-      {% endif %}
-    </div>
-    {% endfor %}
-  {% endif %}
-{% endif %}
+{# ── Results container ───────────────────────────────── #}
+<div id="results"></div>
 
 {# ── Pagination ──────────────────────────────────────── #}
-{% if total_pages > 1 %}
-<div class="pagination">
-  {% if page > 1 %}
-    <a href="?profile={{ profile_param }}&sort={{ sort_by }}&page={{ page|add:"-1" }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">← Prev</a>
-  {% endif %}
-
-  {% for p in pages_range %}
-    {% if p == page %}
-      <span class="current">{{ p }}</span>
-    {% elif p == 1 or p == total_pages or p >= page|add:"-2" and p <= page|add:"2" %}
-      <a href="?profile={{ profile_param }}&sort={{ sort_by }}&page={{ p }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">{{ p }}</a>
-    {% elif p == page|add:"-3" or p == page|add:"3" %}
-      <span class="text-dim">…</span>
-    {% endif %}
-  {% endfor %}
-
-  {% if page < total_pages %}
-    <a href="?profile={{ profile_param }}&sort={{ sort_by }}&page={{ page|add:"1" }}&min_score={{ filter_min_score|floatformat:2 }}&date_from={{ filter_date_from|urlencode }}&date_to={{ filter_date_to|urlencode }}&q={{ filter_keyword|urlencode }}{% for c in filter_cats %}&cat={{ c|urlencode }}{% endfor %}">Next →</a>
-  {% endif %}
-</div>
-{% endif %}
+<div id="pagination" class="pagination"></div>
 
 {% endif %}{# /profiles exist #}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if profiles %}
+<script>
+/* ── Data from server ──────────────────────────────── */
+const ALL_RECS = JSON.parse('{{ recs_json|escapejs }}');
+const CATEGORIES = JSON.parse('{{ categories_json|escapejs }}');
+const CODE_TO_LABEL = JSON.parse('{{ code_to_label_json|escapejs }}');
+const PROFILE_PARAM = '{{ profile_param }}';
+const PER_PAGE = 20;
+
+let currentPage = 1;
+
+/* ── Date helpers ──────────────────────────────────── */
+function isoDate(d) { return d.toISOString().slice(0, 10); }
+function daysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return isoDate(d);
+}
+const TODAY = isoDate(new Date());
+const YESTERDAY = daysAgo(1);
+const WEEK_AGO = daysAgo(7);
+const MONTH_AGO = daysAgo(30);
+
+/* ── HTML escape ───────────────────────────────────── */
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+/* ── Truncate words (match Django's truncatewords:50) ─ */
+function truncWords(s, n) {
+  if (!s) return '';
+  const words = s.split(/\s+/);
+  if (words.length <= n) return s;
+  return words.slice(0, n).join(' ') + ' …';
+}
+
+/* ── Format date for display ─────────────────────── */
+function formatDate(isoStr) {
+  if (!isoStr) return 'Unknown Date';
+  const d = new Date(isoStr + 'T00:00:00');
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/* ── Category label lookup ─────────────────────────── */
+function catLabel(code) {
+  return CODE_TO_LABEL[code] || code;
+}
+
+/* ── Build category pill filters ──────────────────── */
+function buildCatFilters() {
+  const container = document.getElementById('cat-pills');
+  const wrapper = document.getElementById('cat-filters');
+  if (!CATEGORIES.length) { wrapper.style.display = 'none'; return; }
+  wrapper.style.display = '';
+  container.innerHTML = '';
+  CATEGORIES.forEach(cat => {
+    const pill = document.createElement('span');
+    pill.className = 'tag-toggle';
+    pill.textContent = catLabel(cat);
+    pill.dataset.value = cat;
+    pill.addEventListener('click', () => {
+      pill.classList.toggle('active');
+      currentPage = 1;
+      applyFilters();
+    });
+    container.appendChild(pill);
+  });
+}
+
+/* ── Read current filter state ────────────────────── */
+function getFilters() {
+  return {
+    sort: document.getElementById('f-sort').value,
+    minScore: parseFloat(document.getElementById('f-min-score').value) || 0,
+    dateFrom: document.getElementById('f-date-from').value,
+    dateTo: document.getElementById('f-date-to').value,
+    keyword: document.getElementById('f-keyword').value.trim().toLowerCase(),
+    cats: [...document.querySelectorAll('#cat-pills .tag-toggle.active')].map(el => el.dataset.value),
+  };
+}
+
+/* ── Filter + sort + render ───────────────────────── */
+function applyFilters() {
+  const f = getFilters();
+
+  /* filter */
+  let recs = ALL_RECS.filter(r => {
+    if (f.minScore > 0 && r.score < f.minScore) return false;
+    if (f.dateFrom && (!r.date_iso || r.date_iso < f.dateFrom)) return false;
+    if (f.dateTo && (!r.date_iso || r.date_iso > f.dateTo)) return false;
+    if (f.keyword) {
+      const kw = f.keyword;
+      if (!(r.title || '').toLowerCase().includes(kw)
+          && !(r.abstract || '').toLowerCase().includes(kw)) return false;
+    }
+    if (f.cats.length > 0) {
+      if (!r.categories || !r.categories.some(c => f.cats.includes(c))) return false;
+    }
+    return true;
+  });
+
+  /* sort */
+  if (f.sort === 'score') {
+    recs.sort((a, b) => b.score - a.score);
+  } else {
+    /* date desc, then score desc within each date */
+    recs.sort((a, b) => {
+      const da = a.date_iso || '';
+      const db = b.date_iso || '';
+      if (da !== db) return db.localeCompare(da);
+      return b.score - a.score;
+    });
+  }
+
+  /* paginate */
+  const total = recs.length;
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  currentPage = Math.max(1, Math.min(currentPage, totalPages));
+  const start = (currentPage - 1) * PER_PAGE;
+  const pageRecs = recs.slice(start, start + PER_PAGE);
+
+  /* render count */
+  let countText = total + ' recommendation' + (total !== 1 ? 's' : '') + ' found';
+  if (totalPages > 1) countText += ' · Page ' + currentPage + ' of ' + totalPages;
+  document.getElementById('result-count').textContent = countText;
+
+  /* render results */
+  const container = document.getElementById('results');
+  if (pageRecs.length === 0) {
+    container.innerHTML = '<div class="card"><p class="text-dim">No recommendations match these filters.</p></div>';
+  } else if (f.sort === 'date') {
+    container.innerHTML = renderGrouped(pageRecs);
+  } else {
+    container.innerHTML = renderFlat(pageRecs);
+  }
+
+  /* render pagination */
+  renderPagination(totalPages);
+
+  /* update URL */
+  updateURL(f);
+}
+
+/* ── Render grouped by date ───────────────────────── */
+function renderGrouped(recs) {
+  let html = '';
+  let lastDate = null;
+  recs.forEach(r => {
+    const dateKey = r.date_iso || 'unknown';
+    if (dateKey !== lastDate) {
+      html += '<div class="date-header">' + esc(r.date_str || formatDate(r.date_iso)) + '</div>';
+      lastDate = dateKey;
+    }
+    html += renderCard(r, false);
+  });
+  return html;
+}
+
+/* ── Render flat list ─────────────────────────────── */
+function renderFlat(recs) {
+  return recs.map(r => renderCard(r, true)).join('');
+}
+
+/* ── Render a single card ─────────────────────────── */
+function renderCard(r, showDate) {
+  let html = '<div class="card">';
+  html += '<div class="flex-between mb-1">'
+    + '<h3 style="flex:1; margin:0;">' + esc(r.title) + '</h3>'
+    + '<span class="score-badge">' + r.score.toFixed(3) + '</span>'
+    + '</div>';
+
+  if (r.categories && r.categories.length) {
+    html += '<div style="margin-bottom:.35rem;">';
+    r.categories.forEach(c => { html += '<span class="tag">' + esc(catLabel(c)) + '</span>'; });
+    html += '</div>';
+  }
+
+  if (showDate) {
+    html += '<div class="text-sm text-dim" style="margin-bottom:.25rem;">';
+    if (r.arxiv_id) html += '<span class="text-mono">' + esc(r.arxiv_id) + '</span> &middot; ';
+    html += esc(r.date_str || formatDate(r.date_iso));
+    html += '</div>';
+  } else if (r.arxiv_id) {
+    html += '<span class="text-sm text-dim text-mono">' + esc(r.arxiv_id) + '</span>';
+  }
+
+  if (r.summary_text) {
+    html += '<p class="mt-1" style="font-size:.88rem;">' + esc(r.summary_text) + '</p>';
+  } else if (r.abstract) {
+    html += '<p class="mt-1 text-dim" style="font-size:.86rem;">' + esc(truncWords(r.abstract, 50)) + '</p>';
+  }
+
+  if (r.arxiv_id) {
+    html += '<a href="https://arxiv.org/abs/' + esc(r.arxiv_id)
+      + '" target="_blank" rel="noopener noreferrer" class="btn btn-sm mt-1">View on arXiv →</a>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+/* ── Render pagination ────────────────────────────── */
+function renderPagination(totalPages) {
+  const el = document.getElementById('pagination');
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+
+  let html = '';
+  if (currentPage > 1) {
+    html += '<a href="#" onclick="goPage(' + (currentPage - 1) + ');return false;">← Prev</a> ';
+  }
+  for (let p = 1; p <= totalPages; p++) {
+    if (p === currentPage) {
+      html += '<span class="current">' + p + '</span> ';
+    } else if (p === 1 || p === totalPages || (p >= currentPage - 2 && p <= currentPage + 2)) {
+      html += '<a href="#" onclick="goPage(' + p + ');return false;">' + p + '</a> ';
+    } else if (p === currentPage - 3 || p === currentPage + 3) {
+      html += '<span class="text-dim">…</span> ';
+    }
+  }
+  if (currentPage < totalPages) {
+    html += '<a href="#" onclick="goPage(' + (currentPage + 1) + ');return false;">Next →</a>';
+  }
+  el.innerHTML = html;
+}
+
+function goPage(p) {
+  currentPage = p;
+  applyFilters();
+  document.getElementById('filter-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ── Quick date buttons ───────────────────────────── */
+function setDateRange(preset) {
+  const from = document.getElementById('f-date-from');
+  const to = document.getElementById('f-date-to');
+  switch (preset) {
+    case 'yesterday': from.value = YESTERDAY; to.value = YESTERDAY; break;
+    case 'week':      from.value = WEEK_AGO;  to.value = TODAY;     break;
+    case 'month':     from.value = MONTH_AGO; to.value = TODAY;     break;
+    case 'all':       from.value = '';         to.value = '';        break;
+  }
+  /* highlight the active preset pill */
+  document.querySelectorAll('.date-preset').forEach(p => p.classList.remove('active'));
+  const active = document.querySelector('.date-preset[data-preset="' + preset + '"]');
+  if (active) active.classList.add('active');
+  currentPage = 1;
+  applyFilters();
+}
+
+/* ── Reset filters ────────────────────────────────── */
+function clearDatePresets() {
+  document.querySelectorAll('.date-preset').forEach(p => p.classList.remove('active'));
+}
+
+function resetFilters() {
+  document.getElementById('f-date-from').value = '';
+  document.getElementById('f-date-to').value = '';
+  document.getElementById('f-sort').value = 'date';
+  document.getElementById('f-min-score').value = '0.40';
+  document.getElementById('score-val').textContent = '· 0.40';
+  document.getElementById('f-keyword').value = '';
+  document.querySelectorAll('#cat-pills .tag-toggle').forEach(pill => pill.classList.remove('active'));
+  /* re-activate "All time" preset */
+  clearDatePresets();
+  const allPill = document.querySelector('.date-preset[data-preset="all"]');
+  if (allPill) allPill.classList.add('active');
+  currentPage = 1;
+  applyFilters();
+}
+
+/* ── Update URL without reload ────────────────────── */
+function updateURL(f) {
+  const params = new URLSearchParams();
+  params.set('profile', PROFILE_PARAM);
+  if (f.sort !== 'date') params.set('sort', f.sort);
+  if (f.minScore > 0.40) params.set('min_score', f.minScore.toFixed(2));
+  if (f.dateFrom) params.set('date_from', f.dateFrom);
+  if (f.dateTo) params.set('date_to', f.dateTo);
+  if (f.keyword) params.set('q', f.keyword);
+  f.cats.forEach(c => params.append('cat', c));
+  if (currentPage > 1) params.set('page', currentPage);
+  history.replaceState(null, '', '?' + params.toString());
+}
+
+/* ── Restore filters from URL on page load ────────── */
+function restoreFromURL() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('sort')) document.getElementById('f-sort').value = params.get('sort');
+  if (params.get('min_score')) {
+    document.getElementById('f-min-score').value = params.get('min_score');
+    document.getElementById('score-val').textContent = '· ' + parseFloat(params.get('min_score')).toFixed(2);
+  }
+  if (params.get('date_from')) document.getElementById('f-date-from').value = params.get('date_from');
+  if (params.get('date_to')) document.getElementById('f-date-to').value = params.get('date_to');
+  if (params.get('q')) document.getElementById('f-keyword').value = params.get('q');
+  const cats = params.getAll('cat');
+  if (cats.length) {
+    document.querySelectorAll('#cat-pills .tag-toggle').forEach(pill => {
+      if (cats.includes(pill.dataset.value)) pill.classList.add('active');
+    });
+  }
+  if (params.get('page')) currentPage = parseInt(params.get('page')) || 1;
+
+  /* highlight matching date preset pill */
+  const df = params.get('date_from') || '';
+  const dt = params.get('date_to') || '';
+  clearDatePresets();
+  if (!df && !dt) {
+    document.querySelector('.date-preset[data-preset="all"]').classList.add('active');
+  } else if (df === YESTERDAY && dt === YESTERDAY) {
+    document.querySelector('.date-preset[data-preset="yesterday"]').classList.add('active');
+  } else if (df === WEEK_AGO && dt === TODAY) {
+    document.querySelector('.date-preset[data-preset="week"]').classList.add('active');
+  } else if (df === MONTH_AGO && dt === TODAY) {
+    document.querySelector('.date-preset[data-preset="month"]').classList.add('active');
+  }
+}
+
+/* ── Wire up live filter events ───────────────────── */
+function init() {
+  buildCatFilters();
+  restoreFromURL();
+
+  /* instant filtering on every input change */
+  document.getElementById('f-sort').addEventListener('change', () => { currentPage = 1; applyFilters(); });
+  document.getElementById('f-min-score').addEventListener('input', function() {
+    document.getElementById('score-val').textContent = '· ' + parseFloat(this.value).toFixed(2);
+    currentPage = 1;
+    applyFilters();
+  });
+  document.getElementById('f-date-from').addEventListener('change', () => { clearDatePresets(); currentPage = 1; applyFilters(); });
+  document.getElementById('f-date-to').addEventListener('change', () => { clearDatePresets(); currentPage = 1; applyFilters(); });
+
+  /* debounce keyword input */
+  let kwTimer;
+  document.getElementById('f-keyword').addEventListener('input', function() {
+    clearTimeout(kwTimer);
+    kwTimer = setTimeout(() => { currentPage = 1; applyFilters(); }, 300);
+  });
+
+  applyFilters();
+}
+
+init();
+</script>
+{% endif %}
 {% endblock %}

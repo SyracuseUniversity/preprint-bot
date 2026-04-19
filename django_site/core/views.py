@@ -8,8 +8,6 @@ the custom user model (AUTH_USER_MODEL).
 import json
 import re
 import time
-from collections import defaultdict
-from datetime import datetime
 from functools import wraps
 from pathlib import Path
 
@@ -1106,97 +1104,36 @@ def recommendations_view(request):
         return render(request, "recommendations/list.html", {
             "pb_user": pb_user,
             "profiles": [],
-            "recommendations": [],
+            "recs_json": "[]",
+            "categories_json": "[]",
         })
 
     # Selected profile (from GET param); default to all profiles
     selected_id = request.GET.get("profile", "")
-    selected_profile = None  # None = all profiles
+    selected_profile = None
     if selected_id and selected_id != "all":
         try:
             selected_profile = profiles.get(pk=int(selected_id))
         except (Profile.DoesNotExist, ValueError):
-            pass  # fall through to all profiles
+            pass
 
-    # Query recommendations for this profile (or all)
+    # Query all recommendations for this profile (or all)
     recs = _query_profile_recommendations(pb_user, selected_profile)
 
-    # Sort parameter: "date" (default) or "score"
-    sort_by = request.GET.get("sort", "date")
-    if sort_by not in ("date", "score"):
-        sort_by = "date"
+    # Serialize for JS — convert date_obj to ISO string, drop it
+    for r in recs:
+        r["date_iso"] = r["date_obj"].isoformat() if r.get("date_obj") else None
+        del r["date_obj"]
 
-    # Apply filters
-    try:
-        min_score = float(request.GET.get("min_score", 0))
-    except (ValueError, TypeError):
-        min_score = 0
-    date_from = request.GET.get("date_from")
-    date_to = request.GET.get("date_to")
-    keyword = request.GET.get("q", "").strip()
-    cat_filter = request.GET.getlist("cat")
-    try:
-        page = int(request.GET.get("page", 1))
-    except (ValueError, TypeError):
-        page = 1
-
-    if min_score > 0:
-        recs = [r for r in recs if r["score"] >= min_score]
-    if date_from:
-        try:
-            df = datetime.strptime(date_from, "%Y-%m-%d").date()
-            recs = [r for r in recs if r.get("date_obj") and r["date_obj"] >= df]
-        except ValueError:
-            pass
-    if date_to:
-        try:
-            dt = datetime.strptime(date_to, "%Y-%m-%d").date()
-            recs = [r for r in recs if r.get("date_obj") and r["date_obj"] <= dt]
-        except ValueError:
-            pass
-    if keyword:
-        kw = keyword.lower()
-        recs = [
-            r for r in recs
-            if kw in r["title"].lower() or kw in r.get("abstract", "").lower()
-        ]
-    if cat_filter:
-        recs = [
-            r for r in recs
-            if any(c in r.get("categories", []) for c in cat_filter)
-        ]
-
-    # Apply sort
-    if sort_by == "score":
-        recs.sort(key=lambda x: x["score"], reverse=True)
-    else:
-        # Date descending, then score descending within each date
-        recs.sort(key=lambda x: (x.get("date_obj") or datetime.min.date(), x["score"]),
-                  reverse=True)
-
-    # Paginate (20 per page)
-    per_page = 20
-    total = len(recs)
-    total_pages = max(1, (total + per_page - 1) // per_page)
-    page = max(1, min(page, total_pages))
-    page_recs = recs[(page - 1) * per_page: page * per_page]
-
-    # Group by date for display (only when sorting by date)
-    grouped = defaultdict(list)
-    if sort_by == "date":
-        for r in page_recs:
-            grouped[r.get("date_str", "Unknown Date")].append(r)
-
-    # Categories: from selected profile or aggregated across all profiles
+    # Categories for filter checkboxes
     if selected_profile:
-        profile_categories = selected_profile.categories or []
+        profile_categories = sorted(selected_profile.categories or [])
     else:
         cats = set()
         for p in profiles:
             cats.update(p.categories or [])
         profile_categories = sorted(cats)
 
-    # The value to use in links for the current profile selection
     profile_param = selected_profile.pk if selected_profile else "all"
 
     return render(request, "recommendations/list.html", {
@@ -1204,20 +1141,9 @@ def recommendations_view(request):
         "profiles": profiles,
         "selected_profile": selected_profile,
         "profile_param": profile_param,
-        "sort_by": sort_by,
-        "grouped_recs": dict(grouped),
-        "flat_recs": page_recs if sort_by == "score" else [],
-        "total_count": total,
-        "page": page,
-        "total_pages": total_pages,
-        "pages_range": range(1, total_pages + 1),
-        "filter_min_score": min_score,
-        "filter_date_from": date_from or "",
-        "filter_date_to": date_to or "",
-        "filter_keyword": keyword,
-        "filter_cats": cat_filter,
-        "profile_categories": profile_categories,
-        "code_to_label": ARXIV_CODE_TO_LABEL,
+        "recs_json": json.dumps(recs),
+        "categories_json": json.dumps(profile_categories),
+        "code_to_label_json": json.dumps(ARXIV_CODE_TO_LABEL),
     })
 
 
