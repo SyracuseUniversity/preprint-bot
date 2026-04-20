@@ -68,7 +68,19 @@
   {% if pb_user.orcid_id %}
   <div style="margin-top:.75rem;">
     <span class="text-sm text-dim">ORCID iD</span><br>
-    <a href="https://orcid.org/{{ pb_user.orcid_id }}" target="_blank" rel="noopener noreferrer">{{ pb_user.orcid_id }}</a>
+    <div style="display:flex; align-items:center; gap:.75rem; margin-top:.15rem;">
+      <a href="https://orcid.org/{{ pb_user.orcid_id }}" target="_blank" rel="noopener noreferrer">{{ pb_user.orcid_id }}</a>
+      <form method="post" action="{% url 'orcid_unlink' %}" style="margin:0;"
+            onsubmit="return confirm('Unlink your ORCID iD? You can re-link it later.');">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm">Unlink</button>
+      </form>
+    </div>
+  </div>
+  {% elif ORCID_ENABLED %}
+  <div style="margin-top:.75rem;">
+    <span class="text-sm text-dim">ORCID iD</span><br>
+    <a href="{% url 'orcid_link' %}" class="btn btn-sm" style="margin-top:.25rem;">Link ORCID iD</a>
   </div>
   {% endif %}
 </div>

@@ -359,6 +359,21 @@ def orcid_callback_view(request):
     orcid_name = token_data.get("name", "")
     access_token = token_data.get("access_token", "")
 
+    # ── Link mode: attach ORCID to the logged-in user's account ──
+    if request.session.pop("orcid_link_mode", False):
+        if not request.user.is_authenticated:
+            messages.error(request, "Your session expired. Please log in and try again.")
+            return redirect("login")
+        # Check if this ORCID iD is already used by a different account
+        existing = PBUser.objects.filter(orcid_id=orcid_id).exclude(pk=request.user.pk).first()
+        if existing:
+            messages.error(request, f"ORCID iD {orcid_id} is already linked to another account.")
+        else:
+            request.user.orcid_id = orcid_id
+            request.user.save(update_fields=["orcid_id"])
+            messages.success(request, f"ORCID iD ({orcid_id}) linked to your account.")
+        return redirect("settings")
+
     # Check if a user with this ORCID iD already exists
     try:
         pb_user = PBUser.objects.get(orcid_id=orcid_id)
@@ -451,6 +466,45 @@ def orcid_complete_view(request):
         "orcid_id": orcid_id,
         "orcid_name": orcid_name,
     })
+
+
+@pbuser_required
+def orcid_link_view(request):
+    """Initiate ORCID OAuth2 to link an ORCID iD to the current account."""
+    from . import orcid as orcid_helpers
+
+    if not orcid_helpers.is_configured():
+        messages.error(request, "ORCID is not configured.")
+        return redirect("settings")
+
+    if request.pb_user.orcid_id:
+        messages.info(request, "Your account already has an ORCID iD linked.")
+        return redirect("settings")
+
+    # Flag this OAuth flow as a link (not login/register)
+    import secrets
+    state = secrets.token_urlsafe(32)
+    request.session["orcid_oauth_state"] = state
+    request.session["orcid_link_mode"] = True
+
+    redirect_uri = request.build_absolute_uri(reverse("orcid_callback"))
+    authorize_url = orcid_helpers.get_authorize_url(redirect_uri, state=state)
+    return redirect(authorize_url)
+
+
+@pbuser_required
+@require_POST
+def orcid_unlink_view(request):
+    """Remove the linked ORCID iD from the current account."""
+    pb_user = request.pb_user
+    if not pb_user.orcid_id:
+        messages.info(request, "No ORCID iD is linked to your account.")
+    else:
+        old_id = pb_user.orcid_id
+        pb_user.orcid_id = None
+        pb_user.save(update_fields=["orcid_id"])
+        messages.success(request, f"ORCID iD ({old_id}) has been unlinked.")
+    return redirect("settings")
 
 
 def forgot_password_view(request):

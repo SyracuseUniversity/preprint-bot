@@ -16,6 +16,8 @@ urlpatterns = [
     path("auth/orcid/login/", views.orcid_login_view, name="orcid_login"),
     path("auth/orcid/callback/", views.orcid_callback_view, name="orcid_callback"),
     path("auth/orcid/complete/", views.orcid_complete_view, name="orcid_complete"),
+    path("auth/orcid/link/", views.orcid_link_view, name="orcid_link"),
+    path("auth/orcid/unlink/", views.orcid_unlink_view, name="orcid_unlink"),
 
     # Profiles
     path("profiles/", views.profile_list_view, name="profile_list"),
