@@ -15,6 +15,7 @@ and secret.  Set the redirect URI to:
 """
 
 import logging
+from urllib.parse import urlencode
 
 from django.conf import settings as django_settings
 
@@ -50,16 +51,15 @@ def is_configured():
 def get_authorize_url(redirect_uri, state=None):
     """Build the ORCID OAuth2 authorization URL."""
     base = _base_url()
-    url = (
-        f"{base}/oauth/authorize"
-        f"?client_id={django_settings.ORCID_CLIENT_ID}"
-        f"&response_type=code"
-        f"&scope=/authenticate"
-        f"&redirect_uri={redirect_uri}"
-    )
+    params = {
+        "client_id": django_settings.ORCID_CLIENT_ID,
+        "response_type": "code",
+        "scope": "/authenticate",
+        "redirect_uri": redirect_uri,
+    }
     if state:
-        url += f"&state={state}"
-    return url
+        params["state"] = state
+    return f"{base}/oauth/authorize?{urlencode(params)}"
 
 
 def exchange_code(code, redirect_uri):

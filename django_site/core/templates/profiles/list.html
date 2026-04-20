@@ -167,6 +167,7 @@
 {% endfor %}
 
 <script>
+const SCRIPT_PREFIX = '{{ SCRIPT_PREFIX }}';
 /* ── Tab switching ──────────────────────────────────── */
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -481,7 +482,7 @@ function addPaperToList(profileId, paper) {
   if (empty) empty.remove();
 
   /* build paper row HTML */
-  const viewUrl = '/profiles/' + profileId + '/papers/' + paper.id + '/';
+  const viewUrl = SCRIPT_PREFIX + '/profiles/' + profileId + '/papers/' + paper.id + '/';
   const deleteUrl = viewUrl + 'delete/';
 
   let sourceHtml;
