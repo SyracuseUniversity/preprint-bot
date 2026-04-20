@@ -152,11 +152,14 @@ async def _embed_single_paper(
         )
         stored += 1
 
-    # Section embeddings (reuse sections fetched above)
-    for section in sections:
-        text = section.get('text', '')
-        if len(text.split()) > 20:  # only substantial sections
-            emb = model.encode([text], normalize_embeddings=True)[0]
+    # Section embeddings — batch encode for efficiency
+    eligible_sections = [
+        s for s in sections if len(s.get('text', '').split()) > 20
+    ]
+    if eligible_sections:
+        texts = [s['text'] for s in eligible_sections]
+        embeddings = model.encode(texts, normalize_embeddings=True)
+        for section, emb in zip(eligible_sections, embeddings):
             await api_client.create_embedding(
                 paper_id=paper['id'],
                 section_id=section['id'],

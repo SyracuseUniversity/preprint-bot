@@ -169,6 +169,9 @@ async def search_similar_embeddings(request: VectorSearchRequest):
     embedding_str = f"[{','.join(map(str, request.embedding))}]"
     
     # Build query with optional corpus filter
+    # NOTE: ORDER BY must use the raw distance operator (<=>) for pgvector
+    # to use its HNSW/IVFFlat index.  Ordering by a derived alias like
+    # ``similarity DESC`` forces a sequential scan + sort.
     if request.corpus_id is not None:
         query = """
             SELECT DISTINCT
@@ -180,7 +183,7 @@ async def search_similar_embeddings(request: VectorSearchRequest):
             WHERE e.type = 'abstract'
             AND pc.corpus_id = $2
             AND 1 - (e.embedding <=> $1::vector) >= $3
-            ORDER BY similarity DESC
+            ORDER BY e.embedding <=> $1::vector
             LIMIT $4
         """
         params = [embedding_str, request.corpus_id, request.threshold, request.limit]
@@ -193,7 +196,7 @@ async def search_similar_embeddings(request: VectorSearchRequest):
             JOIN papers p ON e.paper_id = p.id
             WHERE e.type = 'abstract'
             AND 1 - (e.embedding <=> $1::vector) >= $2
-            ORDER BY similarity DESC
+            ORDER BY e.embedding <=> $1::vector
             LIMIT $3
         """
         params = [embedding_str, request.threshold, request.limit]
