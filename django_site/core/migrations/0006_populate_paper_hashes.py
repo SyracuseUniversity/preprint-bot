@@ -42,8 +42,10 @@ def populate_m2m_and_hashes(apps, schema_editor):
         row_count = cursor.rowcount
     print(f"  Populated {row_count} paper-corpus links.")
 
-    # ── Step 2: compute SHA-256 hashes ─────────────────────────────────
-    hashed = 0
+    # ── Step 2: compute SHA-256 hashes in memory ───────────────────────
+    # Build a dict of paper_id -> sha256 without saving yet, so that
+    # duplicates can be resolved before hitting the unique constraint.
+    hash_map = {}  # paper_id -> sha256
     missing = 0
     for paper in Paper.objects.filter(sha256__isnull=True).iterator():
         if not paper.pdf_path:
@@ -53,77 +55,91 @@ def populate_m2m_and_hashes(apps, schema_editor):
             missing += 1
             continue
         try:
-            paper.sha256 = _compute_sha256(file_path)
-            paper.save(update_fields=["sha256"])
-            hashed += 1
+            hash_map[paper.pk] = _compute_sha256(file_path)
         except Exception as e:
             print(f"  Warning: failed to hash paper {paper.pk} ({file_path}): {e}")
-    print(f"  Computed SHA-256 for {hashed} papers ({missing} files not found on disk).")
+    print(f"  Computed SHA-256 for {len(hash_map)} papers ({missing} files not found on disk).")
 
     # ── Step 3: deduplicate papers with identical sha256 ───────────────
-    from django.db.models import Count, Min
+    # Group paper IDs by hash, keeping the lowest ID as canonical.
+    from collections import defaultdict
+    hash_to_papers = defaultdict(list)
+    for paper_id, sha in hash_map.items():
+        hash_to_papers[sha].append(paper_id)
 
-    dupes = (
-        Paper.objects.filter(sha256__isnull=False)
-        .values("sha256")
-        .annotate(count=Count("id"), canonical_id=Min("id"))
-        .filter(count__gt=1)
-    )
+    # Determine canonical (lowest ID) and duplicates for each hash
+    canonical_ids = set()  # paper IDs to keep
+    dup_to_canonical = {}  # dup_paper_id -> canonical_paper_id
+    for sha, paper_ids in hash_to_papers.items():
+        paper_ids.sort()
+        canonical_id = paper_ids[0]
+        canonical_ids.add(canonical_id)
+        for dup_id in paper_ids[1:]:
+            dup_to_canonical[dup_id] = canonical_id
 
+    # Merge FK references from duplicates to canonical papers
     merged = 0
-    for group in dupes:
-        canonical_id = group["canonical_id"]
-        duplicates = Paper.objects.filter(sha256=group["sha256"]).exclude(pk=canonical_id)
+    for dup_id, canonical_id in dup_to_canonical.items():
+        dup = Paper.objects.get(pk=dup_id)
 
-        for dup in duplicates:
-            # Move sections to canonical
-            Section.objects.filter(paper_id=dup.pk).update(paper_id=canonical_id)
+        # Move sections to canonical
+        Section.objects.filter(paper_id=dup_id).update(paper_id=canonical_id)
 
-            # Move summaries (skip conflicts from unique_together on paper+mode)
-            for summary in Summary.objects.filter(paper_id=dup.pk):
-                if not Summary.objects.filter(paper_id=canonical_id, mode=summary.mode).exists():
-                    summary.paper_id = canonical_id
-                    summary.save(update_fields=["paper_id"])
-                else:
-                    summary.delete()
+        # Move summaries (skip conflicts from unique_together on paper+mode)
+        for summary in Summary.objects.filter(paper_id=dup_id):
+            if not Summary.objects.filter(paper_id=canonical_id, mode=summary.mode).exists():
+                summary.paper_id = canonical_id
+                summary.save(update_fields=["paper_id"])
+            else:
+                summary.delete()
 
-            # Move embeddings to canonical
-            Embedding.objects.filter(paper_id=dup.pk).update(paper_id=canonical_id)
+        # Move embeddings to canonical
+        Embedding.objects.filter(paper_id=dup_id).update(paper_id=canonical_id)
 
-            # Move recommendations (skip conflicts from unique_together on run+paper)
-            for rec in Recommendation.objects.filter(paper_id=dup.pk):
-                if not Recommendation.objects.filter(run_id=rec.run_id, paper_id=canonical_id).exists():
-                    rec.paper_id = canonical_id
-                    rec.save(update_fields=["paper_id"])
-                else:
-                    rec.delete()
+        # Move recommendations (skip conflicts from unique_together on run+paper)
+        for rec in Recommendation.objects.filter(paper_id=dup_id):
+            if not Recommendation.objects.filter(run_id=rec.run_id, paper_id=canonical_id).exists():
+                rec.paper_id = canonical_id
+                rec.save(update_fields=["paper_id"])
+            else:
+                rec.delete()
 
-            # Merge corpus M2M links
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO papers_corpora (paper_id, corpus_id) "
-                    "SELECT %s, corpus_id FROM papers_corpora WHERE paper_id = %s "
-                    "ON CONFLICT DO NOTHING",
-                    [canonical_id, dup.pk],
-                )
+        # Merge corpus M2M links
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO papers_corpora (paper_id, corpus_id) "
+                "SELECT %s, corpus_id FROM papers_corpora WHERE paper_id = %s "
+                "ON CONFLICT DO NOTHING",
+                [canonical_id, dup_id],
+            )
 
-            # Delete the duplicate file if different from canonical's
-            if dup.pdf_path:
-                canonical = Paper.objects.get(pk=canonical_id)
-                if dup.pdf_path != canonical.pdf_path:
-                    old_path = Path(dup.pdf_path)
-                    if old_path.exists():
-                        try:
-                            old_path.unlink()
-                        except Exception as e:
-                            print(f"  Warning: could not delete {old_path}: {e}")
+        # Delete the duplicate file if different from canonical's
+        canonical = Paper.objects.get(pk=canonical_id)
+        if dup.pdf_path and dup.pdf_path != canonical.pdf_path:
+            old_path = Path(dup.pdf_path)
+            if old_path.exists():
+                try:
+                    old_path.unlink()
+                except Exception as e:
+                    print(f"  Warning: could not delete {old_path}: {e}")
 
-            # Delete the duplicate paper row
-            dup.delete()
-            merged += 1
+        # Remove dup from hash_map so we don't save it later
+        del hash_map[dup_id]
+
+        # Delete the duplicate paper row
+        dup.delete()
+        merged += 1
 
     if merged:
         print(f"  Merged {merged} duplicate paper(s).")
+
+    # ── Step 3b: save hashes for remaining (canonical) papers ──────────
+    saved = 0
+    for paper_id, sha in hash_map.items():
+        Paper.objects.filter(pk=paper_id).update(sha256=sha)
+        saved += 1
+    if saved:
+        print(f"  Saved SHA-256 hashes for {saved} papers.")
 
     # ── Step 4: move files to hash-based paths ─────────────────────────
     from django.conf import settings as django_settings
