@@ -93,8 +93,19 @@ def populate_m2m_and_hashes(apps, schema_editor):
             else:
                 summary.delete()
 
-        # Move embeddings to canonical
-        Embedding.objects.filter(paper_id=dup_id).update(paper_id=canonical_id)
+        # Move embeddings to canonical (skip conflicts from unique index)
+        for emb in Embedding.objects.filter(paper_id=dup_id):
+            conflict = Embedding.objects.filter(
+                paper_id=canonical_id,
+                type=emb.type,
+                model_name=emb.model_name,
+                section_id=emb.section_id,
+            ).exists()
+            if not conflict:
+                emb.paper_id = canonical_id
+                emb.save(update_fields=["paper_id"])
+            else:
+                emb.delete()
 
         # Move recommendations (skip conflicts from unique_together on run+paper)
         for rec in Recommendation.objects.filter(paper_id=dup_id):
