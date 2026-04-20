@@ -19,6 +19,7 @@ from .config import (
     API_BASE_URL, DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS,
     PDF_DIR, PROCESSED_TEXT_DIR,
     SYSTEM_USER_EMAIL, SYSTEM_USER_NAME, ARXIV_CORPUS_NAME, DEFAULT_THRESHOLD,
+    EMAIL_HOST,
 )
 from .api_client import APIClient
 from .download_arxiv_pdfs import download_arxiv_pdfs
@@ -408,6 +409,7 @@ def _preflight_checks(args):
     """
     import os
     errors = []
+    warnings = []
 
     # ── Writable directories ───────────────────────────────────────────
     for d in [DATA_DIR, PDF_DIR, PROCESSED_TEXT_DIR]:
@@ -459,6 +461,13 @@ def _preflight_checks(args):
                 f"use --summarizer transformer or --skip-summarize"
             )
 
+    # ── Email configured (warning only — not required) ─────────────────
+    if not EMAIL_HOST:
+        warnings.append(
+            "EMAIL_HOST is not configured — email digests will fail. "
+            "Set SMTP credentials in .env or config.py to enable."
+        )
+
     if errors:
         print("\n" + "=" * 60)
         print("PREFLIGHT CHECK FAILED")
@@ -467,6 +476,9 @@ def _preflight_checks(args):
             print(f"  ✗ {err}")
         print("=" * 60 + "\n")
         sys.exit(1)
+
+    for warn in warnings:
+        print(f"  ⚠ {warn}")
 
     print("Preflight checks passed.\n")
 

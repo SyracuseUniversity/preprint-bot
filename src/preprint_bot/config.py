@@ -51,6 +51,9 @@ for directory in [DATA_DIR, PDF_DIR, PROCESSED_TEXT_DIR, USER_PDF_DIR, USER_PROC
 # API Configuration
 API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 
+# Email configuration (read from root config.py via env or .env)
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+
 # Default user for system operations (fetching arXiv papers)
 SYSTEM_USER_EMAIL = os.getenv("SYSTEM_USER_EMAIL", "abcd@syr.edu")
 SYSTEM_USER_NAME = "Preprint Bot"
