@@ -35,6 +35,13 @@
 <div class="card" id="filter-card">
   <div class="grid-3">
     <div class="form-group">
+      <label>Sort by</label>
+      <select id="f-sort">
+        <option value="date">Date</option>
+        <option value="score">Similarity Score</option>
+      </select>
+    </div>
+    <div class="form-group">
       <label>From</label>
       <input type="date" id="f-date-from">
     </div>
@@ -42,16 +49,9 @@
       <label>To</label>
       <input type="date" id="f-date-to">
     </div>
-    <div class="form-group">
-      <label>Sort by</label>
-      <select id="f-sort">
-        <option value="date">Date</option>
-        <option value="score">Similarity Score</option>
-      </select>
-    </div>
   </div>
 
-  <div class="grid-3">
+  <div class="grid-2">
     <div class="form-group">
       <label>Min Score <span id="score-val" class="text-sm" style="font-weight:400; opacity:.7;">· 0.40</span></label>
       <input type="range" id="f-min-score" min="0.40" max="1.00" step="0.01" value="0.40">
@@ -63,10 +63,6 @@
     <div class="form-group">
       <label>Search title / abstract</label>
       <input type="text" id="f-keyword" placeholder="Keywords…">
-    </div>
-    <div class="form-group">
-      <label>&nbsp;</label>
-      <button type="button" class="btn btn-danger" style="width:100%;" onclick="resetFilters()">Reset Filters</button>
     </div>
   </div>
 
@@ -80,11 +76,14 @@
   <div style="margin-top:.75rem;">
     <span class="text-sm" style="font-weight:600;">Date Range</span>
   </div>
-  <div style="display:flex; gap:.4rem; margin-top:.3rem; flex-wrap:wrap;">
-    <span class="tag-toggle date-preset" data-preset="yesterday" onclick="setDateRange('yesterday')">Yesterday</span>
-    <span class="tag-toggle date-preset" data-preset="week" onclick="setDateRange('week')">Last 7 days</span>
-    <span class="tag-toggle date-preset" data-preset="month" onclick="setDateRange('month')">Last 30 days</span>
-    <span class="tag-toggle date-preset active" data-preset="all" onclick="setDateRange('all')">All time</span>
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem .4rem; margin-top:.3rem; flex-wrap:wrap;">
+    <div style="display:flex; gap:.4rem; flex-wrap:wrap;">
+      <span class="tag-toggle date-preset" data-preset="yesterday" onclick="setDateRange('yesterday')">Yesterday</span>
+      <span class="tag-toggle date-preset" data-preset="week" onclick="setDateRange('week')">Last 7 days</span>
+      <span class="tag-toggle date-preset" data-preset="month" onclick="setDateRange('month')">Last 30 days</span>
+      <span class="tag-toggle date-preset active" data-preset="all" onclick="setDateRange('all')">All time</span>
+    </div>
+    <button type="button" class="btn btn-danger" onclick="resetFilters()">Reset All Filters</button>
   </div>
 </div>
 
