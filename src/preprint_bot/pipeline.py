@@ -16,7 +16,7 @@ import feedparser
 import httpx
 
 from .config import (
-    DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS,
+    API_BASE_URL, DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS,
     PDF_DIR, PROCESSED_TEXT_DIR,
     SYSTEM_USER_EMAIL, SYSTEM_USER_NAME, ARXIV_CORPUS_NAME, DEFAULT_THRESHOLD,
 )
@@ -393,7 +393,7 @@ async def send_all_digests(api_client: APIClient, run_date: str = None):
 
 
 async def run_pipeline(args):
-    api_client = APIClient()
+    api_client = APIClient(base_url=API_BASE_URL)
 
     try:
         target_date = datetime.strptime(args.date, "%Y-%m-%d")
