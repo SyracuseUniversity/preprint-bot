@@ -106,7 +106,7 @@ class ProfileForm(forms.Form):
         max_value=999,
         initial=999,
         label="Max recommendations",
-        help_text="Maximum number of recommendations to return (up to 999).",
+        help_text="Maximum number of recommendations per day (up to 999).",
     )
     categories = forms.CharField(
         widget=forms.HiddenInput(),
