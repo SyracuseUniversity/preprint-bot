@@ -192,12 +192,19 @@ async def fetch_and_store_arxiv(
     print(f"Stored {stored_count} new papers in database")
 
     if not skip_download and stored_count > 0:
-        download_arxiv_pdfs(
+        stats = download_arxiv_pdfs(
             [{"arxiv_url": p["metadata"]["arxiv_url"]} for p in papers_data],
             output_folder=str(PDF_DIR),
             use_s3=False,
             min_delay=3
         )
+
+        # Warn if all downloads failed (likely a permissions or network issue)
+        if stats and stats.get("downloaded", 0) == 0 and stats.get("failed", 0) > 0:
+            print(
+                f"WARNING: All {stats['failed']} PDF downloads failed. "
+                f"Check network connectivity and file permissions."
+            )
 
     if not skip_parse and stored_count > 0:
         print("\nParsing PDFs with GROBID...")
@@ -392,7 +399,81 @@ async def send_all_digests(api_client: APIClient, run_date: str = None):
                 print(f"  ✗ [{profile['name']}] failed before receiving a response: {e}")
 
 
+def _preflight_checks(args):
+    """Verify the environment is correctly configured before running.
+
+    Catches common problems (wrong user, unreachable services, missing
+    directories) early so the pipeline fails fast with a clear message
+    instead of producing orphaned DB records or silent download failures.
+    """
+    import os
+    errors = []
+
+    # ── Writable directories ───────────────────────────────────────────
+    for d in [DATA_DIR, PDF_DIR, PROCESSED_TEXT_DIR]:
+        d.mkdir(parents=True, exist_ok=True)
+        test_file = d / ".write_test"
+        try:
+            test_file.touch()
+            test_file.unlink()
+        except PermissionError:
+            errors.append(
+                f"Cannot write to {d} — are you running as the correct user? "
+                f"(current uid={os.getuid()})"
+            )
+
+    # ── FastAPI reachable ──────────────────────────────────────────────
+    try:
+        r = requests.get(f"{API_BASE_URL}/health", timeout=5)
+        if r.status_code != 200:
+            errors.append(
+                f"FastAPI at {API_BASE_URL} returned status {r.status_code} "
+                f"(expected 200)"
+            )
+    except requests.ConnectionError:
+        errors.append(f"Cannot connect to FastAPI at {API_BASE_URL}")
+    except Exception as e:
+        errors.append(f"FastAPI health check failed: {e}")
+
+    # ── GROBID reachable (unless parsing is skipped) ──────────────────
+    if not args.skip_parse:
+        try:
+            r = requests.get("http://localhost:8070/api/isalive", timeout=5)
+            if r.status_code != 200:
+                errors.append(
+                    f"GROBID at localhost:8070 returned status {r.status_code}"
+                )
+        except requests.ConnectionError:
+            errors.append(
+                "Cannot connect to GROBID at localhost:8070 — "
+                "is the grobid service running?"
+            )
+        except Exception as e:
+            errors.append(f"GROBID health check failed: {e}")
+
+    # ── LLM model exists (unless summarization is skipped) ────────────
+    if not args.skip_summarize and args.summarizer == "llama":
+        if not Path(args.llm_model).exists():
+            errors.append(
+                f"LLM model not found at {args.llm_model} — "
+                f"use --summarizer transformer or --skip-summarize"
+            )
+
+    if errors:
+        print("\n" + "=" * 60)
+        print("PREFLIGHT CHECK FAILED")
+        print("=" * 60)
+        for err in errors:
+            print(f"  ✗ {err}")
+        print("=" * 60 + "\n")
+        sys.exit(1)
+
+    print("Preflight checks passed.\n")
+
+
 async def run_pipeline(args):
+    _preflight_checks(args)
+
     api_client = APIClient(base_url=API_BASE_URL)
 
     try:
