@@ -1,24 +1,20 @@
 from __future__ import annotations
 #!/usr/bin/env python3
 """
-Database-integrated arXiv Preprint Recommender Pipeline
+Database-integrated Preprint Recommender Pipeline
 """
 import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import List, Dict
-from datetime import datetime, timedelta, timezone, date as date_type
-from zoneinfo import ZoneInfo
-import time
+from typing import List
+from datetime import datetime, timezone, date as date_type
 import requests
-import feedparser
-import httpx
 
 from .config import (
-    API_BASE_URL, DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS,
+    API_BASE_URL, DATA_DIR, DEFAULT_MODEL_NAME,
     PDF_DIR, PROCESSED_TEXT_DIR,
-    SYSTEM_USER_EMAIL, SYSTEM_USER_NAME, ARXIV_CORPUS_NAME, DEFAULT_THRESHOLD,
+    SYSTEM_USER_EMAIL, SYSTEM_USER_NAME, ARXIV_CORPUS_NAME,
     EMAIL_HOST,
 )
 from .api_client import APIClient
@@ -28,6 +24,7 @@ from .extract_grobid import process_folder as grobid_process_folder
 from .summarization_script import TransformerSummarizer, LlamaSummarizer
 from .user_mode_processor import process_unprocessed_papers
 from .db_similarity_matcher import run_similarity_matching
+from .sources import ArxivSource, PaperEntry
 
 
 async def get_all_profile_categories(api_client: APIClient) -> List[str]:
@@ -46,161 +43,105 @@ async def get_all_profile_categories(api_client: APIClient) -> List[str]:
         return []
 
 
-async def fetch_papers_for_arxiv_day(target_date, categories):
-    eastern = ZoneInfo("America/New_York")
-    local_end = datetime(
-        year=target_date.year,
-        month=target_date.month,
-        day=target_date.day,
-        hour=14,
-        minute=0,
-        second=0,
-        tzinfo=eastern,
-    )
-    local_start = local_end - timedelta(days=1)
-    start_datetime = local_start.astimezone(timezone.utc)
-    end_datetime = local_end.astimezone(timezone.utc)
-    start = start_datetime.strftime("%Y%m%d%H%M")
-    end = end_datetime.strftime("%Y%m%d%H%M")
-    all_entries = []
-    seen_ids = set()
-
-    print(f"\nFetching papers for arXiv day: {target_date.strftime('%Y-%m-%d')}")
-    print(f"Time window: {start_datetime} to {end_datetime} (UTC)")
-    print(f"Categories: {categories}")
-
-    async with httpx.AsyncClient(timeout=30, headers={"User-Agent": "PreprintBot/1.0 (preprintbot@syr.edu)"}) as client:
-        for cat in categories:
-            query = f"cat:{cat}+AND+submittedDate:[{start}+TO+{end}]"
-            url = (
-                "https://export.arxiv.org/api/query?"
-                f"search_query={query}"
-                f"&start=0&max_results=100"
-                "&sortBy=submittedDate&sortOrder=descending"
-            )
-
-            max_retries = 4
-            backoff = 10
-            success = False
-
-            for attempt in range(max_retries):
-                try:
-                    resp = await client.get(url)
-                    if resp.status_code == 429:
-                        retry_after = resp.headers.get('Retry-After')
-                        wait = int(retry_after) if retry_after else backoff * (2 ** attempt)
-                        print(f"  {cat}: 429 rate limited, waiting {wait}s (attempt {attempt + 1}/{max_retries})")
-                        await asyncio.sleep(wait)
-                        continue
-                    resp.raise_for_status()
-                    feed = feedparser.parse(resp.text)
-                    new_count = 0
-                    for entry in feed.entries:
-                        arxiv_id = entry.id.split('/')[-1]
-                        if arxiv_id not in seen_ids:
-                            seen_ids.add(arxiv_id)
-                            all_entries.append(entry)
-                            new_count += 1
-                    print(f"  {cat}: {new_count} new papers")
-                    success = True
-                    break
-                except Exception as e:
-                    wait = backoff * (2 ** attempt)
-                    print(f"  Error fetching {cat} (attempt {attempt + 1}/{max_retries}): {e}")
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(wait)
-
-            if not success:
-                print(f"  {cat}: failed after {max_retries} attempts, skipping")
-
-            await asyncio.sleep(5)
-
-    print(f"Total papers for {target_date.strftime('%Y-%m-%d')}: {len(all_entries)}")
-    return all_entries
-
-async def fetch_and_store_arxiv(
-    api_client: APIClient,
-    categories: List[str],
+async def fetch_preprint_papers(
     target_date: datetime,
+    categories: List[str],
+) -> List[PaperEntry]:
+    """Fetch new papers from configured preprint sources.
+
+    Uses ``fetch_latest`` for today's date (returns whatever the
+    source considers its most recent batch) and ``fetch_by_date``
+    for historical dates.
+    """
+    source = ArxivSource()
+    today = date_type.today()
+    target = target_date.date() if isinstance(target_date, datetime) else target_date
+
+    if target >= today:
+        return await source.fetch_latest(categories)
+    else:
+        return await source.fetch_by_date(target_date, categories)
+
+
+async def store_fetched_papers(
+    api_client: APIClient,
+    entries: List[PaperEntry],
     skip_download: bool = False,
-    skip_parse: bool = False
-):
+    skip_parse: bool = False,
+) -> int:
+    """Create a corpus and store fetched papers in the database.
+
+    Returns the corpus ID.  Handles deduplication, PDF download,
+    and GROBID parsing.
+    """
     user = await api_client.get_or_create_user(SYSTEM_USER_EMAIL, SYSTEM_USER_NAME)
     print(f"Using system user: {user['email']}")
 
     corpus = await api_client.get_or_create_corpus(
         user_id=user['id'],
         name=ARXIV_CORPUS_NAME,
-        description="Automatically fetched arXiv papers"
+        description="Automatically fetched preprint papers"
     )
     print(f"Using corpus: {corpus['name']} (ID: {corpus['id']})")
 
-    entries = await fetch_papers_for_arxiv_day(target_date, categories)
-
     if not entries:
-        print("No papers found for this date")
-        return corpus['id'], entries
-
-    print(f"Fetched {len(entries)} papers")
-
-    papers_data = []
-    for entry in entries:
-        arxiv_id = entry.id.split("/")[-1]
-        papers_data.append({
-            "arxiv_id": arxiv_id,
-            "title": entry.title.strip(),
-            "abstract": entry.summary.strip(),
-            "metadata": {
-                "published": getattr(entry, "published", ""),
-                "arxiv_url": entry.id,
-                "authors": [a.name for a in getattr(entry, "authors", [])],
-                "categories": [tag.term for tag in getattr(entry, "tags", [])]
-            }
-        })
+        print("No papers to store")
+        return corpus['id']
 
     stored_count = 0
-    for paper_data in papers_data:
-        existing = await api_client.get_paper_by_arxiv_id(paper_data["arxiv_id"])
+    for paper in entries:
+        existing = await api_client.get_paper_by_arxiv_id(paper.source_id)
         if existing:
             continue
 
         submitted_date = None
-        pub_str = paper_data['metadata'].get('published', '')
-        if pub_str:
+        if paper.published:
             try:
-                submitted_date = datetime.fromisoformat(pub_str.replace('Z', '+00:00'))
+                submitted_date = datetime.fromisoformat(
+                    paper.published.replace('Z', '+00:00')
+                )
                 if submitted_date.tzinfo is not None:
-                    submitted_date = submitted_date.astimezone(timezone.utc).replace(tzinfo=None)
+                    submitted_date = submitted_date.astimezone(
+                        timezone.utc
+                    ).replace(tzinfo=None)
             except Exception as e:
-                print(f"Failed to parse date for {paper_data.get('arxiv_id', 'unknown')}: {e}")
+                print(f"Failed to parse date for {paper.source_id}: {e}")
 
         try:
             await api_client.create_paper(
                 corpus_id=corpus['id'],
-                arxiv_id=paper_data['arxiv_id'],
-                title=paper_data['title'],
-                abstract=paper_data['abstract'],
-                metadata=paper_data['metadata'],
-                source="arxiv",
-                pdf_path=str(PDF_DIR / f"{paper_data['arxiv_id']}.pdf"),
-                processed_text_path=str(PROCESSED_TEXT_DIR / f"{paper_data['arxiv_id']}_output.txt"),
-                submitted_date=submitted_date
+                arxiv_id=paper.source_id,
+                title=paper.title,
+                abstract=paper.abstract,
+                metadata={
+                    "published": paper.published,
+                    "arxiv_url": paper.url,
+                    "authors": paper.authors,
+                    "categories": paper.categories,
+                    **paper.metadata,
+                },
+                source=paper.source,
+                pdf_path=str(PDF_DIR / f"{paper.source_id}.pdf"),
+                processed_text_path=str(
+                    PROCESSED_TEXT_DIR / f"{paper.source_id}_output.txt"
+                ),
+                submitted_date=submitted_date,
             )
             stored_count += 1
         except Exception as e:
-            print(f"Failed to store {paper_data['arxiv_id']}: {e}")
+            print(f"Failed to store {paper.source_id}: {e}")
 
     print(f"Stored {stored_count} new papers in database")
 
     if not skip_download and stored_count > 0:
         stats = download_arxiv_pdfs(
-            [{"arxiv_url": p["metadata"]["arxiv_url"]} for p in papers_data],
+            [{"arxiv_url": p.url} for p in entries],
             output_folder=str(PDF_DIR),
             use_s3=False,
-            min_delay=3
+            min_delay=3,
         )
 
-        # Warn if all downloads failed (likely a permissions or network issue)
+        # Warn if all downloads failed
         if stats and stats.get("downloaded", 0) == 0 and stats.get("failed", 0) > 0:
             print(
                 f"WARNING: All {stats['failed']} PDF downloads failed. "
@@ -212,13 +153,15 @@ async def fetch_and_store_arxiv(
         grobid_process_folder(PDF_DIR, PROCESSED_TEXT_DIR)
         await store_sections(api_client, corpus['id'], entries)
 
-    return corpus['id'], entries
+    return corpus['id']
 
 
-async def store_sections(api_client: APIClient, corpus_id: int, entries):
+async def store_sections(
+    api_client: APIClient, corpus_id: int, entries: List[PaperEntry]
+):
     print(f"Extracting sections from papers in corpus {corpus_id}...")
     papers = await api_client.get_papers_by_corpus(corpus_id)
-    entry_ids = {e.id.split('/')[-1] for e in entries}
+    entry_ids = {e.source_id for e in entries}
     papers = [p for p in papers if p.get('arxiv_id') in entry_ids]
 
     sections_stored = 0
@@ -264,10 +207,17 @@ async def store_sections(api_client: APIClient, corpus_id: int, entries):
     print(f"Stored {sections_stored} total sections")
 
 
-async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, entries, mode: str = "abstract", paper_ids: set[int] | None = None):
+async def summarize_papers(
+    api_client: APIClient,
+    corpus_id: int,
+    summarizer,
+    entries: List[PaperEntry],
+    mode: str = "abstract",
+    paper_ids: set[int] | None = None,
+):
     print(f"\nGenerating summaries using {type(summarizer).__name__}...")
     papers = await api_client.get_papers_by_corpus(corpus_id)
-    entry_ids = {e.id.split('/')[-1] for e in entries}
+    entry_ids = {e.source_id for e in entries}
     papers = [p for p in papers if p.get('arxiv_id') in entry_ids]
 
     if paper_ids is not None:
@@ -490,12 +440,9 @@ async def run_pipeline(args):
 
     try:
         target_date = datetime.strptime(args.date, "%Y-%m-%d")
-        prev_day = target_date - timedelta(days=1)
 
         print("\n" + "="*80)
         print(f"PREPRINT BOT PIPELINE - {target_date.strftime('%Y-%m-%d')}")
-        print("="*80)
-        print(f"Time window: 2PM {prev_day.strftime('%Y-%m-%d')} to 2PM {target_date.strftime('%Y-%m-%d')} EST")
         print("="*80 + "\n")
 
         # Step 1 always runs — process papers uploaded since the last run
@@ -518,23 +465,24 @@ async def run_pipeline(args):
             sys.exit(1)
 
         print("\n" + "="*60)
-        print("STEP 3: Fetching arXiv Papers")
+        print("STEP 3: Fetching Preprint Papers")
         print("="*60)
-        corpus_id, entries = await fetch_and_store_arxiv(
-            api_client,
-            categories=categories,
-            target_date=target_date,
-            skip_download=args.skip_download,
-            skip_parse=args.skip_parse
-        )
-
-        entries = entries or []
+        entries = await fetch_preprint_papers(target_date, categories)
 
         if not entries:
-            print("No new arXiv papers fetched. Skipping steps 4\u20137.")
+            print("No new papers fetched. Skipping steps 4–7.")
         else:
+            print(f"Fetched {len(entries)} papers")
+
+            corpus_id = await store_fetched_papers(
+                api_client,
+                entries,
+                skip_download=args.skip_download,
+                skip_parse=args.skip_parse,
+            )
+
             print("\n" + "="*60)
-            print("STEP 4: Generating arXiv Embeddings")
+            print("STEP 4: Generating Embeddings")
             print("="*60)
             if not args.skip_embed:
                 await embed_and_store_papers(
@@ -546,7 +494,7 @@ async def run_pipeline(args):
                 )
 
             print("\n" + "="*60)
-            print("STEP 5: Generating arXiv Summaries")
+            print("STEP 5: Generating Summaries")
             print("="*60)
             if not args.skip_summarize:
                 if args.summarizer == "llama":
@@ -622,7 +570,7 @@ async def run_pipeline(args):
         print("="*80)
         print(f"  • Date: {target_date.strftime('%Y-%m-%d')}")
         print(f"  • User papers: {user_result['parsed']} parsed, {user_result['embedded']} embedded")
-        print(f"  • arXiv papers: {len(entries)} fetched")
+        print(f"  • Preprint papers: {len(entries)} fetched")
         print("="*80 + "\n")
 
     finally:

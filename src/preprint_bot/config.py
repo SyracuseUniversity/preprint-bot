@@ -61,6 +61,9 @@ SYSTEM_USER_NAME = "Preprint Bot"
 # Corpus naming
 ARXIV_CORPUS_NAME = "arxiv_papers"
 
+# HTTP User-Agent for outbound requests (arXiv API, PDF downloads, etc.)
+USER_AGENT = os.getenv("USER_AGENT", "PreprintBot/1.0")
+
 # Load environment variables at module level
 load_dotenv() 
 

@@ -10,11 +10,11 @@ from tqdm import tqdm
 from pathlib import Path
 from datetime import datetime
 from collections import deque
-from .config import DATA_DIR
+from .config import DATA_DIR, USER_AGENT
 from .download_s3_bulk import download_from_s3_bulk
 
 HEADERS = {
-    "User-Agent": "arxiv-pdf-fetcher/1.0 (contact: ospo@syr.edu)"
+    "User-Agent": USER_AGENT
 }
 
 class AdaptiveRateLimiter:
