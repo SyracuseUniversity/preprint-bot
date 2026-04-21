@@ -67,12 +67,13 @@ async def store_fetched_papers(
     entries: List[PaperEntry],
     skip_download: bool = False,
     skip_parse: bool = False,
-) -> tuple[int, set[int]]:
+) -> tuple[int, set[int], int]:
     """Create a corpus and store fetched papers in the database.
 
-    Returns ``(corpus_id, paper_ids)`` where ``paper_ids`` is the
-    full set of database IDs for all fetched papers (both newly
-    stored and already existing).
+    Returns ``(corpus_id, paper_ids, stored_count)`` where ``paper_ids``
+    is the full set of database IDs for all fetched papers (both newly
+    stored and already existing) and ``stored_count`` is how many were
+    newly created.
     """
     user = await api_client.get_or_create_user(SYSTEM_USER_EMAIL, SYSTEM_USER_NAME)
     print(f"Using system user: {user['email']}")
@@ -86,7 +87,7 @@ async def store_fetched_papers(
 
     if not entries:
         print("No papers to store")
-        return corpus['id'], set()
+        return corpus['id'], set(), 0
 
     stored_count = 0
     paper_ids: set[int] = set()  # all paper IDs (new + existing)
@@ -156,7 +157,7 @@ async def store_fetched_papers(
         grobid_process_folder(PDF_DIR, PROCESSED_TEXT_DIR)
         await store_sections(api_client, corpus['id'], entries)
 
-    return corpus['id'], paper_ids
+    return corpus['id'], paper_ids, stored_count
 
 
 async def store_sections(
@@ -467,7 +468,7 @@ async def run_pipeline(args):
         else:
             print(f"Fetched {len(entries)} papers")
 
-            corpus_id, paper_ids = await store_fetched_papers(
+            corpus_id, paper_ids, stored_count = await store_fetched_papers(
                 api_client,
                 entries,
                 skip_download=args.skip_download,
@@ -477,7 +478,7 @@ async def run_pipeline(args):
             print("\n" + "="*60)
             print("STEP 4: Generating Embeddings")
             print("="*60)
-            if not args.skip_embed:
+            if not args.skip_embed and stored_count > 0:
                 await embed_and_store_papers(
                     api_client,
                     corpus_id=corpus_id,
@@ -485,11 +486,13 @@ async def run_pipeline(args):
                     model_name=args.model,
                     store_sections=True
                 )
+            elif stored_count == 0:
+                print("No new papers — skipping.")
 
             print("\n" + "="*60)
             print("STEP 5: Generating Summaries")
             print("="*60)
-            if not args.skip_summarize:
+            if not args.skip_summarize and stored_count > 0:
                 if args.summarizer == "llama":
                     if not Path(args.llm_model).exists():
                         print(f"Warning: LLM model not found at {args.llm_model}. Skipping summarization.")
@@ -499,6 +502,8 @@ async def run_pipeline(args):
                 else:
                     summarizer = TransformerSummarizer()
                     await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract")
+            elif stored_count == 0:
+                print("No new papers — skipping.")
             else:
                 print("Skipping summarization.")
 
