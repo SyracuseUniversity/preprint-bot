@@ -532,8 +532,6 @@ async def run_pipeline(args):
                         'profile': profile,
                     })
 
-            print(f"  Found {len(user_corpora)} user corpus/profile pair(s) for recommendations")
-
             print("\n" + "="*60)
             print("STEP 6: Generating Recommendations")
             print("="*60)
