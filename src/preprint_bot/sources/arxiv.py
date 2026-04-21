@@ -305,7 +305,7 @@ async def _api_fetch_page(
         except Exception as e:
             wait = backoff * (2**attempt)
             print(
-                f"  API error (attempt {attempt + 1}/{max_retries}): {e}"
+                f"  API error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}: {e}"
             )
             if attempt < max_retries - 1:
                 await asyncio.sleep(wait)

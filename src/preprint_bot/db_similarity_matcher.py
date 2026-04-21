@@ -2,11 +2,12 @@
 Database-integrated similarity matcher
 Uses embeddings stored in PostgreSQL to find similar papers
 """
+import json
 import numpy as np
-from typing import List, Dict
+from typing import Set
 from sklearn.metrics.pairwise import cosine_similarity
 import faiss
-from datetime import datetime, timedelta
+from datetime import datetime
 from .config import SIMILARITY_THRESHOLDS, DEFAULT_THRESHOLD
 
 async def run_similarity_matching(
@@ -20,15 +21,15 @@ async def run_similarity_matching(
     method: str = "cosine",
     model_name: str = "all-MiniLM-L6-v2",
     top_k: int = 50,
-    use_sections: bool = True
+    use_sections: bool = True,
+    paper_ids: Set[int] = None,
 ):
     """
     Run similarity matching between user papers and arXiv papers.
-    If target_date is provided, only compare against papers from that specific arXiv day.
-    If profile_id is provided, filter arXiv papers by profile's categories.
+    When paper_ids is provided, only those papers are compared
+    (bypassing any date-based filtering).  Papers are still filtered
+    by the profile's categories when a profile is given.
     """
-    from datetime import datetime, timedelta, timezone
-    import json
     
     if isinstance(threshold, str):
         threshold_value = SIMILARITY_THRESHOLDS.get(threshold, DEFAULT_THRESHOLD)
@@ -55,77 +56,33 @@ async def run_similarity_matching(
         except Exception as e:
             print(f"  Warning: Could not fetch profile categories: {e}")
     
-    # Helper function for date filtering (used in multiple places)
-    def filter_papers_by_date_and_category(papers, start_dt, end_dt, categories):
-        """Filter papers by date range and optionally by categories"""
-        filtered = set()
-        
-        for p in papers:
-            submitted_date = p.get('submitted_date')
-            if not submitted_date:
-                continue
-            
-            try:
-                # Parse the submitted date (stored as naive UTC in database)
-                if isinstance(submitted_date, str):
-                    paper_date = datetime.fromisoformat(submitted_date.replace('Z', '').replace('+00:00', ''))
-                else:
-                    paper_date = submitted_date
-                
-                # Ensure timezone-aware for comparison
-                if paper_date.tzinfo is None:
-                    paper_date = paper_date.replace(tzinfo=timezone.utc)
-                
-                if start_dt.tzinfo is None:
-                    start_dt = start_dt.replace(tzinfo=timezone.utc)
-                if end_dt.tzinfo is None:
-                    end_dt = end_dt.replace(tzinfo=timezone.utc)
-                
-                # Check date range
-                if not (start_dt <= paper_date <= end_dt):
-                    continue
-                
-                # Check categories if provided
-                if categories:
-                    metadata = p.get('metadata', {})
-                    if isinstance(metadata, str):
-                        try:
-                            metadata = json.loads(metadata)
-                        except:
-                            metadata = {}
-                    
-                    paper_cats = metadata.get('categories', [])
-                    if not any(cat in paper_cats for cat in categories):
-                        continue
-                
-                filtered.add(p['id'])
-                
-            except Exception as e:
-                continue
-        
-        return filtered
-    
-    # Count total papers fetched for this date (BEFORE filtering by threshold/similarity)
-    total_papers_fetched = 0
-    if target_date:
+    # Determine which arXiv papers to compare against
+    candidate_ids = set(paper_ids) if paper_ids else set()
+
+    # Filter candidates by profile categories
+    if candidate_ids and profile_categories:
         papers = await api_client.get_papers_by_corpus(arxiv_corpus_id)
-        
-        # Calculate date range
-        if target_date.tzinfo is None:
-            target_date_tz = target_date.replace(tzinfo=timezone.utc)
-        else:
-            target_date_tz = target_date
-        
-        start_datetime = target_date_tz.replace(hour=14, minute=0, second=0, microsecond=0) - timedelta(days=1)
-        end_datetime = target_date_tz.replace(hour=14, minute=0, second=0, microsecond=0)
-        
-        # Count all papers for this date (filtered by category if applicable)
-        papers_in_range = filter_papers_by_date_and_category(
-            papers, start_datetime, end_datetime, profile_categories
-        )
-        total_papers_fetched = len(papers_in_range)
-        
-        print(f"  Total papers fetched for {target_date.strftime('%Y-%m-%d')}: {total_papers_fetched}")
+        papers_by_id = {p['id']: p for p in papers}
+
+        filtered = set()
+        for pid in candidate_ids:
+            p = papers_by_id.get(pid)
+            if not p:
+                continue
+            metadata = p.get('metadata', {})
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except Exception:
+                    metadata = {}
+            paper_cats = metadata.get('categories', [])
+            if any(cat in paper_cats for cat in profile_categories):
+                filtered.add(pid)
+
+        candidate_ids = filtered
+
+    total_papers_fetched = len(candidate_ids)
+    print(f"  Candidate papers: {total_papers_fetched}")
     
     # Create recommendation run with total_papers_fetched
     run = await api_client.create_recommendation_run(
@@ -145,79 +102,24 @@ async def run_similarity_matching(
     if use_sections:
         print("\nFetching embeddings (abstract + sections)...")
         user_embeddings = await api_client.get_embeddings_by_corpus(user_corpus_id)
-        
-        if target_date:
-            # Fetch all arxiv embeddings
-            all_arxiv_embeddings = await api_client.get_embeddings_by_corpus(arxiv_corpus_id)
-            
-            # We already calculated papers_in_range above
-            # Keep only embeddings for filtered papers
-            arxiv_embeddings = [e for e in all_arxiv_embeddings if e['paper_id'] in papers_in_range]
-        else:
-            # No date filter, but still apply category filter if present
-            if profile_categories:
-                papers = await api_client.get_papers_by_corpus(arxiv_corpus_id)
-                
-                category_filtered = set()
-                for p in papers:
-                    metadata = p.get('metadata', {})
-                    if isinstance(metadata, str):
-                        try:
-                            metadata = json.loads(metadata)
-                        except:
-                            metadata = {}
-                    
-                    paper_cats = metadata.get('categories', [])
-                    if any(cat in paper_cats for cat in profile_categories):
-                        category_filtered.add(p['id'])
-                
-                all_embeddings = await api_client.get_embeddings_by_corpus(arxiv_corpus_id)
-                arxiv_embeddings = [e for e in all_embeddings if e['paper_id'] in category_filtered]
-                print(f"  Category filter: {len(category_filtered)} papers match {profile_categories}")
-            else:
-                arxiv_embeddings = await api_client.get_embeddings_by_corpus(arxiv_corpus_id)
+        all_arxiv_embeddings = await api_client.get_embeddings_by_corpus(arxiv_corpus_id)
     else:
-        # Abstract-only mode
         print("\nFetching embeddings (abstract only)...")
         user_embeddings = await api_client.get_embeddings_by_corpus(user_corpus_id, type="abstract")
-        
-        if target_date:
-            # Fetch all arxiv embeddings
-            all_arxiv_embeddings = await api_client.get_embeddings_by_corpus(arxiv_corpus_id, type="abstract")
-            
-            # We already calculated papers_in_range above
-            # Keep only embeddings for filtered papers
-            arxiv_embeddings = [e for e in all_arxiv_embeddings if e['paper_id'] in papers_in_range]
-        else:
-            # No date filter, but still apply category filter if present
-            if profile_categories:
-                papers = await api_client.get_papers_by_corpus(arxiv_corpus_id)
-                
-                category_filtered = set()
-                for p in papers:
-                    metadata = p.get('metadata', {})
-                    if isinstance(metadata, str):
-                        try:
-                            metadata = json.loads(metadata)
-                        except:
-                            metadata = {}
-                    
-                    paper_cats = metadata.get('categories', [])
-                    if any(cat in paper_cats for cat in profile_categories):
-                        category_filtered.add(p['id'])
-                
-                all_embeddings = await api_client.get_embeddings_by_corpus(arxiv_corpus_id, type="abstract")
-                arxiv_embeddings = [e for e in all_embeddings if e['paper_id'] in category_filtered]
-                print(f"  Category filter: {len(category_filtered)} papers match {profile_categories}")
-            else:
-                arxiv_embeddings = await api_client.get_embeddings_by_corpus(arxiv_corpus_id, type="abstract")
+        all_arxiv_embeddings = await api_client.get_embeddings_by_corpus(arxiv_corpus_id, type="abstract")
+
+    # Keep only embeddings for candidate papers
+    if candidate_ids:
+        arxiv_embeddings = [e for e in all_arxiv_embeddings if e['paper_id'] in candidate_ids]
+    else:
+        arxiv_embeddings = all_arxiv_embeddings
     
     if not user_embeddings:
         print("Error: No user embeddings found. Run embedding step first.")
         return None
     
     if not arxiv_embeddings:
-        print("Error: No arXiv embeddings found. Run corpus mode first.")
+        print("Error: No arXiv embeddings found for candidate papers.")
         return None
     
     print(f"  User embeddings: {len(user_embeddings)}")

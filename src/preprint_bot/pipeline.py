@@ -68,11 +68,12 @@ async def store_fetched_papers(
     entries: List[PaperEntry],
     skip_download: bool = False,
     skip_parse: bool = False,
-) -> int:
+) -> tuple[int, set[int]]:
     """Create a corpus and store fetched papers in the database.
 
-    Returns the corpus ID.  Handles deduplication, PDF download,
-    and GROBID parsing.
+    Returns ``(corpus_id, paper_ids)`` where ``paper_ids`` is the
+    full set of database IDs for all fetched papers (both newly
+    stored and already existing).
     """
     user = await api_client.get_or_create_user(SYSTEM_USER_EMAIL, SYSTEM_USER_NAME)
     print(f"Using system user: {user['email']}")
@@ -86,12 +87,14 @@ async def store_fetched_papers(
 
     if not entries:
         print("No papers to store")
-        return corpus['id']
+        return corpus['id'], set()
 
     stored_count = 0
+    paper_ids: set[int] = set()  # all paper IDs (new + existing)
     for paper in entries:
         existing = await api_client.get_paper_by_arxiv_id(paper.source_id)
         if existing:
+            paper_ids.add(existing['id'])
             continue
 
         submitted_date = None
@@ -108,7 +111,7 @@ async def store_fetched_papers(
                 print(f"Failed to parse date for {paper.source_id}: {e}")
 
         try:
-            await api_client.create_paper(
+            created = await api_client.create_paper(
                 corpus_id=corpus['id'],
                 arxiv_id=paper.source_id,
                 title=paper.title,
@@ -127,11 +130,12 @@ async def store_fetched_papers(
                 ),
                 submitted_date=submitted_date,
             )
+            paper_ids.add(created['id'])
             stored_count += 1
         except Exception as e:
             print(f"Failed to store {paper.source_id}: {e}")
 
-    print(f"Stored {stored_count} new papers in database")
+    print(f"Stored {stored_count} new papers in database ({len(paper_ids)} total)")
 
     if not skip_download and stored_count > 0:
         stats = download_arxiv_pdfs(
@@ -153,7 +157,7 @@ async def store_fetched_papers(
         grobid_process_folder(PDF_DIR, PROCESSED_TEXT_DIR)
         await store_sections(api_client, corpus['id'], entries)
 
-    return corpus['id']
+    return corpus['id'], paper_ids
 
 
 async def store_sections(
@@ -248,7 +252,7 @@ async def summarize_papers(
     print(f"\nGenerated {summarized_count} summaries")
 
 
-async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, user_corpora: List, target_date: datetime) -> set:
+async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, user_corpora: List, target_date: datetime, paper_ids: set[int] = None) -> set:
     if not user_corpora:
         print("No user corpora to generate recommendations for")
         return set()
@@ -275,7 +279,8 @@ async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, 
                 threshold=profile['threshold'],
                 method='cosine',
                 model_name=DEFAULT_MODEL_NAME,
-                use_sections=True
+                use_sections=True,
+                paper_ids=paper_ids,
             )
             if run_id is None:
                 print(f"    ✗ Skipped: no embeddings found")
@@ -474,7 +479,7 @@ async def run_pipeline(args):
         else:
             print(f"Fetched {len(entries)} papers")
 
-            corpus_id = await store_fetched_papers(
+            corpus_id, paper_ids = await store_fetched_papers(
                 api_client,
                 entries,
                 skip_download=args.skip_download,
@@ -539,7 +544,7 @@ async def run_pipeline(args):
             print("\n" + "="*60)
             print("STEP 6: Generating Recommendations")
             print("="*60)
-            await generate_recommendations(api_client, corpus_id, user_corpora, target_date)
+            await generate_recommendations(api_client, corpus_id, user_corpora, target_date, paper_ids=paper_ids)
 
             print("\n" + "="*60)
             print("STEP 7: Sending Email Digests")
