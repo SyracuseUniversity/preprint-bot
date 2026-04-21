@@ -59,6 +59,9 @@ async def run_similarity_matching(
     # Determine which arXiv papers to compare against
     candidate_ids = set(paper_ids) if paper_ids else set()
 
+    if not candidate_ids:
+        print("  Warning: no paper_ids provided, comparing against all arXiv papers in corpus")
+
     # Filter candidates by profile categories
     if candidate_ids and profile_categories:
         papers = await api_client.get_papers_by_corpus(arxiv_corpus_id)

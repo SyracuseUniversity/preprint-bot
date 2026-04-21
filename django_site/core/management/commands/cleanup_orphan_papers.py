@@ -28,7 +28,7 @@ class Command(BaseCommand):
         apply = options["apply"]
 
         # Find papers with zero M2M corpus links
-        orphans = Paper.objects.filter(corpora=None)
+        orphans = Paper.objects.filter(corpora__isnull=True).distinct()
 
         count = orphans.count()
         if count == 0:
