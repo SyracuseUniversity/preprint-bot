@@ -43,20 +43,18 @@ async def get_all_profile_categories(api_client: APIClient) -> List[str]:
 
 
 async def fetch_preprint_papers(
-    target_date: datetime,
     categories: List[str],
+    target_date: datetime = None,
 ) -> List[PaperEntry]:
     """Fetch new papers from configured preprint sources.
 
-    Uses ``fetch_latest`` for today's date (returns whatever the
-    source considers its most recent batch) and ``fetch_by_date``
-    for historical dates.
+    When ``target_date`` is None, fetches the latest announcement.
+    When a date is provided, fetches papers for that specific
+    historical date.
     """
     source = ArxivSource()
-    today = date_type.today()
-    target = target_date.date() if isinstance(target_date, datetime) else target_date
 
-    if target >= today:
+    if target_date is None:
         return await source.fetch_latest(categories)
     else:
         return await source.fetch_by_date(target_date, categories)
@@ -433,11 +431,16 @@ async def run_pipeline(args):
     api_client = APIClient(base_url=API_BASE_URL)
 
     try:
-        target_date = datetime.strptime(args.date, "%Y-%m-%d")
-
-        print("\n" + "="*80)
-        print(f"PREPRINT BOT PIPELINE - {target_date.strftime('%Y-%m-%d')}")
-        print("="*80 + "\n")
+        if args.date:
+            target_date = datetime.strptime(args.date, "%Y-%m-%d")
+            print("\n" + "="*80)
+            print(f"PREPRINT BOT PIPELINE - {target_date.strftime('%Y-%m-%d')} (backfill)")
+            print("="*80 + "\n")
+        else:
+            target_date = datetime.combine(date_type.today(), datetime.min.time())
+            print("\n" + "="*80)
+            print(f"PREPRINT BOT PIPELINE - latest announcement")
+            print("="*80 + "\n")
 
         # Step 1 always runs — process papers uploaded since the last run
         print("="*60)
@@ -461,7 +464,10 @@ async def run_pipeline(args):
         print("\n" + "="*60)
         print("STEP 3: Fetching Preprint Papers")
         print("="*60)
-        entries = await fetch_preprint_papers(target_date, categories)
+        entries = await fetch_preprint_papers(
+            categories,
+            target_date=target_date if args.date else None,
+        )
 
         if not entries:
             print("No new papers fetched. Skipping steps 4–7.")
@@ -575,7 +581,10 @@ async def run_pipeline(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Preprint Bot Pipeline")
-    parser.add_argument("--date", required=True, help="Target date (YYYY-MM-DD)")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--latest", action="store_true", default=True,
+                      help="Fetch the latest announcement (default)")
+    mode.add_argument("--date", help="Fetch papers for a specific historical date (YYYY-MM-DD)")
     parser.add_argument("--model", default=DEFAULT_MODEL_NAME, help="Embedding model name")
     parser.add_argument("--skip-download", action="store_true", help="Skip PDF download")
     parser.add_argument("--skip-parse", action="store_true", help="Skip GROBID parsing")

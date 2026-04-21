@@ -21,11 +21,9 @@ echo "========================================" | tee -a "$LOG_FILE"
 echo "Starting unified pipeline at $(date)" | tee -a "$LOG_FILE"
 echo "========================================" | tee -a "$LOG_FILE"
 
-TODAY=$(date +%Y-%m-%d)
-echo "Running pipeline for date: $TODAY" | tee -a "$LOG_FILE"
+echo "Running pipeline for latest announcement" | tee -a "$LOG_FILE"
 
 preprint_bot \
-    --date "$TODAY" \
     2>&1 | tee -a "$LOG_FILE"
 
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
