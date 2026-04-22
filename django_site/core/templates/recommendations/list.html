@@ -53,8 +53,8 @@
 
   <div class="grid-2">
     <div class="form-group">
-      <label>Min Score <span id="score-val" class="text-sm" style="font-weight:400; opacity:.7;">· 0.40</span></label>
-      <input type="range" id="f-min-score" min="0.40" max="1.00" step="0.01" value="0.40">
+      <label>Min Score <span id="score-val" class="text-sm" style="font-weight:400; opacity:.7;">· 0.00</span></label>
+      <input type="range" id="f-min-score" min="0.00" max="1.00" step="0.01" value="0.00">
       <div style="display:flex; justify-content:space-between; font-size:.75rem; color:var(--text-dim);">
         <span>More results</span>
         <span>Stricter</span>
@@ -365,8 +365,8 @@ function resetFilters() {
   document.getElementById('f-date-from').value = '';
   document.getElementById('f-date-to').value = '';
   document.getElementById('f-sort').value = 'date';
-  document.getElementById('f-min-score').value = '0.40';
-  document.getElementById('score-val').textContent = '· 0.40';
+  document.getElementById('f-min-score').value = '0.00';
+  document.getElementById('score-val').textContent = '· 0.00';
   document.getElementById('f-keyword').value = '';
   document.querySelectorAll('#cat-pills .tag-toggle').forEach(pill => pill.classList.remove('active'));
   /* re-activate "All time" preset */
@@ -382,7 +382,7 @@ function updateURL(f) {
   const params = new URLSearchParams();
   params.set('profile', PROFILE_PARAM);
   if (f.sort !== 'date') params.set('sort', f.sort);
-  if (f.minScore > 0.40) params.set('min_score', f.minScore.toFixed(2));
+  if (f.minScore > 0) params.set('min_score', f.minScore.toFixed(2));
   if (f.dateFrom) params.set('date_from', f.dateFrom);
   if (f.dateTo) params.set('date_to', f.dateTo);
   if (f.keyword) params.set('q', f.keyword);
