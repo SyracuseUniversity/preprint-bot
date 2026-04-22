@@ -714,7 +714,7 @@ def profile_edit_view(request, profile_id):
         form = ProfileForm(initial={
             "name": profile.name,
             "frequency": profile.frequency,
-            "threshold": profile.threshold if profile.threshold is not None else 0.6,
+            "threshold": max(0.40, min(0.75, profile.threshold if profile.threshold is not None else 0.6)),
             "top_x": profile.top_x or 10,
             "categories": ",".join(profile.categories or []),
         })
