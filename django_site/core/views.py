@@ -886,6 +886,11 @@ def paper_add_arxiv_view(request, profile_id):
             return JsonResponse({"ok": False, "error": f"Failed to download {aid}."}, status=400)
         # Look up the paper to return its info for the DOM
         paper = Paper.objects.filter(arxiv_id=aid).first()
+        if not paper:
+            # Legacy data may have version suffix (e.g., 2507.08778v1)
+            paper = Paper.objects.filter(arxiv_id__startswith=aid + 'v').first()
+        if not paper:
+            return JsonResponse({"ok": False, "error": f"Paper stored but could not be retrieved."}, status=500)
         return JsonResponse({
             "ok": True,
             "paper": {
@@ -893,7 +898,7 @@ def paper_add_arxiv_view(request, profile_id):
                 "title": paper.title,
                 "arxiv_id": paper.arxiv_id,
                 "source": paper.source,
-            } if paper else None,
+            },
         })
 
     success, failed = _download_arxiv_pdfs(pb_user, profile, arxiv_ids)
