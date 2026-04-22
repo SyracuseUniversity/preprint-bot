@@ -91,6 +91,12 @@
     <a href="{% url 'help' %}">Help</a>
   </footer>
 
+  <script>
+  // Prevent scroll-wheel from changing number inputs while page scrolls
+  document.addEventListener('wheel', function(e) {
+    if (e.target.matches('input[type=number]')) e.target.blur();
+  }, {passive: true});
+  </script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>
