@@ -146,9 +146,13 @@ class APIClient:
         return response.json()
     
     async def get_paper_by_arxiv_id(self, arxiv_id: str) -> Optional[Dict]:
-        response = await self.client.get(f"{self.base_url}/papers/")
+        response = await self.client.get(
+            f"{self.base_url}/papers/",
+            params={"arxiv_id": arxiv_id}
+        )
+        response.raise_for_status()
         papers = response.json()
-        return next((p for p in papers if p.get("arxiv_id") == arxiv_id), None)
+        return papers[0] if papers else None
     
     async def get_paper_by_id(self, paper_id: int) -> Optional[Dict]:
         try:
@@ -160,8 +164,29 @@ class APIClient:
                 return None
             raise
     
+    async def update_paper(self, paper_id: int, **fields) -> Optional[Dict]:
+        """Update a paper's fields (title, abstract, metadata, etc.)."""
+        response = await self.client.put(
+            f"{self.base_url}/papers/{paper_id}",
+            json=fields
+        )
+        response.raise_for_status()
+        return response.json()
+    
     async def get_papers_by_corpus(self, corpus_id: int) -> List[Dict]:
         response = await self.client.get(f"{self.base_url}/papers/?corpus_id={corpus_id}")
+        response.raise_for_status()
+        return response.json()
+    
+    async def get_papers_needing_processing(self) -> List[Dict]:
+        """Papers with a PDF but no sections extracted yet."""
+        response = await self.client.get(f"{self.base_url}/papers/needing-processing")
+        response.raise_for_status()
+        return response.json()
+    
+    async def get_papers_needing_embeddings(self) -> List[Dict]:
+        """Papers with sections but no abstract embedding yet."""
+        response = await self.client.get(f"{self.base_url}/papers/needing-embeddings")
         response.raise_for_status()
         return response.json()
     

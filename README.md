@@ -55,7 +55,10 @@ preprint-bot/
 │   ├── pipeline.py               # Main orchestration pipeline
 │   ├── api_client.py             # Async API client
 │   ├── config.py                 # Global configuration constants
-│   ├── query_arxiv.py            # arXiv API integration
+│   ├── sources/                  # Preprint server adapters
+│   │   ├── base.py               # PaperEntry dataclass + PreprintSource ABC
+│   │   └── arxiv.py              # arXiv source (RSS + API fallback)
+│   ├── query_arxiv.py            # arXiv API integration (legacy)
 │   ├── download_arxiv_pdfs.py    # PDF downloading with rate limiting
 │   ├── download_s3_bulk.py       # S3 bulk download (for historical papers)
 │   ├── extract_grobid.py         # GROBID text extraction
@@ -231,6 +234,7 @@ DATABASE_PASSWORD=secure_password
 # API
 API_BASE_URL=http://127.0.0.1:8000
 SYSTEM_USER_EMAIL=system@yourdomain.edu
+USER_AGENT=PreprintBot/1.0 (contact@yourdomain.edu)
 
 # Email (optional)
 EMAIL_HOST=smtp.office365.com
@@ -788,9 +792,15 @@ arXiv publishes new papers:
 
 **Recommended Pipeline Schedule:**
 ```bash
-# Cron job: Run daily at 9 PM EST (1 hour after publication)
-0 21 * * 0-4 cd /path/to/preprint-bot && preprint_bot --mode corpus --daily-window
+# systemd timer: Run daily at 1:30 AM EST (after midnight RSS feed update)
+# See /etc/systemd/system/preprint-bot.timer
+OnCalendar=*-*-* 01:30:00
 ```
+
+The pipeline uses arXiv RSS feeds (primary) for daily runs and falls
+back to the arXiv search API with submission-window calculation for
+backfilling historical dates. The RSS approach automatically handles
+weekend gaps and holiday deferrals.
 
 ### Bulk Downloads
 

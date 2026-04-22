@@ -1,33 +1,29 @@
 from __future__ import annotations
-#!/usr/bin/env python3
 """
-Database-integrated arXiv Preprint Recommender Pipeline
+Database-integrated Preprint Recommender Pipeline
 """
 import argparse
 import asyncio
 import sys
 from pathlib import Path
-from typing import List, Dict
-from datetime import datetime, timedelta, timezone, date as date_type
-from zoneinfo import ZoneInfo
-import time
+from typing import List
+from datetime import datetime, timezone, date as date_type
+from email.utils import parsedate_to_datetime
 import requests
-import feedparser
-import httpx
 
 from .config import (
-    DATA_DIR, DEFAULT_MODEL_NAME, MAX_RESULTS,
-    PDF_DIR, PROCESSED_TEXT_DIR, USER_PDF_DIR, USER_PROCESSED_DIR,
-    SYSTEM_USER_EMAIL, SYSTEM_USER_NAME, ARXIV_CORPUS_NAME, DEFAULT_THRESHOLD,
-    get_user_profile_structure
+    API_BASE_URL, DATA_DIR, DEFAULT_MODEL_NAME,
+    PDF_DIR, PROCESSED_TEXT_DIR,
+    SYSTEM_USER_EMAIL, SYSTEM_USER_NAME, ARXIV_CORPUS_NAME,
 )
 from .api_client import APIClient
 from .download_arxiv_pdfs import download_arxiv_pdfs
 from .embed_papers import embed_and_store_papers
 from .extract_grobid import process_folder as grobid_process_folder
 from .summarization_script import TransformerSummarizer, LlamaSummarizer
-from .user_mode_processor import process_user_profiles, run_user_recommendations
+from .user_mode_processor import process_unprocessed_papers
 from .db_similarity_matcher import run_similarity_matching
+from .sources import ArxivSource, PaperEntry
 
 
 async def get_all_profile_categories(api_client: APIClient) -> List[str]:
@@ -46,172 +42,132 @@ async def get_all_profile_categories(api_client: APIClient) -> List[str]:
         return []
 
 
-async def fetch_papers_for_arxiv_day(target_date, categories):
-    eastern = ZoneInfo("America/New_York")
-    local_end = datetime(
-        year=target_date.year,
-        month=target_date.month,
-        day=target_date.day,
-        hour=14,
-        minute=0,
-        second=0,
-        tzinfo=eastern,
-    )
-    local_start = local_end - timedelta(days=1)
-    start_datetime = local_start.astimezone(timezone.utc)
-    end_datetime = local_end.astimezone(timezone.utc)
-    start = start_datetime.strftime("%Y%m%d%H%M")
-    end = end_datetime.strftime("%Y%m%d%H%M")
-    all_entries = []
-    seen_ids = set()
-
-    print(f"\nFetching papers for arXiv day: {target_date.strftime('%Y-%m-%d')}")
-    print(f"Time window: {start_datetime} to {end_datetime} (UTC)")
-    print(f"Categories: {categories}")
-
-    async with httpx.AsyncClient(timeout=30, headers={"User-Agent": "PreprintBot/1.0 (preprintbot@syr.edu)"}) as client:
-        for cat in categories:
-            query = f"cat:{cat}+AND+submittedDate:[{start}+TO+{end}]"
-            url = (
-                "https://export.arxiv.org/api/query?"
-                f"search_query={query}"
-                f"&start=0&max_results=100"
-                "&sortBy=submittedDate&sortOrder=descending"
-            )
-
-            max_retries = 4
-            backoff = 10
-            success = False
-
-            for attempt in range(max_retries):
-                try:
-                    resp = await client.get(url)
-                    if resp.status_code == 429:
-                        retry_after = resp.headers.get('Retry-After')
-                        wait = int(retry_after) if retry_after else backoff * (2 ** attempt)
-                        print(f"  {cat}: 429 rate limited, waiting {wait}s (attempt {attempt + 1}/{max_retries})")
-                        await asyncio.sleep(wait)
-                        continue
-                    resp.raise_for_status()
-                    feed = feedparser.parse(resp.text)
-                    new_count = 0
-                    for entry in feed.entries:
-                        arxiv_id = entry.id.split('/')[-1]
-                        if arxiv_id not in seen_ids:
-                            seen_ids.add(arxiv_id)
-                            all_entries.append(entry)
-                            new_count += 1
-                    print(f"  {cat}: {new_count} new papers")
-                    success = True
-                    break
-                except Exception as e:
-                    wait = backoff * (2 ** attempt)
-                    print(f"  Error fetching {cat} (attempt {attempt + 1}/{max_retries}): {e}")
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(wait)
-
-            if not success:
-                print(f"  {cat}: failed after {max_retries} attempts, skipping")
-
-            await asyncio.sleep(5)
-
-    print(f"Total papers for {target_date.strftime('%Y-%m-%d')}: {len(all_entries)}")
-    return all_entries
-
-async def fetch_and_store_arxiv(
-    api_client: APIClient,
+async def fetch_preprint_papers(
     categories: List[str],
-    target_date: datetime,
+    target_date: datetime = None,
+) -> List[PaperEntry]:
+    """Fetch new papers from configured preprint sources.
+
+    When ``target_date`` is None, fetches the latest announcement.
+    When a date is provided, fetches papers for that specific
+    historical date.
+    """
+    source = ArxivSource()
+
+    if target_date is None:
+        return await source.fetch_latest(categories)
+    else:
+        return await source.fetch_by_date(target_date, categories)
+
+
+async def store_fetched_papers(
+    api_client: APIClient,
+    entries: List[PaperEntry],
     skip_download: bool = False,
-    skip_parse: bool = False
-):
+    skip_parse: bool = False,
+) -> tuple[int, set[int], int]:
+    """Create a corpus and store fetched papers in the database.
+
+    Returns ``(corpus_id, paper_ids, stored_count)`` where ``paper_ids``
+    is the full set of database IDs for all fetched papers (both newly
+    stored and already existing) and ``stored_count`` is how many were
+    newly created.
+    """
     user = await api_client.get_or_create_user(SYSTEM_USER_EMAIL, SYSTEM_USER_NAME)
     print(f"Using system user: {user['email']}")
 
     corpus = await api_client.get_or_create_corpus(
         user_id=user['id'],
         name=ARXIV_CORPUS_NAME,
-        description="Automatically fetched arXiv papers"
+        description="Automatically fetched preprint papers"
     )
     print(f"Using corpus: {corpus['name']} (ID: {corpus['id']})")
 
-    entries = await fetch_papers_for_arxiv_day(target_date, categories)
-
     if not entries:
-        print("No papers found for this date")
-        return corpus['id'], entries
-
-    print(f"Fetched {len(entries)} papers")
-
-    papers_data = []
-    for entry in entries:
-        arxiv_id = entry.id.split("/")[-1]
-        papers_data.append({
-            "arxiv_id": arxiv_id,
-            "title": entry.title.strip(),
-            "abstract": entry.summary.strip(),
-            "metadata": {
-                "published": getattr(entry, "published", ""),
-                "arxiv_url": entry.id,
-                "authors": [a.name for a in getattr(entry, "authors", [])],
-                "categories": [tag.term for tag in getattr(entry, "tags", [])]
-            }
-        })
+        print("No papers to store")
+        return corpus['id'], set(), 0
 
     stored_count = 0
-    for paper_data in papers_data:
-        existing = await api_client.get_paper_by_arxiv_id(paper_data["arxiv_id"])
+    paper_ids: set[int] = set()  # all paper IDs (new + existing)
+    for paper in entries:
+        existing = await api_client.get_paper_by_arxiv_id(paper.source_id)
         if existing:
+            paper_ids.add(existing['id'])
             continue
 
         submitted_date = None
-        pub_str = paper_data['metadata'].get('published', '')
-        if pub_str:
+        if paper.published:
             try:
-                submitted_date = datetime.fromisoformat(pub_str.replace('Z', '+00:00'))
+                # Try ISO 8601 first (from API), then RFC 2822 (from RSS)
+                try:
+                    submitted_date = datetime.fromisoformat(
+                        paper.published.replace('Z', '+00:00')
+                    )
+                except ValueError:
+                    submitted_date = parsedate_to_datetime(paper.published)
                 if submitted_date.tzinfo is not None:
-                    submitted_date = submitted_date.astimezone(timezone.utc).replace(tzinfo=None)
+                    submitted_date = submitted_date.astimezone(
+                        timezone.utc
+                    ).replace(tzinfo=None)
             except Exception as e:
-                print(f"Failed to parse date for {paper_data.get('arxiv_id', 'unknown')}: {e}")
+                print(f"Failed to parse date for {paper.source_id}: {e}")
 
         try:
-            await api_client.create_paper(
+            created = await api_client.create_paper(
                 corpus_id=corpus['id'],
-                arxiv_id=paper_data['arxiv_id'],
-                title=paper_data['title'],
-                abstract=paper_data['abstract'],
-                metadata=paper_data['metadata'],
-                source="arxiv",
-                pdf_path=str(PDF_DIR / f"{paper_data['arxiv_id']}.pdf"),
-                processed_text_path=str(PROCESSED_TEXT_DIR / f"{paper_data['arxiv_id']}_output.txt"),
-                submitted_date=submitted_date
+                arxiv_id=paper.source_id,
+                title=paper.title,
+                abstract=paper.abstract,
+                metadata={
+                    "published": paper.published,
+                    "arxiv_url": paper.url,
+                    "authors": paper.authors,
+                    "categories": paper.categories,
+                    **paper.metadata,
+                },
+                source=paper.source,
+                pdf_path=str(PDF_DIR / f"{paper.source_id}.pdf"),
+                processed_text_path=str(
+                    PROCESSED_TEXT_DIR / f"{paper.source_id}_output.txt"
+                ),
+                submitted_date=submitted_date,
             )
+            paper_ids.add(created['id'])
             stored_count += 1
         except Exception as e:
-            print(f"Failed to store {paper_data['arxiv_id']}: {e}")
+            print(f"Failed to store {paper.source_id}: {e}")
 
-    print(f"Stored {stored_count} new papers in database")
+    print(f"Stored {stored_count} new papers in database ({len(paper_ids)} total)")
 
     if not skip_download and stored_count > 0:
-        download_arxiv_pdfs(
-            [{"arxiv_url": p["metadata"]["arxiv_url"]} for p in papers_data],
+        stats = download_arxiv_pdfs(
+            [{"arxiv_url": p.url} for p in entries],
             output_folder=str(PDF_DIR),
             use_s3=False,
-            min_delay=3
+            min_delay=3,
         )
+
+        # Warn if all downloads failed
+        if stats and stats.get("downloaded", 0) == 0 and stats.get("failed", 0) > 0:
+            print(
+                f"WARNING: All {stats['failed']} PDF downloads failed. "
+                f"Check network connectivity and file permissions."
+            )
 
     if not skip_parse and stored_count > 0:
         print("\nParsing PDFs with GROBID...")
         grobid_process_folder(PDF_DIR, PROCESSED_TEXT_DIR)
         await store_sections(api_client, corpus['id'], entries)
 
-    return corpus['id'], entries
+    return corpus['id'], paper_ids, stored_count
 
 
-async def store_sections(api_client: APIClient, corpus_id: int, entries):
+async def store_sections(
+    api_client: APIClient, corpus_id: int, entries: List[PaperEntry]
+):
     print(f"Extracting sections from papers in corpus {corpus_id}...")
     papers = await api_client.get_papers_by_corpus(corpus_id)
-    entry_ids = {e.id.split('/')[-1] for e in entries}
+    entry_ids = {e.source_id for e in entries}
     papers = [p for p in papers if p.get('arxiv_id') in entry_ids]
 
     sections_stored = 0
@@ -257,10 +213,17 @@ async def store_sections(api_client: APIClient, corpus_id: int, entries):
     print(f"Stored {sections_stored} total sections")
 
 
-async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, entries, mode: str = "abstract", paper_ids: set[int] | None = None):
+async def summarize_papers(
+    api_client: APIClient,
+    corpus_id: int,
+    summarizer,
+    entries: List[PaperEntry],
+    mode: str = "abstract",
+    paper_ids: set[int] | None = None,
+):
     print(f"\nGenerating summaries using {type(summarizer).__name__}...")
     papers = await api_client.get_papers_by_corpus(corpus_id)
-    entry_ids = {e.id.split('/')[-1] for e in entries}
+    entry_ids = {e.source_id for e in entries}
     papers = [p for p in papers if p.get('arxiv_id') in entry_ids]
 
     if paper_ids is not None:
@@ -291,33 +254,7 @@ async def summarize_papers(api_client: APIClient, corpus_id: int, summarizer, en
     print(f"\nGenerated {summarized_count} summaries")
 
 
-async def process_user_papers(api_client: APIClient, skip_parse: bool, skip_embed: bool):
-    structure = get_user_profile_structure(USER_PDF_DIR)
-    if not structure:
-        print("No user papers found in user_pdfs/")
-        return []
-
-    print(f"Found user structure:")
-    for uid, pids in structure.items():
-        print(f"  User {uid}: Profiles {', '.join(map(str, pids))}")
-
-    all_user_corpora = []
-    for uid, pids in structure.items():
-        result = await process_user_profiles(api_client, uid, pids, skip_parse=skip_parse, skip_embed=skip_embed)
-        if result:
-            for r in result['results']:
-                if r.get('corpus') is None:
-                    continue
-                all_user_corpora.append({
-                    'user_id': result['user']['id'],
-                    'corpus_id': r['corpus']['id'],
-                    'profile': r['profile']
-                })
-
-    return all_user_corpora
-
-
-async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, user_corpora: List, target_date: datetime) -> set:
+async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, user_corpora: List, target_date: datetime, paper_ids: set[int] = None) -> set:
     if not user_corpora:
         print("No user corpora to generate recommendations for")
         return set()
@@ -344,7 +281,8 @@ async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, 
                 threshold=profile['threshold'],
                 method='cosine',
                 model_name=DEFAULT_MODEL_NAME,
-                use_sections=True
+                use_sections=True,
+                paper_ids=paper_ids,
             )
             if run_id is None:
                 print(f"    ✗ Skipped: no embeddings found")
@@ -365,10 +303,6 @@ async def generate_recommendations(api_client: APIClient, arxiv_corpus_id: int, 
 async def send_all_digests(api_client: APIClient, run_date: str = None):
     run_date = run_date or str(date_type.today())
     run_date_obj = date_type.fromisoformat(run_date)
-
-    print(f"\n{'='*60}")
-    print("STEP 8: Sending Email Digests")
-    print(f"{'='*60}")
 
     try:
         response = await api_client.client.get(f"{api_client.base_url}/profiles/")
@@ -423,21 +357,106 @@ async def send_all_digests(api_client: APIClient, run_date: str = None):
                 print(f"  ✗ [{profile['name']}] failed before receiving a response: {e}")
 
 
+def _preflight_checks(args):
+    """Verify the environment is correctly configured before running.
+
+    Catches common problems (wrong user, unreachable services, missing
+    directories) early so the pipeline fails fast with a clear message
+    instead of producing orphaned DB records or silent download failures.
+    """
+    import os
+    errors = []
+
+    # ── Writable directories ───────────────────────────────────────────
+    for d in [DATA_DIR, PDF_DIR, PROCESSED_TEXT_DIR]:
+        d.mkdir(parents=True, exist_ok=True)
+        test_file = d / ".write_test"
+        try:
+            test_file.touch()
+            test_file.unlink()
+        except PermissionError:
+            errors.append(
+                f"Cannot write to {d} — are you running as the correct user? "
+                f"(current uid={os.getuid()})"
+            )
+
+    # ── FastAPI reachable ──────────────────────────────────────────────
+    try:
+        r = requests.get(f"{API_BASE_URL}/health", timeout=5)
+        if r.status_code != 200:
+            errors.append(
+                f"FastAPI at {API_BASE_URL} returned status {r.status_code} "
+                f"(expected 200)"
+            )
+    except requests.ConnectionError:
+        errors.append(f"Cannot connect to FastAPI at {API_BASE_URL}")
+    except Exception as e:
+        errors.append(f"FastAPI health check failed: {e}")
+
+    # ── GROBID reachable (unless parsing is skipped) ──────────────────
+    if not args.skip_parse:
+        try:
+            r = requests.get("http://localhost:8070/api/isalive", timeout=5)
+            if r.status_code != 200:
+                errors.append(
+                    f"GROBID at localhost:8070 returned status {r.status_code}"
+                )
+        except requests.ConnectionError:
+            errors.append(
+                "Cannot connect to GROBID at localhost:8070 — "
+                "is the grobid service running?"
+            )
+        except Exception as e:
+            errors.append(f"GROBID health check failed: {e}")
+
+    # ── LLM model exists (unless summarization is skipped) ────────────
+    if not args.skip_summarize and args.summarizer == "llama":
+        if not Path(args.llm_model).exists():
+            errors.append(
+                f"LLM model not found at {args.llm_model} — "
+                f"use --summarizer transformer or --skip-summarize"
+            )
+
+    if errors:
+        print("\n" + "=" * 60)
+        print("PREFLIGHT CHECK FAILED")
+        print("=" * 60)
+        for err in errors:
+            print(f"  ✗ {err}")
+        print("=" * 60 + "\n")
+        sys.exit(1)
+
+    print("Preflight checks passed.\n")
+
+
 async def run_pipeline(args):
-    api_client = APIClient()
+    _preflight_checks(args)
+
+    api_client = APIClient(base_url=API_BASE_URL)
 
     try:
-        target_date = datetime.strptime(args.date, "%Y-%m-%d")
-        prev_day = target_date - timedelta(days=1)
+        if args.date:
+            target_date = datetime.strptime(args.date, "%Y-%m-%d")
+            print("\n" + "="*80)
+            print(f"PREPRINT BOT PIPELINE - {target_date.strftime('%Y-%m-%d')} (backfill)")
+            print("="*80 + "\n")
+        else:
+            target_date = datetime.combine(date_type.today(), datetime.min.time())
+            print("\n" + "="*80)
+            print(f"PREPRINT BOT PIPELINE - latest announcement")
+            print("="*80 + "\n")
 
-        print("\n" + "="*80)
-        print(f"PREPRINT BOT PIPELINE - {target_date.strftime('%Y-%m-%d')}")
-        print("="*80)
-        print(f"Time window: 2PM {prev_day.strftime('%Y-%m-%d')} to 2PM {target_date.strftime('%Y-%m-%d')} EST")
-        print("="*80 + "\n")
-
+        # Step 1 always runs — process papers uploaded since the last run
         print("="*60)
-        print("STEP 1: Getting Categories from User Profiles")
+        print("STEP 1: Processing User Papers")
+        print("="*60)
+        user_result = await process_unprocessed_papers(
+            api_client, skip_parse=args.skip_parse, skip_embed=args.skip_embed
+        )
+        print(f"  Summary: {user_result['parsed']} parsed, {user_result['embedded']} embedded")
+
+        print("\n" + "="*60)
+        print("STEP 2: Getting Categories from User Profiles")
         print("="*60)
         categories = await get_all_profile_categories(api_client)
 
@@ -447,26 +466,29 @@ async def run_pipeline(args):
             sys.exit(1)
 
         print("\n" + "="*60)
-        print("STEP 2: Fetching arXiv Papers")
+        print("STEP 3: Fetching Preprint Papers")
         print("="*60)
-        corpus_id, entries = await fetch_and_store_arxiv(
-            api_client,
-            categories=categories,
-            target_date=target_date,
-            skip_download=args.skip_download,
-            skip_parse=args.skip_parse
+        entries = await fetch_preprint_papers(
+            categories,
+            target_date=target_date if args.date else None,
         )
 
-        entries = entries or []
-        user_corpora = []
-
         if not entries:
-            print("No new papers fetched. Skipping embedding, recommendations, and summarization.")
+            print("No new papers fetched. Skipping steps 4–7.")
         else:
+            print(f"Fetched {len(entries)} papers")
+
+            corpus_id, paper_ids, stored_count = await store_fetched_papers(
+                api_client,
+                entries,
+                skip_download=args.skip_download,
+                skip_parse=args.skip_parse,
+            )
+
             print("\n" + "="*60)
-            print("STEP 3: Generating Embeddings")
+            print("STEP 4: Generating Embeddings")
             print("="*60)
-            if not args.skip_embed:
+            if not args.skip_embed and stored_count > 0:
                 await embed_and_store_papers(
                     api_client,
                     corpus_id=corpus_id,
@@ -474,11 +496,13 @@ async def run_pipeline(args):
                     model_name=args.model,
                     store_sections=True
                 )
+            elif stored_count == 0:
+                print("No new papers — skipping.")
 
             print("\n" + "="*60)
-            print("STEP 4: Generating Summaries")
+            print("STEP 5: Generating Summaries")
             print("="*60)
-            if not args.skip_summarize:
+            if not args.skip_summarize and stored_count > 0:
                 if args.summarizer == "llama":
                     if not Path(args.llm_model).exists():
                         print(f"Warning: LLM model not found at {args.llm_model}. Skipping summarization.")
@@ -488,21 +512,49 @@ async def run_pipeline(args):
                 else:
                     summarizer = TransformerSummarizer()
                     await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract")
+            elif stored_count == 0:
+                print("No new papers — skipping.")
             else:
                 print("Skipping summarization.")
 
-            print("\n" + "="*60)
-            print("STEP 5: Processing User Papers")
-            print("="*60)
-            user_corpora = await process_user_papers(api_client, skip_parse=args.skip_parse, skip_embed=args.skip_embed)
+            # Gather user corpora for recommendations
+            try:
+                response = await api_client.client.get(f"{api_client.base_url}/profiles/")
+                response.raise_for_status()
+                all_profiles = response.json()
+            except Exception as e:
+                print(f"Failed to fetch profiles: {e}")
+                all_profiles = []
+
+            system_user = await api_client.get_user_by_email(SYSTEM_USER_EMAIL)
+            system_user_id = system_user['id'] if system_user else None
+
+            user_corpora = []
+            for profile in all_profiles:
+                if profile['user_id'] == system_user_id:
+                    continue
+                corpus_name = f"user_{profile['user_id']}_profile_{profile['id']}"
+                corpus = await api_client.get_corpus_by_name(profile['user_id'], corpus_name)
+                if corpus:
+                    user_corpora.append({
+                        'user_id': profile['user_id'],
+                        'corpus_id': corpus['id'],
+                        'profile': profile,
+                    })
 
             print("\n" + "="*60)
             print("STEP 6: Generating Recommendations")
             print("="*60)
-            await generate_recommendations(api_client, corpus_id, user_corpora, target_date)
+            await generate_recommendations(api_client, corpus_id, user_corpora, target_date, paper_ids=paper_ids)
 
+            print("\n" + "="*60)
+            print("STEP 7: Sending Email Digests")
+            print("="*60)
+            await send_all_digests(api_client, run_date=target_date.strftime("%Y-%m-%d"))
+
+        # Cleanup always runs
         print("\n" + "="*60)
-        print("STEP 7: Cleanup")
+        print("STEP 8: Cleanup")
         print("="*60)
         print("Cleaning up temporary arXiv files...")
         try:
@@ -515,19 +567,16 @@ async def run_pipeline(args):
                 txt.unlink()
                 deleted_txts += 1
             print(f"  ✓ Deleted {deleted_pdfs} PDFs and {deleted_txts} processed texts")
-            print(f"  ✓ User files in {USER_PDF_DIR} are safe")
+            print(f"  ✓ User paper files are safe (hash-based storage)")
         except Exception as e:
             print(f"  Warning: Cleanup failed: {e}")
-
-        await send_all_digests(api_client, run_date=target_date.strftime("%Y-%m-%d"))
 
         print("\n" + "="*80)
         print("PIPELINE COMPLETE!")
         print("="*80)
         print(f"  • Date: {target_date.strftime('%Y-%m-%d')}")
-        print(f"  • arXiv Papers: {len(entries)} fetched")
-        print(f"  • User Corpora: {len(user_corpora)} processed")
-        print(f"  • Corpus ID: {corpus_id}")
+        print(f"  • User papers: {user_result['parsed']} parsed, {user_result['embedded']} embedded")
+        print(f"  • Preprint papers: {len(entries)} fetched")
         print("="*80 + "\n")
 
     finally:
@@ -536,7 +585,10 @@ async def run_pipeline(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Preprint Bot Pipeline")
-    parser.add_argument("--date", required=True, help="Target date (YYYY-MM-DD)")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--latest", action="store_true", default=True,
+                      help="Fetch the latest announcement (default)")
+    mode.add_argument("--date", help="Fetch papers for a specific historical date (YYYY-MM-DD)")
     parser.add_argument("--model", default=DEFAULT_MODEL_NAME, help="Embedding model name")
     parser.add_argument("--skip-download", action="store_true", help="Skip PDF download")
     parser.add_argument("--skip-parse", action="store_true", help="Skip GROBID parsing")

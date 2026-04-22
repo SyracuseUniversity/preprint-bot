@@ -88,6 +88,16 @@ PIPELINE_SCRIPT = "date_pipeline.py"
 # Number of days to keep log files before deleting
 LOG_RETENTION_DAYS = 30  # TODO: change if desired
 
+# ==================== EMAIL SETTINGS ====================
+
+# SMTP settings for email digests (optional — leave EMAIL_HOST empty to disable)
+EMAIL_HOST = ""  # TODO: e.g. "smtp.office365.com"
+EMAIL_PORT = 587
+EMAIL_USER = ""  # TODO: SMTP login username
+EMAIL_PASSWORD = ""  # TODO: SMTP login password
+EMAIL_FROM_ADDRESS = "noreply@localhost"  # TODO: sender address
+EMAIL_FROM_NAME = "Preprint Bot"  # TODO: sender display name
+
 # ==================== DATABASE SETTINGS ====================
 
 class Settings(BaseSettings):

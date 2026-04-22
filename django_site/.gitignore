@@ -1,0 +1,29 @@
+# Local settings (production secrets, DB credentials, etc.)
+preprint_bot_web/local_settings.py
+
+# Environment file (created by setup_database.sh)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+.venv/
+
+# Django
+*.sqlite3
+staticfiles/
+media/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store

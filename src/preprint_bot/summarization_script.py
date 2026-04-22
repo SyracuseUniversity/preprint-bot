@@ -124,7 +124,7 @@ class LlamaSummarizer:
             n_ctx=2048,
             n_threads=8,
             n_gpu_layers=n_gpu_layers,
-            verbose=True
+            verbose=False
         )
 
     def summarize(self, text: str, max_length: int = 200, mode: str = "abstract") -> str:

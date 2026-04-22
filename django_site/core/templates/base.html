@@ -1,0 +1,96 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Preprint Bot{% endblock %}</title>
+
+  {# ── Fonts ───────────────────────────────────────────── #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="{% static 'core/style.css' %}">
+
+  {% if ACCENT_COLOR or NAV_COLOR %}
+  <style>
+    :root {
+      {% if ACCENT_COLOR %}--accent: {{ ACCENT_COLOR }};
+      --accent-dim: color-mix(in srgb, {{ ACCENT_COLOR }} 15%, white);{% endif %}
+      {% if NAV_COLOR %}--bg-nav: {{ NAV_COLOR }};{% endif %}
+    }
+  </style>
+  {% endif %}
+
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+  {# ── Navigation ────────────────────────────────────────── #}
+  {% if request.user.is_authenticated %}
+  <nav class="topnav">
+    <a href="{% url 'dashboard' %}" class="brand">Preprint Bot</a>
+    <button class="nav-toggle" onclick="const isOpen = document.querySelector('.topnav').classList.toggle('open'); this.setAttribute('aria-expanded', isOpen ? 'true' : 'false');" aria-label="Toggle navigation" aria-controls="nav-menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="nav-menu" id="nav-menu">
+      <div class="nav-links">
+        <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="{% url 'profile_list' %}" class="{% if 'profile' in request.resolver_match.url_name %}active{% endif %}">Profiles</a>
+        <a href="{% url 'recommendations' %}" class="{% if request.resolver_match.url_name == 'recommendations' %}active{% endif %}">Recommendations</a>
+        <a href="{% url 'settings' %}" class="{% if request.resolver_match.url_name == 'settings' %}active{% endif %}">Settings</a>
+      </div>
+      <div class="user-area">
+        <span>{{ request.user.name|default:request.user.email }}</span>
+        <a href="{% url 'help' %}" target="_blank" rel="noopener noreferrer">Help</a>
+        <form method="post" action="{% url 'logout' %}" style="display:inline;">
+          {% csrf_token %}
+          <button type="submit" class="nav-logout-btn">Sign out</button>
+        </form>
+      </div>
+    </div>
+  </nav>
+  {% endif %}
+
+  {# ── Beta banner (dismissable, localStorage remembers) ── #}
+  {% if SHOW_BETA_BANNER %}
+  <div class="beta-banner" id="beta-banner">
+    <span>This site is in beta — feedback welcome at
+      <a href="mailto:{{ SUPPORT_EMAIL }}">{{ SUPPORT_EMAIL }}</a>
+    </span>
+    <button type="button" class="banner-close" onclick="dismissBanner()" aria-label="Dismiss">&times;</button>
+  </div>
+  <script>
+    function dismissBanner() {
+      document.getElementById('beta-banner').style.display = 'none';
+      try { localStorage.setItem('beta_banner_dismissed', '1'); } catch(e) {}
+    }
+    try {
+      if (localStorage.getItem('beta_banner_dismissed') === '1') {
+        document.getElementById('beta-banner').style.display = 'none';
+      }
+    } catch(e) {}
+  </script>
+  {% endif %}
+
+  {# ── Messages ──────────────────────────────────────────── #}
+  <div class="container">
+    {% for msg in messages %}
+      <div class="alert alert-{{ msg.tags }}">{{ msg }}</div>
+    {% endfor %}
+
+    {% block content %}{% endblock %}
+  </div>
+
+  {# ── Footer ────────────────────────────────────────────── #}
+  <footer class="site-footer">
+    <span>{{ SITE_NAME }}</span>
+    <span class="footer-sep">·</span>
+    <span>Questions or feedback? <a href="mailto:{{ SUPPORT_EMAIL }}">{{ SUPPORT_EMAIL }}</a></span>
+    <span class="footer-sep">·</span>
+    <a href="{% url 'help' %}">Help</a>
+  </footer>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

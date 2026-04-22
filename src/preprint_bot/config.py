@@ -5,11 +5,8 @@ for the arXiv preprint recommendation pipeline.
 DATABASE VERSION: Stores metadata in PostgreSQL, files in local directories.
 """
 
-import os
 from pathlib import Path
-from pydantic_settings import BaseSettings
-from functools import lru_cache
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 # List of arXiv subject categories to query
@@ -39,72 +36,46 @@ DATA_DIR = Path("pdf_data")
 PDF_DIR = DATA_DIR / "pdfs"
 PROCESSED_TEXT_DIR = DATA_DIR / "processed_texts"
 
-USER_PDF_DIR = DATA_DIR / "user_pdfs"
+USER_PDF_DIR = DATA_DIR / "user_pdfs"      # legacy — Django now uses PAPER_STORAGE_DIR
 USER_PROCESSED_DIR = DATA_DIR / "user_processed"
+PAPER_STORAGE_DIR = DATA_DIR / "papers"    # hash-based deduplicated storage
 
 
 # Create all necessary directories
-for directory in [DATA_DIR, PDF_DIR, PROCESSED_TEXT_DIR, USER_PDF_DIR, USER_PROCESSED_DIR]:
+for directory in [DATA_DIR, PDF_DIR, PROCESSED_TEXT_DIR, USER_PDF_DIR, USER_PROCESSED_DIR, PAPER_STORAGE_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
-# API Configuration
-API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 
-# Default user for system operations (fetching arXiv papers)
-SYSTEM_USER_EMAIL = os.getenv("SYSTEM_USER_EMAIL", "abcd@syr.edu")
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",
+    )
+
+    # Database
+    DATABASE_HOST: str = "localhost"
+    DATABASE_PORT: int = 5432
+    DATABASE_NAME: str = "preprint_bot"
+    DATABASE_USER: str = "postgres"
+    DATABASE_PASSWORD: str = ""
+
+    # API
+    API_BASE_URL: str = "http://127.0.0.1:8000"
+
+    # Pipeline
+    SYSTEM_USER_EMAIL: str = "abcd@syr.edu"
+    USER_AGENT: str = "PreprintBot/1.0"
+
+
+settings = Settings()
+
+# Module-level aliases so existing imports (e.g. ``from .config import
+# API_BASE_URL``) keep working without changes elsewhere.
+API_BASE_URL = settings.API_BASE_URL
+SYSTEM_USER_EMAIL = settings.SYSTEM_USER_EMAIL
 SYSTEM_USER_NAME = "Preprint Bot"
+USER_AGENT = settings.USER_AGENT
 
 # Corpus naming
 ARXIV_CORPUS_NAME = "arxiv_papers"
-
-# Load environment variables at module level
-load_dotenv() 
-
-# Database Settings class
-class Settings(BaseSettings):
-
-    DATABASE_HOST: str = os.getenv("DATABASE_HOST", "localhost")
-    DATABASE_PORT: int = int(os.getenv("DATABASE_PORT", 5432))
-    DATABASE_NAME: str = os.getenv("DATABASE_NAME", "preprint_bot")
-    DATABASE_USER: str = os.getenv("DATABASE_USER", "postgres")
-    DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD", "")
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-
-
-@lru_cache()
-def get_settings():
-    return Settings()
-
-
-settings = get_settings()
-
-
-def get_user_profile_structure(base_dir=USER_PDF_DIR):
-    """
-    Scan user_pdfs directory and return structure:
-    {
-        1: [1, 2],  # user_id: [profile_ids]
-        2: [3, 4],
-        3: [5, 6]
-    }
-    """
-    structure = {}
-    base_path = Path(base_dir)
-    
-    if not base_path.exists():
-        return structure
-    
-    for user_dir in sorted(base_path.glob("[0-9]*")):
-        if user_dir.is_dir():
-            user_id = int(user_dir.name)
-            profile_ids = []
-            for profile_dir in sorted(user_dir.glob("[0-9]*")):
-                if profile_dir.is_dir():
-                    profile_ids.append(int(profile_dir.name))
-            if profile_ids:
-                structure[user_id] = profile_ids
-    
-    return structure

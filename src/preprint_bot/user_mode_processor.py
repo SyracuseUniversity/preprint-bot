@@ -1,277 +1,172 @@
 """
-User mode processor for UID/PID directory structure
+Paper-centric processor for user-uploaded papers.
+
+Finds all unprocessed papers in the database (regardless of which user
+or profile they belong to), runs Grobid extraction, and generates
+embeddings.  This avoids redundant processing when the same paper is
+linked to multiple profiles.
 """
 from pathlib import Path
-from typing import Dict, List
-import asyncio
+from typing import Dict
 
-from .config import USER_PDF_DIR, USER_PROCESSED_DIR, get_user_profile_structure, DEFAULT_MODEL_NAME
+from .config import DEFAULT_MODEL_NAME
 from .api_client import APIClient
-from .extract_grobid import process_folder
-from .embed_papers import embed_and_store_papers
-from .db_similarity_matcher import run_similarity_matching
+from .extract_grobid import extract_grobid_sections
 
 
-async def store_sections_for_corpus(api_client: APIClient, corpus_id: int, processed_dir: Path):
-    """Extract and store sections from processed files"""
-    papers = await api_client.get_papers_by_corpus(corpus_id)
-    
-    sections_count = 0
-    for paper in papers:
-        processed_path = paper.get('processed_text_path')
-        if not processed_path or not Path(processed_path).exists():
-            continue
-        
-        try:
-            with open(processed_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-        except Exception:
-            continue
-        
-        sections = []
-        current_header = None
-        current_text = []
-        
-        for line in lines[2:]:
-            line = line.strip()
-            if line.startswith("### "):
-                if current_header and current_text:
-                    sections.append((current_header, ' '.join(current_text)))
-                current_header = line[4:].strip()
-                current_text = []
-            elif line:
-                current_text.append(line)
-        
-        if current_header and current_text:
-            sections.append((current_header, ' '.join(current_text)))
-        
-        for header, text in sections:
-            try:
-                await api_client.create_section(
-                    paper_id=paper['id'],
-                    header=header,
-                    text=text
-                )
-                sections_count += 1
-            except Exception:
-                pass
-    
-    return sections_count
+# ── Grobid processing (paper-centric) ─────────────────────────────────────
 
-
-async def process_profile_directory(
+async def process_unprocessed_papers(
     api_client: APIClient,
-    user: Dict,
-    user_id: int,
-    profile_id: int,
-    profile_pdf_dir: Path,
-    profile_processed_dir: Path,
     skip_parse: bool = False,
-    skip_embed: bool = False
-) -> Dict:
-    
-    print(f"\nProcessing user {user_id} / profile {profile_id}")
-    
-    # Get profile by ID directly
-    try:
-        response = await api_client.client.get(f"{api_client.base_url}/profiles/{profile_id}")
-        response.raise_for_status()
-        profile = response.json()
-    except Exception as e:
-        print(f"  Error: Profile {profile_id} not found: {e}")
-        return None
-    
-    print(f"  Profile: {profile['name']} (ID: {profile['id']})")
-    
-    # Get or create corpus
-    corpus_name = f"user_{user_id}_profile_{profile_id}"
-    corpus = await api_client.get_or_create_corpus(
-        user_id=user["id"],
-        name=corpus_name,
-        description=f"Papers for user {user_id} profile {profile_id}"
-    )
-    print(f"  Corpus: {corpus['name']} (ID: {corpus['id']})")
-    
-    # Link profile to corpus
-    await api_client.link_profile_corpus(profile["id"], corpus["id"])
-    
-    # Parse PDFs with GROBID
-    if not skip_parse:
-        print(f"  Parsing PDFs with GROBID...")
-        profile_processed_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            process_folder(profile_pdf_dir, profile_processed_dir)
-        except Exception as e:
-            print(f"  Warning: GROBID processing issue: {e}")
-    
-    # Store papers in database
-    print(f"  Storing papers in database...")
-    stored_count = 0
-    
-    for pdf_file in profile_pdf_dir.glob("*.pdf"):
-        arxiv_id = pdf_file.stem
-        processed_file = profile_processed_dir / f"{arxiv_id}_output.txt"
-        
-        # Extract title and abstract
-        title = arxiv_id
-        abstract = ""
-        
-        if processed_file.exists():
-            try:
-                with open(processed_file, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                if len(lines) >= 1:
-                    title = lines[0].strip().replace("# ", "")
-                if len(lines) >= 2:
-                    abstract = lines[1].strip().replace("## Abstract", "").strip()
-            except Exception:
-                pass
-        
-        # Check if paper already exists
-        existing = await api_client.get_paper_by_arxiv_id(arxiv_id)
-        if existing:
-            print(f"    Paper {arxiv_id} already exists")
-            continue
-        
-        try:
-            await api_client.create_paper(
-                corpus_id=corpus["id"],
-                arxiv_id=arxiv_id,
-                title=title,
-                abstract=abstract,
-                metadata={
-                    "user_id": user_id,
-                    "profile_id": profile_id
-                },
-                source="user",
-                pdf_path=str(pdf_file),
-                processed_text_path=str(processed_file)
-            )
-            stored_count += 1
-            print(f"    Stored: {title[:50]}...")
-        except Exception as e:
-            print(f"    Error storing {arxiv_id}: {e}")
-    
-    print(f"  Stored {stored_count} papers")
-    
-    # Store sections
-    print(f"  Extracting sections...")
-    sections_count = await store_sections_for_corpus(api_client, corpus["id"], profile_processed_dir)
-    print(f"  Stored {sections_count} sections")
-    
-    # Generate embeddings
-    if not skip_embed:
-        print(f"  Generating embeddings...")
-        try:
-            await embed_and_store_papers(
-                api_client,
-                corpus_id=corpus["id"],
-                processed_folder=str(profile_processed_dir),
-                model_name=DEFAULT_MODEL_NAME,
-                store_sections=True
-            )
-            print(f"  Embeddings complete")
-        except Exception as e:
-            print(f"  Error generating embeddings: {e}")
-    
-    return {
-        "profile": profile,
-        "corpus": corpus,
-        "papers_count": stored_count
-    }
-
-
-async def process_user_profiles(
-    api_client: APIClient,
-    user_id: int,  # Changed from uid string
-    profile_ids: List[int],  # Changed from pids list
-    skip_parse: bool = False,
-    skip_embed: bool = False
-) -> Dict:
-    
-    print(f"\n{'='*60}")
-    print(f"Processing User ID: {user_id}")
-    print(f"{'='*60}")
-    
-    # Get user directly by ID
-    user = await api_client.get_user_by_id(user_id)
-    
-    if not user:
-        print(f"  Error: User ID {user_id} not found in database")
-        return None
-    
-    print(f"  User: {user['name']} ({user['email']})")
-    
-    results = []
-    
-    for profile_id in profile_ids:
-        profile_pdf_dir = USER_PDF_DIR / str(user_id) / str(profile_id)
-        profile_processed_dir = USER_PROCESSED_DIR / str(user_id) / str(profile_id)
-        
-        if not profile_pdf_dir.exists():
-            print(f"  Warning: Directory not found: {profile_pdf_dir}")
-            continue
-        
-        pdf_count = len(list(profile_pdf_dir.glob("*.pdf")))
-        if pdf_count == 0:
-            print(f"  Warning: No PDFs found in {profile_pdf_dir}")
-            continue
-        
-        print(f"  Found {pdf_count} PDFs in profile {profile_id}")
-        
-        result = await process_profile_directory(
-            api_client,
-            user,
-            user_id,
-            profile_id,
-            profile_pdf_dir,
-            profile_processed_dir,
-            skip_parse,
-            skip_embed
-        )
-        
-        results.append(result)
-    
-    return {
-        "user": user,
-        "results": results
-    }
-
-async def run_user_recommendations(
-    api_client: APIClient,
-    user: Dict,
-    user_corpora_ids: List[int],
-    arxiv_corpus_id: int,
-    threshold: str,
-    method: str,
-    use_sections: bool
+    skip_embed: bool = False,
 ):
-    """Run recommendations for all user profiles against arXiv corpus"""
-    
-    print(f"\n{'='*60}")
-    print(f"Running Recommendations for {user['name']}")
-    print(f"{'='*60}")
-    
-    all_runs = []
-    
-    for corpus_id in user_corpora_ids:
-        corpus = await api_client.client.get(f"{api_client.base_url}/corpora/{corpus_id}")
-        corpus_data = corpus.json()
-        
-        print(f"\nProfile Corpus: {corpus_data['name']}")
-        
-        run_id = await run_similarity_matching(
-            api_client,
-            user_id=user["id"],
-            user_corpus_id=corpus_id,
-            arxiv_corpus_id=arxiv_corpus_id,
-            threshold=threshold,
-            method=method,
-            model_name=DEFAULT_MODEL_NAME,
-            use_sections=use_sections
+    """Find and process all papers that need Grobid and/or embeddings.
+
+    This is the main entry point called by the pipeline.  It works
+    directly on the papers table — no user/profile/corpus awareness.
+    """
+    parse_count = 0
+    embed_count = 0
+
+    # ── Step A: Grobid extraction for papers without sections ──────
+    if not skip_parse:
+        papers = await api_client.get_papers_needing_processing()
+        print(f'\nFound {len(papers)} paper(s) needing Grobid processing')
+
+        for paper in papers:
+            pdf_path = paper.get('pdf_path')
+            if not pdf_path or not Path(pdf_path).exists():
+                print(f"  Skipping paper {paper['id']}: PDF not found at {pdf_path}")
+                continue
+
+            try:
+                info = extract_grobid_sections(Path(pdf_path))
+
+                # Update title/abstract from Grobid if still a placeholder
+                grobid_title = info.get('title', '').strip()
+                grobid_abstract = info.get('abstract', '').strip()
+                updates = {}
+                current_title = paper.get('title', '')
+                is_placeholder = (
+                    not current_title
+                    or current_title == paper.get('arxiv_id')  # arXiv ID as title
+                    or current_title == f"paper_{paper['id']}"  # auto-generated
+                    or paper.get('source') == 'user'  # filename as title (safe:
+                    # this only runs on first processing before sections exist,
+                    # and there is no UI to manually edit paper titles)
+                )
+                if grobid_title and is_placeholder:
+                    updates['title'] = grobid_title
+                if grobid_abstract and not paper.get('abstract'):
+                    updates['abstract'] = grobid_abstract
+                if updates:
+                    try:
+                        await api_client.update_paper(paper['id'], **updates)
+                    except Exception:
+                        pass  # non-critical — placeholder title still works
+
+                # Store sections
+                sections_stored = 0
+                for sec in info.get('sections', []):
+                    try:
+                        await api_client.create_section(
+                            paper_id=paper['id'],
+                            header=sec['header'],
+                            text=sec['text'],
+                        )
+                        sections_stored += 1
+                    except Exception:
+                        pass
+
+                parse_count += 1
+                title = updates.get('title', current_title)
+                print(f'  Processed: {title[:60]}... ({sections_stored} sections)')
+
+            except Exception as e:
+                print(f"  Failed to process paper {paper['id']}: {e}")
+
+        print(f'  Grobid processing complete: {parse_count} paper(s)')
+
+    # ── Step B: Embeddings for papers without them ─────────────────
+    if not skip_embed:
+        papers = await api_client.get_papers_needing_embeddings()
+        print(f'\nFound {len(papers)} paper(s) needing embeddings')
+
+        if papers:
+            from .embed_papers import load_model
+
+            model = load_model(DEFAULT_MODEL_NAME)
+
+            for paper in papers:
+                try:
+                    stored = await _embed_single_paper(
+                        api_client, paper, model, DEFAULT_MODEL_NAME
+                    )
+                    if stored > 0:
+                        embed_count += 1
+                        print(f"  Embedded: {paper['title'][:60]}... ({stored} vectors)")
+                except Exception as e:
+                    print(f"  Failed to embed paper {paper['id']}: {e}")
+
+            print(f'  Embedding complete: {embed_count} paper(s)')
+
+    return {'parsed': parse_count, 'embedded': embed_count}
+
+
+async def _embed_single_paper(
+    api_client: APIClient,
+    paper: Dict,
+    model,
+    model_name: str,
+) -> int:
+    """Generate and store embeddings for a single paper from DB content.
+
+    Creates an abstract embedding (title + abstract) and section
+    embeddings for each substantial section (>20 words).
+
+    Returns the number of embeddings stored.
+    """
+    stored = 0
+
+    # Abstract embedding from title + abstract (fall back to sections if too short)
+    title = paper.get('title', '')
+    abstract = paper.get('abstract', '')
+    abstract_text = f'{title}. {abstract}'.strip()
+
+    # If title+abstract is too short, supplement with early section text
+    sections = await api_client.get_sections_by_paper(paper['id'])
+    if len(abstract_text.split()) <= 5 and sections:
+        section_text = ' '.join(
+            s.get('text', '') for s in sections[:3]  # first 3 sections
+        ).strip()
+        abstract_text = f'{abstract_text} {section_text}'.strip()
+
+    if len(abstract_text.split()) > 5:  # need some content to embed
+        emb = model.encode([abstract_text], normalize_embeddings=True)[0]
+        await api_client.create_embedding(
+            paper_id=paper['id'],
+            embedding=emb.tolist(),
+            type='abstract',
+            model_name=model_name,
         )
-        
-        all_runs.append(run_id)
-        print(f"  Recommendation run ID: {run_id}")
-    
-    return all_runs
+        stored += 1
+
+    # Section embeddings — batch encode for efficiency
+    eligible_sections = [
+        s for s in sections if len(s.get('text', '').split()) > 20
+    ]
+    if eligible_sections:
+        texts = [s['text'] for s in eligible_sections]
+        embeddings = model.encode(texts, normalize_embeddings=True)
+        for section, emb in zip(eligible_sections, embeddings):
+            await api_client.create_embedding(
+                paper_id=paper['id'],
+                section_id=section['id'],
+                embedding=emb.tolist(),
+                type='section',
+                model_name=model_name,
+            )
+            stored += 1
+
+    return stored
