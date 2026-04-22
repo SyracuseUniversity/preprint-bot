@@ -123,10 +123,19 @@ async def update_processed_text_path(paper_id: int, path: str = Query(...)):
         return result
 
 @router.get("/", response_model=List[PaperResponse])
-async def get_papers(corpus_id: Optional[int] = Query(None)):
+async def get_papers(corpus_id: Optional[int] = Query(None), arxiv_id: Optional[str] = Query(None)):
     pool = await get_db_pool()
     async with pool.acquire() as conn:
-        if corpus_id is not None:
+        if arxiv_id is not None:
+            rows = await conn.fetch(
+                """
+                SELECT id, corpus_id, arxiv_id, title, abstract, metadata, pdf_path,
+                       processed_text_path, submitted_date, source, created_at
+                FROM papers WHERE arxiv_id = $1
+                """,
+                arxiv_id
+            )
+        elif corpus_id is not None:
             rows = await conn.fetch(
                 """
                 SELECT DISTINCT p.id, p.corpus_id, p.arxiv_id, p.title, p.abstract, p.metadata, p.pdf_path, 
