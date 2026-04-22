@@ -39,7 +39,6 @@ from .models import (
     PBUser,
     Paper,
     Profile,
-    ProfileRecommendation,
     Recommendation,
     RecommendationRun,
     Summary,
@@ -584,11 +583,25 @@ def dashboard_view(request):
 
     profiles = Profile.objects.filter(user=pb_user)
 
-    # Total recommendations across all profiles
-    total_recs = ProfileRecommendation.objects.filter(profile__in=profiles).count()
+    # Use the same query path as the recommendations page
+    all_recs = _query_profile_recommendations(pb_user)
+    total_recs = len(all_recs)
 
-    # Gather today's recommendations across all profiles
-    today_recs = _get_latest_recommendations(pb_user)
+    # Filter to the most recent date for the "Latest" section
+    latest_date = None
+    for r in all_recs:
+        d = r.get("date_obj")
+        if d and (latest_date is None or d > latest_date):
+            latest_date = d
+
+    if latest_date:
+        today_recs = sorted(
+            [r for r in all_recs if r.get("date_obj") == latest_date],
+            key=lambda x: x["score"],
+            reverse=True,
+        )
+    else:
+        today_recs = []
 
     return render(
         request,
@@ -601,60 +614,6 @@ def dashboard_view(request):
             "today_count": len(today_recs),
         },
     )
-
-
-def _get_latest_recommendations(pb_user):
-    """Return deduplicated recommendations from the most recent date."""
-    from django.db.models import Max
-
-    profiles = Profile.objects.filter(user=pb_user)
-    if not profiles.exists():
-        return []
-
-    # Find the most recent submitted_date in the DB (one query, no Python loop)
-    most_recent = (
-        ProfileRecommendation.objects.filter(profile__in=profiles)
-        .aggregate(latest=Max("recommendation__paper__submitted_date"))
-    )["latest"]
-
-    if not most_recent:
-        return []
-
-    most_recent_date = most_recent.date()
-
-    # Fetch only rows from that date (materialize once to avoid double query)
-    pr_list = list(
-        ProfileRecommendation.objects.filter(
-            profile__in=profiles,
-            recommendation__paper__submitted_date__date=most_recent_date,
-        )
-        .select_related("recommendation__paper")
-    )
-
-    # Prefetch summaries for the papers in one query
-    paper_ids = {pr.recommendation.paper_id for pr in pr_list}
-    summaries_map = {
-        s.paper_id: s.summary_text or ""
-        for s in Summary.objects.filter(paper_id__in=paper_ids, mode="abstract")
-    }
-
-    # Deduplicate by arxiv_id keeping highest score
-    seen = {}
-    for pr in pr_list:
-        rec = pr.recommendation
-        paper = rec.paper
-        aid = paper.arxiv_id or f"_pk_{paper.pk}"
-        if aid not in seen or rec.score > seen[aid]["score"]:
-            seen[aid] = {
-                "title": paper.title,
-                "score": rec.score,
-                "arxiv_id": paper.arxiv_id,
-                "abstract": paper.abstract or "",
-                "summary_text": summaries_map.get(paper.pk, ""),
-                "submitted_date": paper.submitted_date,
-            }
-
-    return sorted(seen.values(), key=lambda x: x["score"], reverse=True)
 
 
 # ── Profiles ───────────────────────────────────────────────────────────────
