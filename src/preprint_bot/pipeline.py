@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import List
 from datetime import datetime, timezone, date as date_type
+from email.utils import parsedate_to_datetime
 import requests
 
 from .config import (
@@ -98,9 +99,13 @@ async def store_fetched_papers(
         submitted_date = None
         if paper.published:
             try:
-                submitted_date = datetime.fromisoformat(
-                    paper.published.replace('Z', '+00:00')
-                )
+                # Try ISO 8601 first (from API), then RFC 2822 (from RSS)
+                try:
+                    submitted_date = datetime.fromisoformat(
+                        paper.published.replace('Z', '+00:00')
+                    )
+                except ValueError:
+                    submitted_date = parsedate_to_datetime(paper.published)
                 if submitted_date.tzinfo is not None:
                     submitted_date = submitted_date.astimezone(
                         timezone.utc
