@@ -1,12 +1,13 @@
 """
 Re-fetch metadata (title, abstract, categories, authors) from the arXiv API
-for all papers that have an arxiv_id.
+for all papers that have a valid arxiv_id.
 
 Usage:
     python manage.py refresh_arxiv_metadata          # dry run
     python manage.py refresh_arxiv_metadata --apply   # actually update
 """
 
+import re
 import time
 
 from django.core.management.base import BaseCommand
@@ -15,10 +16,13 @@ from core.models import Paper
 
 
 BATCH_SIZE = 50  # arXiv API supports up to 200, but smaller batches are safer
+ARXIV_ID_RE = re.compile(
+    r"^(\d{4}\.\d{4,5}|[a-z-]+(?:\.[a-z-]+)?/\d{7})$", re.IGNORECASE
+)
 
 
 def _fetch_batch(arxiv_ids):
-    """Fetch metadata for a batch of arXiv IDs. Returns dict keyed by ID."""
+    """Fetch metadata for a batch of arXiv IDs. Returns dict keyed by bare ID."""
     try:
         import arxiv as arxiv_lib
     except ImportError:
@@ -51,22 +55,21 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         apply = options["apply"]
 
-        papers = list(
-            Paper.objects.filter(arxiv_id__isnull=False)
+        # Only include papers with valid arXiv IDs (skip legacy citation-style IDs)
+        papers = [
+            p for p in Paper.objects.filter(arxiv_id__isnull=False)
             .exclude(arxiv_id="")
             .order_by("id")
-        )
+            if ARXIV_ID_RE.match(re.sub(r"v\d+$", "", p.arxiv_id))
+        ]
 
         if not papers:
-            self.stdout.write(self.style.SUCCESS("No papers with arXiv IDs found."))
+            self.stdout.write(self.style.SUCCESS("No papers with valid arXiv IDs found."))
             return
 
-        self.stdout.write(f"Found {len(papers)} paper(s) with arXiv IDs.")
+        self.stdout.write(f"Found {len(papers)} paper(s) with valid arXiv IDs.")
 
-        # Build batches
-        batches = []
-        for i in range(0, len(papers), BATCH_SIZE):
-            batches.append(papers[i:i + BATCH_SIZE])
+        batches = [papers[i:i + BATCH_SIZE] for i in range(0, len(papers), BATCH_SIZE)]
 
         updated = 0
         skipped = 0
@@ -86,7 +89,9 @@ class Command(BaseCommand):
                 continue
 
             for aid, paper in id_map.items():
-                meta = metadata.get(aid)
+                # _fetch_batch strips version suffixes from keys
+                bare_aid = re.sub(r"v\d+$", "", aid)
+                meta = metadata.get(bare_aid) or metadata.get(aid)
                 if not meta:
                     self.stdout.write(f"  {aid}: not found on arXiv")
                     skipped += 1
@@ -94,9 +99,12 @@ class Command(BaseCommand):
 
                 changes = []
                 if meta["title"] and meta["title"] != paper.title:
-                    changes.append(f"title: {paper.title[:40]}... → {meta['title'][:40]}...")
+                    changes.append(
+                        f"title: {paper.title[:40]}... -> {meta['title'][:40]}..."
+                    )
                 if meta["abstract"] and meta["abstract"] != paper.abstract:
                     changes.append("abstract updated")
+
                 # Merge categories and authors into existing metadata
                 new_metadata = paper.metadata or {}
                 if isinstance(new_metadata, str):
@@ -121,7 +129,8 @@ class Command(BaseCommand):
                     paper.metadata = new_metadata
                     paper.save(update_fields=["title", "abstract", "metadata"])
 
-                self.stdout.write(f"  {'✓' if apply else '~'} {aid}: {', '.join(changes)}")
+                mark = "+" if apply else "~"
+                self.stdout.write(f"  {mark} {aid}: {', '.join(changes)}")
                 updated += 1
 
             # Respect arXiv rate limits between batches
