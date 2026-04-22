@@ -78,7 +78,7 @@
   </div>
   <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem .4rem; margin-top:.3rem; flex-wrap:wrap;">
     <div style="display:flex; gap:.4rem; flex-wrap:wrap;">
-      <span class="tag-toggle date-preset" data-preset="yesterday" onclick="setDateRange('yesterday')">Yesterday</span>
+      <span class="tag-toggle date-preset" data-preset="today" onclick="setDateRange('today')">Today</span>
       <span class="tag-toggle date-preset" data-preset="week" onclick="setDateRange('week')">Last 7 days</span>
       <span class="tag-toggle date-preset" data-preset="month" onclick="setDateRange('month')">Last 30 days</span>
       <span class="tag-toggle date-preset active" data-preset="all" onclick="setDateRange('all')">All time</span>
@@ -112,14 +112,19 @@ const PER_PAGE = 20;
 let currentPage = 1;
 
 /* ── Date helpers ──────────────────────────────────── */
-function isoDate(d) { return d.toISOString().slice(0, 10); }
+function isoDate(d) {
+  // Use local date, not UTC, so "Today" matches the user's calendar day
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
 function daysAgo(n) {
   const d = new Date();
   d.setDate(d.getDate() - n);
   return isoDate(d);
 }
 const TODAY = isoDate(new Date());
-const YESTERDAY = daysAgo(1);
 const WEEK_AGO = daysAgo(7);
 const MONTH_AGO = daysAgo(30);
 
@@ -338,7 +343,7 @@ function setDateRange(preset) {
   const from = document.getElementById('f-date-from');
   const to = document.getElementById('f-date-to');
   switch (preset) {
-    case 'yesterday': from.value = YESTERDAY; to.value = YESTERDAY; break;
+    case 'today':     from.value = TODAY;    to.value = TODAY;     break;
     case 'week':      from.value = WEEK_AGO;  to.value = TODAY;     break;
     case 'month':     from.value = MONTH_AGO; to.value = TODAY;     break;
     case 'all':       from.value = '';         to.value = '';        break;
@@ -411,8 +416,8 @@ function restoreFromURL() {
   clearDatePresets();
   if (!df && !dt) {
     document.querySelector('.date-preset[data-preset="all"]').classList.add('active');
-  } else if (df === YESTERDAY && dt === YESTERDAY) {
-    document.querySelector('.date-preset[data-preset="yesterday"]').classList.add('active');
+  } else if (df === TODAY && dt === TODAY) {
+    document.querySelector('.date-preset[data-preset="today"]').classList.add('active');
   } else if (df === WEEK_AGO && dt === TODAY) {
     document.querySelector('.date-preset[data-preset="week"]').classList.add('active');
   } else if (df === MONTH_AGO && dt === TODAY) {
