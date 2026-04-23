@@ -281,7 +281,7 @@ function renderSearchResults(box) {
     + '<div style="display:flex;gap:.4rem;">'
     + '<button type="button" class="btn btn-sm" onclick="togglePageCb(this,true)">Select Page</button>'
     + '<button type="button" class="btn btn-sm" onclick="toggleAllCb(this,true)">Select All ('
-    + totalNew + ')</button>'
+    + (totalNew - (box._addedIds ? box._addedIds.size : 0)) + ')</button>'
     + '<button type="button" class="btn btn-sm" onclick="toggleAllCb(this,false)">Deselect All</button>'
     + '</div></div>';
 
@@ -361,6 +361,13 @@ function updateSelectionCount(box) {
   if (btn) {
     btn.textContent = 'Add Selected' + (count > 0 ? ' (' + count + ')' : '') + ' to Profile';
   }
+  /* update the "Select All" button count */
+  const totalNew = (box._newResults || []).length;
+  const addedCount = box._addedIds ? box._addedIds.size : 0;
+  const selectAllBtn = box.querySelector('button[onclick*="toggleAllCb"][onclick*="true"]');
+  if (selectAllBtn) {
+    selectAllBtn.textContent = 'Select All (' + (totalNew - addedCount) + ')';
+  }
 }
 
 function renderPaperRow(r, isAdded, isSelected, isDisabled) {
@@ -428,7 +435,13 @@ document.addEventListener('submit', e => {
 async function addArxivPapers(ids, addUrl, profileId, progressEl, submitBtn, form) {
   const total = ids.length;
   let successCount = 0;
-  let errors = [];
+  let errors = new Set();
+
+  /* get persistent state refs for search-tab checkbox updates */
+  const textarea = form.querySelector('textarea[name="arxiv_ids"]');
+  const box = !textarea ? form.closest('.search-results') : null;
+  const selectedIds = box ? box._selectedIds : null;
+  const addedIds = box ? box._addedIds : null;
 
   /* disable submit button */
   if (submitBtn) submitBtn.disabled = true;
@@ -467,13 +480,19 @@ async function addArxivPapers(ids, addUrl, profileId, progressEl, submitBtn, for
         addPaperToList(profileId, data.paper);
         logEl.innerHTML += '<div style="color:var(--success);">&#10003; ' + esc(data.paper.title || aid) + '</div>';
         logEl.scrollTop = logEl.scrollHeight;  /* auto-scroll to latest */
+        /* immediately disable checkbox and update selection state */
+        if (selectedIds) selectedIds.delete(aid);
+        if (addedIds) addedIds.add(aid);
+        const cb = form.querySelector('.arxiv-cb[value="' + aid + '"]');
+        if (cb) { cb.checked = true; cb.disabled = true; }
+        if (box) updateSelectionCount(box);
       } else {
-        errors.push(aid);
+        errors.add(aid);
         logEl.innerHTML += '<div style="color:var(--danger);">&#10007; ' + esc(aid) + ': ' + esc(data.error || 'Unknown error') + '</div>';
         logEl.scrollTop = logEl.scrollHeight;  /* auto-scroll to latest */
       }
     } catch (err) {
-      errors.push(aid);
+      errors.add(aid);
       logEl.innerHTML += '<div style="color:var(--danger);">&#10007; ' + esc(aid) + ': ' + esc(String(err)) + '</div>';
       logEl.scrollTop = logEl.scrollHeight;  /* auto-scroll to latest */
     }
@@ -490,8 +509,8 @@ async function addArxivPapers(ids, addUrl, profileId, progressEl, submitBtn, for
 
   /* summary */
   let summary = successCount + ' of ' + total + ' paper(s) added.';
-  if (errors.length > 0) {
-    summary += ' ' + errors.length + ' failed.';
+  if (errors.size > 0) {
+    summary += ' ' + errors.size + ' failed.';
   }
   textEl.innerHTML = '<strong>' + summary + '</strong>';
 
@@ -499,24 +518,7 @@ async function addArxivPapers(ids, addUrl, profileId, progressEl, submitBtn, for
   if (submitBtn) submitBtn.disabled = false;
 
   /* clear textarea if present (Tab 2) */
-  const textarea = form.querySelector('textarea[name="arxiv_ids"]');
   if (textarea && successCount > 0) textarea.value = '';
-
-  /* remove successfully added papers from the persistent selection */
-  if (!textarea) {
-    const box = form.closest('.search-results');
-    const selectedIds = box ? box._selectedIds : null;
-    const addedIds = box ? box._addedIds : null;
-    ids.forEach((aid) => {
-      if (!errors.includes(aid)) {
-        if (selectedIds) selectedIds.delete(aid);
-        if (addedIds) addedIds.add(aid);  /* track for disabled state across pages */
-        const cb = form.querySelector('.arxiv-cb[value="' + aid + '"]');
-        if (cb) { cb.checked = true; cb.disabled = true; }
-      }
-    });
-    if (box) updateSelectionCount(box);
-  }
 }
 
 function addPaperToList(profileId, paper) {
@@ -631,7 +633,6 @@ function getCSRF() {
 function togglePageCb(btn, checked) {
   const box = btn.closest('.search-results');
   const selectedIds = box._selectedIds;
-  const addedIds = box._addedIds || new Set();
   /* only toggle visible checkboxes on this page (skip already-added) */
   box.querySelectorAll('.arxiv-cb:not([disabled])').forEach(cb => {
     cb.checked = checked;
