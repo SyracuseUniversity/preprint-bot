@@ -885,12 +885,13 @@ def paper_add_arxiv_view(request, profile_id):
         if failed:
             return JsonResponse({"ok": False, "error": f"Failed to download {aid}."}, status=400)
         # Look up the paper to return its info for the DOM
-        paper = Paper.objects.filter(arxiv_id=aid).first()
+        paper = Paper.objects.filter(arxiv_id=aid).order_by("-id").first()
         if not paper:
-            # Legacy data may have version suffix (e.g., 2507.08778v1)
-            paper = Paper.objects.filter(arxiv_id__startswith=aid + 'v').first()
+            # Legacy data may have version suffix (e.g., 2507.08778v1);
+            # prefer the newest matching row deterministically.
+            paper = Paper.objects.filter(arxiv_id__startswith=aid + 'v').order_by("-id").first()
         if not paper:
-            return JsonResponse({"ok": False, "error": f"Paper stored but could not be retrieved."}, status=500)
+            return JsonResponse({"ok": False, "error": f"Paper stored but could not be retrieved for arXiv ID {aid}."}, status=500)
         return JsonResponse({
             "ok": True,
             "paper": {

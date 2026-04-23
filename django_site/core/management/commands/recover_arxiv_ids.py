@@ -27,8 +27,9 @@ def _search_arxiv_by_title(title):
     except ImportError:
         raise ImportError("Install the arxiv package: pip install arxiv")
 
-    # Strip HTML tags from title (e.g., <i>, <scp>)
+    # Strip HTML tags and double quotes from title
     clean_title = re.sub(r"<[^>]+>", "", title).strip()
+    clean_title = clean_title.replace('"', '')
 
     client = arxiv_lib.Client()
     search = arxiv_lib.Search(

@@ -113,11 +113,12 @@ class Command(BaseCommand):
                         new_metadata = json.loads(new_metadata)
                     except Exception:
                         new_metadata = {}
-                if meta["categories"]:
+                if meta["categories"] and meta["categories"] != new_metadata.get("categories", []):
                     new_metadata["categories"] = meta["categories"]
                     changes.append(f"categories: {meta['categories']}")
-                if meta["authors"]:
+                if meta["authors"] and meta["authors"] != new_metadata.get("authors", []):
                     new_metadata["authors"] = meta["authors"]
+                    changes.append("authors updated")
 
                 if not changes:
                     skipped += 1

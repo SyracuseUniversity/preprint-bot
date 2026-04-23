@@ -92,9 +92,15 @@
   </footer>
 
   <script>
-  // Prevent scroll-wheel from changing number inputs while page scrolls
+  // Prevent scroll-wheel from changing focused number inputs while page scrolls
   document.addEventListener('wheel', function(e) {
-    if (e.target.matches('input[type=number]')) e.target.blur();
+    if (
+      e.target instanceof Element &&
+      e.target.matches('input[type=number]') &&
+      document.activeElement === e.target
+    ) {
+      e.target.blur();
+    }
   }, {passive: true});
   </script>
   {% block extra_scripts %}{% endblock %}
