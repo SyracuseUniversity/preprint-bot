@@ -280,7 +280,7 @@ function renderSearchResults(box) {
   html += '</span>'
     + '<div style="display:flex;gap:.4rem;">'
     + '<button type="button" class="btn btn-sm" onclick="togglePageCb(this,true)">Select Page</button>'
-    + '<button type="button" class="btn btn-sm" onclick="toggleAllCb(this,true)">Select All ('
+    + '<button type="button" class="btn btn-sm" onclick="toggleAllCb(this,true)" data-action="select-all">Select All ('
     + (totalNew - (box._addedIds ? box._addedIds.size : 0)) + ')</button>'
     + '<button type="button" class="btn btn-sm" onclick="toggleAllCb(this,false)">Deselect All</button>'
     + '</div></div>';
@@ -364,7 +364,7 @@ function updateSelectionCount(box) {
   /* update the "Select All" button count */
   const totalNew = (box._newResults || []).length;
   const addedCount = box._addedIds ? box._addedIds.size : 0;
-  const selectAllBtn = box.querySelector('button[onclick*="toggleAllCb"][onclick*="true"]');
+  const selectAllBtn = box.querySelector('[data-action="select-all"]');
   if (selectAllBtn) {
     selectAllBtn.textContent = 'Select All (' + (totalNew - addedCount) + ')';
   }
@@ -483,7 +483,7 @@ async function addArxivPapers(ids, addUrl, profileId, progressEl, submitBtn, for
         /* immediately disable checkbox and update selection state */
         if (selectedIds) selectedIds.delete(aid);
         if (addedIds) addedIds.add(aid);
-        const cb = form.querySelector('.arxiv-cb[value="' + aid + '"]');
+        const cb = form.querySelector('.arxiv-cb[value="' + CSS.escape(aid) + '"]');
         if (cb) { cb.checked = true; cb.disabled = true; }
         if (box) updateSelectionCount(box);
       } else {
