@@ -1201,14 +1201,14 @@ def _query_profile_recommendations(pb_user, profile=None):
     # Get runs that used any of these corpora
     runs = RecommendationRun.objects.filter(user_corpus__in=user_corpora)
 
-    # Build a mapping from corpus ID to profile ID for tagging recommendations
+    # Build a mapping from corpus ID to profile ID by parsing corpus names
     corpus_to_profile = {}
-    for p in Profile.objects.filter(user=pb_user):
-        cname = f"user_{pb_user.pk}_profile_{p.pk}"
-        for c in user_corpora:
-            if c.name == cname:
-                corpus_to_profile[c.pk] = p.pk
-                break
+    profile_prefix = f"user_{pb_user.pk}_profile_"
+    for c in user_corpora:
+        if c.name.startswith(profile_prefix):
+            profile_id_str = c.name[len(profile_prefix):]
+            if profile_id_str.isdigit():
+                corpus_to_profile[c.pk] = int(profile_id_str)
 
     recs_list = list(
         Recommendation.objects.filter(run__in=runs)
@@ -1225,13 +1225,14 @@ def _query_profile_recommendations(pb_user, profile=None):
     }
 
     # Check which recommended papers are already in each profile's corpus
+    # (restricted to paper_ids in this batch for efficiency)
     profile_paper_ids = {}  # {profile_id: set of paper_ids}
-    for c in user_corpora:
-        pid = corpus_to_profile.get(c.pk)
+    for paper_pk, corpus_pk in Paper.objects.filter(
+        pk__in=paper_ids, corpora__in=user_corpora
+    ).values_list("pk", "corpora__pk"):
+        pid = corpus_to_profile.get(corpus_pk)
         if pid:
-            profile_paper_ids[pid] = set(
-                Paper.objects.filter(corpora=c).values_list("pk", flat=True)
-            )
+            profile_paper_ids.setdefault(pid, set()).add(paper_pk)
 
     # Deduplicate by arxiv_id keeping highest score
     seen = {}
@@ -1278,6 +1279,14 @@ def recommendation_add_to_profile_view(request, profile_id, paper_id):
     pb_user = request.pb_user
     profile = get_object_or_404(Profile, pk=profile_id, user=pb_user)
     paper = get_object_or_404(Paper, pk=paper_id)
+
+    # Verify the paper was actually recommended to this user
+    was_recommended = Recommendation.objects.filter(
+        paper=paper, run__user=pb_user
+    ).exists()
+    if not was_recommended:
+        return JsonResponse({"ok": False, "error": "Paper not found."}, status=404)
+
     corpus = _get_or_create_user_corpus(pb_user, profile)
 
     already_linked = paper.corpora.filter(pk=corpus.pk).exists()
