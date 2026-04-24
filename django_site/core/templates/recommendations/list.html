@@ -88,6 +88,7 @@
 </div>
 
 {# ── Result count ────────────────────────────────────── #}
+{% csrf_token %}
 <p class="text-sm text-dim" style="margin-bottom:.75rem;" id="result-count"></p>
 
 {# ── Results container ───────────────────────────────── #}
@@ -106,10 +107,14 @@
 const ALL_RECS = JSON.parse('{{ recs_json|escapejs }}');
 const CATEGORIES = JSON.parse('{{ categories_json|escapejs }}');
 const CODE_TO_LABEL = JSON.parse('{{ code_to_label_json|escapejs }}');
+const PROFILES = JSON.parse('{{ profiles_json|escapejs }}');
 const PROFILE_PARAM = '{{ profile_param }}';
+const SELECTED_PROFILE_ID = {{ selected_profile.pk|default:'null' }};
+const ADD_URL_BASE = '{% url "recommendations" %}add/';
 const PER_PAGE = 20;
 
 let currentPage = 1;
+const addedPapers = new Set();  /* track papers added during this session */
 
 /* ── Date helpers ──────────────────────────────────── */
 function isoDate(d) {
@@ -304,6 +309,33 @@ function renderCard(r, showDate) {
       + '" target="_blank" rel="noopener noreferrer" class="btn btn-sm mt-1">View on arXiv →</a>';
   }
 
+  /* "Add to Profile" button or dropdown */
+  if (r.paper_id) {
+    const paperId = r.paper_id;
+    const isAdded = addedPapers.has(paperId);
+    if (SELECTED_PROFILE_ID) {
+      /* single profile selected: one-click button */
+      html += ' <button class="btn btn-sm mt-1" id="add-btn-' + paperId + '"'
+        + (isAdded ? ' disabled style="opacity:.5;"' : '')
+        + ' onclick="addToProfile(' + SELECTED_PROFILE_ID + ',' + paperId + ')">' 
+        + (isAdded ? '✓ Added' : '+ Add to Profile') + '</button>';
+    } else {
+      /* all profiles: dropdown */
+      html += ' <span class="mt-1" style="display:inline-flex; align-items:center; gap:.3rem;" id="add-btn-' + paperId + '">';
+      if (isAdded) {
+        html += '<button class="btn btn-sm" disabled style="opacity:.5;">✓ Added</button>';
+      } else {
+        html += '<select class="btn btn-sm" style="padding:0.25rem 0.4rem;" onchange="if(this.value) addToProfile(+this.value,' + paperId + ')">';
+        html += '<option value="">+ Add to…</option>';
+        PROFILES.forEach(p => {
+          html += '<option value="' + p.id + '">' + esc(p.name) + '</option>';
+        });
+        html += '</select>';
+      }
+      html += '</span>';
+    }
+  }
+
   html += '</div>';
   return html;
 }
@@ -423,6 +455,52 @@ function restoreFromURL() {
   } else if (df === MONTH_AGO && dt === TODAY) {
     document.querySelector('.date-preset[data-preset="month"]').classList.add('active');
   }
+}
+
+/* ── Add recommendation to profile (AJAX) ─────────── */
+function addToProfile(profileId, paperId) {
+  const btn = document.getElementById('add-btn-' + paperId);
+  if (!btn) return;
+
+  /* show loading state */
+  const origHtml = btn.innerHTML;
+  if (btn.tagName === 'BUTTON') {
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+  } else {
+    /* span wrapper around dropdown */
+    btn.innerHTML = '<button class="btn btn-sm" disabled>Adding…</button>';
+  }
+
+  const csrf = document.querySelector('[name=csrfmiddlewaretoken]');
+  fetch(ADD_URL_BASE + profileId + '/' + paperId + '/', {
+    method: 'POST',
+    headers: {
+      'X-Requested-With': 'XMLHttpRequest',
+      'X-CSRFToken': csrf ? csrf.value : '',
+    },
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      addedPapers.add(paperId);
+      if (btn.tagName === 'BUTTON') {
+        btn.textContent = '✓ Added';
+        btn.disabled = true;
+        btn.style.opacity = '.5';
+      } else {
+        btn.innerHTML = '<button class="btn btn-sm" disabled style="opacity:.5;">✓ Added</button>';
+      }
+    } else {
+      /* restore original state on failure */
+      btn.innerHTML = origHtml;
+      if (btn.tagName === 'BUTTON') btn.disabled = false;
+    }
+  })
+  .catch(() => {
+    btn.innerHTML = origHtml;
+    if (btn.tagName === 'BUTTON') btn.disabled = false;
+  });
 }
 
 /* ── Wire up live filter events ───────────────────── */
