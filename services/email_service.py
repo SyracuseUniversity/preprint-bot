@@ -48,7 +48,7 @@ def build_digest_html(profile_name: str, papers: List[Dict], run_date: str, show
 
     count_line = f"Showing {shown} out of {total} recommendations" if total > 10 else f"Showing {total} out of {total} recommendations"
 
-    header_label = {"weekly": "Weekly", "monthly": "Monthly"}.get(frequency, "New")
+    header_label = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly"}.get(frequency, "New")
 
     return f"""
     <html><body style="font-family:Arial,sans-serif;background:#f9f9f9;margin:0;padding:0;">
@@ -103,7 +103,7 @@ def send_recommendations_digest(
 ) -> tuple[bool, str, str]:
     total = len(papers)
     shown = min(total, 10)
-    digest_label = {"weekly": "weekly digest", "monthly": "monthly digest"}.get(frequency, run_date)
+    digest_label = {"daily": run_date, "weekly": f"weekly digest \u00b7 {run_date}", "monthly": f"monthly digest \u00b7 {run_date}"}.get(frequency, run_date)
     subject = f"Preprint Bot: {total} new recommendations for '{profile_name}' ({digest_label})"
     html_body = build_digest_html(profile_name, papers, run_date, shown, total, frequency)
     success = send_email(to_address, subject, html_body)
