@@ -1246,6 +1246,7 @@ def _query_profile_recommendations(pb_user, profile=None):
         seen[aid] = {
             "paper_id": paper.pk,
             "profile_id": corpus_to_profile.get(rec.run.user_corpus_id),
+            "in_corpus": paper.pk in corpus_paper_ids,
             "title": paper.title,
             "score": rec.score,
             "rank": rec.rank,
