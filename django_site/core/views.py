@@ -127,25 +127,27 @@ def _pdf_has_text_layer(uploaded_file, min_chars=50, max_pages=3):
     """Check whether a PDF has extractable text.
 
     Reads up to *max_pages* pages and returns True if at least
-    *min_chars* non-whitespace characters can be extracted.
+    *min_chars* characters of text (after stripping leading/trailing
+    whitespace) can be extracted.
     Returns True (allow upload) if pypdf is not installed or the
     PDF cannot be parsed, so we never block uploads due to a
     library issue.
     """
     try:
-        from io import BytesIO
         from pypdf import PdfReader
 
-        data = uploaded_file.read()
         uploaded_file.seek(0)
-        reader = PdfReader(BytesIO(data))
+        reader = PdfReader(uploaded_file)
         text = ""
         for page in reader.pages[:max_pages]:
             text += page.extract_text() or ""
             if len(text.strip()) >= min_chars:
+                uploaded_file.seek(0)
                 return True
+        uploaded_file.seek(0)
         return len(text.strip()) >= min_chars
     except Exception:
+        uploaded_file.seek(0)
         return True  # don't block uploads if the check itself fails
 
 
