@@ -114,7 +114,7 @@ const ADD_URL_BASE = '{% url "recommendations" %}add/';
 const PER_PAGE = 20;
 
 let currentPage = 1;
-const addedPapers = new Set();  /* track papers added during this session */
+const addedPapers = new Map();  /* paperId → Set of profileIds added this session */
 
 /* ── Date helpers ──────────────────────────────────── */
 function isoDate(d) {
@@ -312,9 +312,11 @@ function renderCard(r, showDate) {
   /* "Add to Profile" button or dropdown */
   if (r.paper_id) {
     const paperId = r.paper_id;
-    const isAdded = addedPapers.has(paperId);
-    const inCorpus = r.in_corpus;
-    if (SELECTED_PROFILE_ID && (inCorpus || isAdded)) {
+    const inCorpusIds = r.in_corpus || [];
+    const sessionIds = addedPapers.get(paperId) || new Set();
+    /* combined set of profile IDs where this paper already exists */
+    const allLinked = new Set([...inCorpusIds, ...sessionIds]);
+    if (SELECTED_PROFILE_ID && allLinked.has(SELECTED_PROFILE_ID)) {
       /* already in this profile's corpus — show disabled indicator */
       html += ' <button class="btn btn-sm mt-1" disabled style="opacity:.5;">✓ In Profile</button>';
     } else if (SELECTED_PROFILE_ID) {
@@ -323,14 +325,9 @@ function renderCard(r, showDate) {
         + ' onclick="addToProfile(' + SELECTED_PROFILE_ID + ',' + paperId + ')">' 
         + '+ Add to Profile</button>';
     } else {
-      /* all profiles: dropdown */
+      /* all profiles: dropdown with per-profile disabled state */
       html += ' <span class="mt-1" style="display:inline-flex; align-items:center; gap:.3rem;" id="add-btn-' + paperId + '">';
-      html += '<select class="btn btn-sm" style="padding:0.25rem 0.4rem;" onchange="if(this.value) addToProfile(+this.value,' + paperId + ')">';
-      html += '<option value="">+ Add to…</option>';
-      PROFILES.forEach(p => {
-        html += '<option value="' + p.id + '">' + esc(p.name) + '</option>';
-      });
-      html += '</select>';
+      html += buildProfileDropdown(paperId, allLinked);
       html += '</span>';
     }
   }
@@ -456,6 +453,19 @@ function restoreFromURL() {
   }
 }
 
+/* ── Build profile dropdown for a paper ─────────── */
+function buildProfileDropdown(paperId, linkedIds) {
+  let html = '<select class="btn btn-sm" style="padding:0.25rem 0.4rem;" onchange="if(this.value) addToProfile(+this.value,' + paperId + ')">';
+  html += '<option value="">+ Add to…</option>';
+  PROFILES.forEach(p => {
+    const alreadyIn = linkedIds.has(p.id);
+    html += '<option value="' + p.id + '"' + (alreadyIn ? ' disabled' : '') + '>'
+      + esc(p.name) + (alreadyIn ? ' (✓)' : '') + '</option>';
+  });
+  html += '</select>';
+  return html;
+}
+
 /* ── Add recommendation to profile (AJAX) ─────────── */
 function addToProfile(profileId, paperId) {
   const btn = document.getElementById('add-btn-' + paperId);
@@ -482,19 +492,29 @@ function addToProfile(profileId, paperId) {
   .then(r => r.json())
   .then(data => {
     if (data.ok) {
+      /* track this addition */
+      if (!addedPapers.has(paperId)) addedPapers.set(paperId, new Set());
+      addedPapers.get(paperId).add(profileId);
+
       if (SELECTED_PROFILE_ID) {
         /* single profile: permanently disable */
-        addedPapers.add(paperId);
         if (btn.tagName === 'BUTTON') {
           btn.textContent = '✓ In Profile';
           btn.disabled = true;
           btn.style.opacity = '.5';
         }
       } else {
-        /* all profiles: briefly confirm, then reset dropdown */
+        /* all profiles: briefly confirm, then rebuild dropdown with updated disabled state */
         const profileName = PROFILES.find(p => p.id === profileId);
         btn.innerHTML = '<span class="text-sm" style="color:var(--success);">✓ Added to ' + esc(profileName ? profileName.name : 'profile') + '</span>';
-        setTimeout(() => { btn.innerHTML = origHtml; }, 2000);
+        setTimeout(() => {
+          /* find the rec data to get server-side in_corpus list */
+          const rec = ALL_RECS.find(r => r.paper_id === paperId);
+          const inCorpusIds = rec ? (rec.in_corpus || []) : [];
+          const sessionIds = addedPapers.get(paperId) || new Set();
+          const allLinked = new Set([...inCorpusIds, ...sessionIds]);
+          btn.innerHTML = buildProfileDropdown(paperId, allLinked);
+        }, 2000);
       }
     } else {
       btn.innerHTML = origHtml;

@@ -1224,12 +1224,14 @@ def _query_profile_recommendations(pb_user, profile=None):
         for s in Summary.objects.filter(paper_id__in=paper_ids, mode="abstract")
     }
 
-    # Check which recommended papers are already in the user's corpus
-    corpus_paper_ids = set()
+    # Check which recommended papers are already in each profile's corpus
+    profile_paper_ids = {}  # {profile_id: set of paper_ids}
     for c in user_corpora:
-        corpus_paper_ids.update(
-            Paper.objects.filter(corpora=c).values_list("pk", flat=True)
-        )
+        pid = corpus_to_profile.get(c.pk)
+        if pid:
+            profile_paper_ids[pid] = set(
+                Paper.objects.filter(corpora=c).values_list("pk", flat=True)
+            )
 
     # Deduplicate by arxiv_id keeping highest score
     seen = {}
@@ -1246,7 +1248,10 @@ def _query_profile_recommendations(pb_user, profile=None):
         seen[aid] = {
             "paper_id": paper.pk,
             "profile_id": corpus_to_profile.get(rec.run.user_corpus_id),
-            "in_corpus": paper.pk in corpus_paper_ids,
+            "in_corpus": [
+                prof_id for prof_id, paper_set in profile_paper_ids.items()
+                if paper.pk in paper_set
+            ],
             "title": paper.title,
             "score": rec.score,
             "rank": rec.rank,
