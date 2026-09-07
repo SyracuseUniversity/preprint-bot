@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 from preprint_bot.pipeline import _format_duration
 
 

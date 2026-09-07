@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 """
 Database-integrated Preprint Recommender Pipeline
 """
@@ -546,7 +546,7 @@ async def run_pipeline(args):
                         from .summarization_script import LlamaSummarizer
                         summarizer = LlamaSummarizer(model_path=args.llm_model)
                         await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract")
-                    print(f"  Summarization completed in {_format_duration(time.time() - step5_start)}")
+                        print(f"  Summarization completed in {_format_duration(time.time() - step5_start)}")
                 else:
                     summarizer = TransformerSummarizer()
                     await summarize_papers(api_client, corpus_id, summarizer, entries, mode="abstract")
