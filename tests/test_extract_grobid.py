@@ -156,6 +156,23 @@ class TestGrobidParsing:
         assert result["authors"] == []
         assert result["sections"] == []
 
+class TestGrobidOutputRobustness:
+    """Robustness tests to ensure the parser detects or handles structural changes in GROBID XML output."""
+
+    @patch("preprint_bot.extract_grobid.requests.post")
+    def test_xml_structure_drift_handling(self, mock_post):
+        # Well-formed XML with drifted structure: missing TEI namespace / elements
+        drifted_xml = b'<?xml version="1.0" encoding="UTF-8"?><InvalidRoot><badNode/></InvalidRoot>'
+        mock_post.return_value = _grobid_response(drifted_xml)
+        
+        # Ensure extraction handles it gracefully and returns safe default empty structures
+        result = extract_grobid_sections(b"x")
+        assert isinstance(result, dict)
+        assert result["title"] == ""
+        assert result["abstract"] == ""
+        assert result["authors"] == []
+        assert result["pub_date"] == ""
+        assert result["sections"] == []
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
